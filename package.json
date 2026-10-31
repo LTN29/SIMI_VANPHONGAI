@@ -44,9 +44,6 @@
       "icon": "build/icon.png",
       "legalTrademarks": ""
     },
-    "portable": {
-      "artifactName": "VanPhongAI-${version}-portable.exe"
-    },
     "nsis": {
       "artifactName": "VanPhongAI-${version}-Setup.exe",
       "oneClick": false,

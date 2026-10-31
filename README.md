@@ -8,15 +8,23 @@ Và tab **🌐 Sảnh**: gặp đồng nghiệp đang dùng AI trong một căn 
 
 ## Chạy app
 
-### Windows
-Có 2 bản, dùng bản nào cũng được:
+### Tải bản cài
 
-- **`windows/VanPhongAI-0.9.11-Setup.exe`** (khuyên dùng cho nhân viên): cài 1 lần, có lối tắt ở Start Menu và Desktop, mở nhanh, tự cập nhật êm nhất.
-- **`VanPhongAI.exe`** (bản chạy ngay, giống `windows/VanPhongAI-0.9.11-portable.exe`): bấm đúp là chạy, không cần cài. Mỗi lần mở mất vài giây vì phải giải nén tạm.
+Bản cài cho 3 hệ điều hành do GitHub Actions tự build mỗi lần phát hành (repo `LTN29/SIMI_VANPHONGAI`, tab **Releases**) và Gateway tự đăng lên trang **https://ai.simi.vn/install/vanphong**. Gói gửi tay cho nhân viên (Google Drive…) gồm 3 file zip:
+
+| Gói | Bên trong |
+|---|---|
+| `VanPhongAI-<phiên bản>-Windows.zip` | `VanPhongAI-<phiên bản>-Setup.exe` + `HUONG-DAN.txt` |
+| `VanPhongAI-<phiên bản>-macOS.zip` | `VanPhongAI-<phiên bản>-mac-arm64.zip` + `CAI-DAT-TREN-MAC.command` + `HUONG-DAN.txt` |
+| `VanPhongAI-<phiên bản>-Ubuntu.zip` | `.deb` + `.AppImage` + `HUONG-DAN.txt` |
+
+Mã nguồn để riêng trong `VanPhongAI-<phiên bản>-src.zip` (đúng bằng nhãn `v<phiên bản>` trên GitHub).
+
+### Windows
+
+Bấm đúp **`VanPhongAI-<phiên bản>-Setup.exe`**: cài 1 lần, có lối tắt ở Start Menu và Desktop, sau đó app tự cập nhật. Từ 0.9.13 không còn bản chạy ngay (portable); máy đang dùng bản portable bấm **Cập nhật ngay** là được chuyển sang bản cài.
 
 Lần đầu mở, Windows có thể hiện "Windows protected your PC" (file chưa có chữ ký số). Bấm **More info → Run anyway**.
-
-Máy mới cũng tải được app tại **https://ai.simi.vn/install/vanphong** (khi admin đã đăng bản lên Gateway).
 
 ### macOS (máy Mac chip Apple M1–M4)
 
@@ -24,15 +32,15 @@ Yêu cầu: macOS 11 Big Sur trở lên.
 
 **Bước 1 – Chép file sang Mac**
 
-Chép cả thư mục **`mac`** sang máy Mac (qua USB, AirDrop, Google Drive…), ví dụ để ở `Downloads/mac`. Trong thư mục có 2 file:
-- `VanPhongAI-0.9.11-mac-arm64.zip` – app
+Giải nén `VanPhongAI-<phiên bản>-macOS.zip` trên máy Mac (hoặc chép cả thư mục sang qua USB, AirDrop…), ví dụ để ở `Downloads/VanPhongAI-macOS`. Trong thư mục có:
+- `VanPhongAI-<phiên bản>-mac-arm64.zip` – app
 - `CAI-DAT-TREN-MAC.command` – script cài
 
 **Bước 2 – Chạy script cài**
 
 1. Mở **Terminal** (nhấn `Cmd + Space`, gõ `Terminal`, Enter).
 2. Gõ `bash ` (có một dấu cách phía sau, **chưa** bấm Enter).
-3. Kéo file **`CAI-DAT-TREN-MAC.command`** từ Finder thả vào cửa sổ Terminal. Dòng lệnh sẽ thành dạng `bash /Users/<tên>/Downloads/mac/CAI-DAT-TREN-MAC.command`.
+3. Kéo file **`CAI-DAT-TREN-MAC.command`** từ Finder thả vào cửa sổ Terminal. Dòng lệnh sẽ thành dạng `bash /Users/<tên>/Downloads/VanPhongAI-macOS/CAI-DAT-TREN-MAC.command`.
 4. Bấm **Enter**.
 
 Script sẽ tự giải nén, chép **VanPhongAI** vào **Applications**, gỡ cờ cách ly của macOS, ký ad-hoc bằng lệnh `codesign` có sẵn trên Mac, rồi mở app. Thấy dòng `✓ Đã cài xong` là xong.
@@ -41,7 +49,7 @@ Lần sau mở app từ **Launchpad** hoặc thư mục **Applications** như b�
 
 **Cài tay (nếu không dùng script)**
 
-1. Bấm đúp file `VanPhongAI-0.9.11-mac-arm64.zip` để giải nén, kéo **`VanPhongAI.app`** vào **Applications**.
+1. Bấm đúp file `VanPhongAI-<phiên bản>-mac-arm64.zip` để giải nén, kéo **`VanPhongAI.app`** vào **Applications**.
 2. Mở Terminal, chạy lần lượt 2 lệnh:
 ```
 xattr -cr /Applications/VanPhongAI.app
@@ -79,19 +87,19 @@ Rồi đăng nhập: `claude auth login`, `codex login`, `agy`.
 
 ### Ubuntu / Linux (máy 64-bit, Ubuntu 22.04 / 24.04 trở lên)
 
-Trong thư mục **`linux`** có 2 file, dùng một trong hai:
+Trong gói `VanPhongAI-<phiên bản>-Ubuntu.zip` có 2 file, dùng một trong hai:
 
 **Cách 1 – gói `.deb` (khuyên dùng)**
 ```
-sudo apt install ./VanPhongAI-0.9.11-linux-amd64.deb
+sudo apt install ./VanPhongAI-<phiên bản>-linux-amd64.deb
 ```
 Cài xong mở **Văn Phòng AI** trong menu ứng dụng (phím Super, gõ "Văn Phòng"), hoặc gõ `vanphong-ai` trong Terminal. Gói tự cài hồ sơ AppArmor để app chạy được trên Ubuntu 24.04 mà không cần tắt sandbox. Gỡ: `sudo apt remove vanphong-ai`.
 
 **Cách 2 – file `.AppImage` (không cần cài, chạy ở đâu cũng được)**
 ```
 sudo apt install libfuse2t64      # Ubuntu 24.04 (Ubuntu 22.04: libfuse2)
-chmod +x VanPhongAI-0.9.11-linux-x86_64.AppImage
-./VanPhongAI-0.9.11-linux-x86_64.AppImage
+chmod +x VanPhongAI-<phiên bản>-linux-x86_64.AppImage
+./VanPhongAI-<phiên bản>-linux-x86_64.AppImage
 ```
 Nếu báo lỗi sandbox (`The SUID sandbox helper binary was found, but is not configured correctly`) thì chạy thêm `--no-sandbox` ở cuối lệnh, hoặc dùng gói `.deb`.
 
@@ -111,7 +119,7 @@ Một key team là dùng được **mọi model trong Combo** admin cấp trên 
 3. Trong cửa sổ đó chọn **1 (Install)** → Enter để lấy key từ Clipboard. Bộ cài tự cài Codex, skill SIMI, trình duyệt SIMI và danh sách model.
 4. Quay lại app, thẻ SIMI chuyển sang **Đã kết nối** (hoặc bấm **Kiểm tra lại**).
 
-**Cập nhật SIMI** (khi admin thêm model, skill, plugin mới): bấm **Cập nhật SIMI** (trong thẻ SIMI ở trang Kết nối, hoặc trong **🧰 Công cụ** của tab Chat). App chạy bộ cài ở chế độ Update ngay bên trong, hiện tiến độ, không cần mở Terminal hay chọn menu. Key đã lưu, không cần nhập lại. Ngoài ra máy đã cài SIMI vẫn tự làm mới skill mỗi 6 giờ.
+**Cập nhật SIMI** (khi admin thêm model, skill, plugin mới): bấm **Cập nhật SIMI** (trong thẻ SIMI ở trang Kết nối, hoặc trong **🧰 Công cụ** của tab Chat). App chạy bộ cài ở chế độ Update ngay bên trong, hiện tiến độ, không cần mở Terminal hay chọn menu. Key đã lưu, không cần nhập lại. Ngoài ra máy đã cài SIMI vẫn tự làm mới skill lúc đăng nhập và mỗi 6 giờ. Trên Windows việc này chạy ẩn hoàn toàn (qua `wscript.exe`, không bật cửa sổ); máy cài từ trước tự chuyển sang chạy ẩn khi mở Văn Phòng AI 0.9.13 trở lên.
 
 ## Cập nhật app (tự động qua SIMI Gateway)
 
@@ -281,26 +289,33 @@ src/codex-server.js  `codex app-server` (JSON-RPC): lượt chat, yêu cầu xin
 src/computer-use.js  nhận biết plugin Computer Use OpenAI (node_repl + @oai/sky trên Windows) và hướng dẫn Codex chọn đúng công cụ
 src/computer/        điều khiển máy tính cho Chat: mcp.js (MCP vp_computer: chụp màn hình, chuột, bàn phím, mở app), VPC.cs (Windows: user32 qua PowerShell)
 src/updater.js       tự cập nhật app qua SIMI Gateway (/install/vanphong/latest.json): tự tải sẵn, kiểm tra SHA-256, "Cập nhật ngay" cài lại theo từng hệ điều hành
-src/lobby-client.js  Sảnh online: nghe SSE /v1/lobby/stream trên Gateway, tự nối lại; gửi trạng thái, tin nhắn, nhân vật, màn chiếu
+src/lobby-client.js  Sảnh online: nghe SSE /v1/lobby/stream trên Gateway, tự nối lại; gửi trạng thái, tin nhắn, ảnh, nhân vật, màn chiếu,
+                     mèo, tương tác, quản trị, hỏi Trợ lý
+src/lobby-images.js  ảnh chat Sảnh: giao thức vpimg:// – tải qua Gateway (kèm key), lưu đệm trên đĩa, tự dọn
+src/simi-task.js     Windows: cho tác vụ "SIMI Auto Update" chạy ẩn (giống HIDDEN_TASK_PS1 trong Gateway)
 src/sim.js           chế độ Giả lập
 src/store.js         cấu hình + API key (mã hóa bằng DPAPI trên Windows, Keychain trên Mac, Secret Service trên Linux)
 src/office3d/        văn phòng 3D (Three.js): world.js (căn phòng), person.js (nhân vật), cat.js (mèo), nav.js (tìm đường), office3d.js (điều khiển),
                      lobby3d.js (Sảnh online + xem trước nhân vật trong Tủ đồ), bar.js (SIMI BAR chill: quầy, ghế, bàn, sàn nhảy)
 src/renderer/        giao diện: app.js (văn phòng, kết nối, đội ngũ, cài đặt), chat.js (tab Chat), lobby.js (tab Sảnh), update.js (cập nhật app), office.js (văn phòng pixel 2D),
+                     admin.js + admin.css (tab Quản trị), npc.js + npc-guides.js (Trợ lý SIMI), img-worker.js (nén ảnh trong luồng riêng),
                      md.js (hiển thị Markdown, có bảng), style.css + chat.css + lobby.css, office3d.bundle.js (bản 3D đã đóng gói), fonts/ (Nunito, OFL)
 test/                orch.test.js (bộ điều phối), ui-office.test.js (giao diện văn phòng), ui-chat.test.js (tab Chat + SIMI),
                      ui-history.test.js (liên thông lịch sử ChatGPT Work), ui-lobby.test.js (Sảnh online với Gateway thật),
-                     ui-tools.test.js (Computer Use, trình duyệt SIMI, hỏi quyền, tự cập nhật), fixtures/fake-mcp.js (MCP giả),
-                     fixtures/mock-gateway.js (gateway giả lập + CODEX_HOME mẫu)
-mac/                 script cài cho Mac chip Apple
+                     ui-lobby-chat / ui-lobby-play / ui-lobby-npc.test.js (ảnh + quản trị / nhảy, mèo, tương tác / Trợ lý),
+                     ui-flicker.test.js (chống chớp), ui-tools.test.js (Computer Use, trình duyệt SIMI, hỏi quyền, tự cập nhật),
+                     fixtures/fake-mcp.js (MCP giả), fixtures/mock-gateway.js (gateway giả lập + CODEX_HOME mẫu), fixtures/lobby-gateway.js (Gateway thật cho test Sảnh)
+.github/workflows/   release.yml: đẩy nhãn v<phiên bản> → test → build 3 hệ điều hành → GitHub Release (xem mục Phát hành bản mới)
+scripts/release.mjs  npm run release -- <phiên bản> "ghi chú": đổi version, commit, gắn nhãn, đẩy lên GitHub
+mac/                 CAI-DAT-TREN-MAC.command – script cài cho Mac chip Apple (đi kèm gói macOS)
 build/               icon + script sau khi cài/gỡ gói .deb (hồ sơ AppArmor cho Ubuntu 24.04)
 ```
 
-Build lại (cần Node.js):
+Phát hành bình thường **không cần build trên máy mình** – chạy `npm.cmd run release -- <phiên bản> "ghi chú"`, GitHub tự build (xem mục *Phát hành bản mới*). Muốn build thử trên máy (cần Node.js 20+; Windows mở PowerShell bằng Run as administrator hoặc bật Developer Mode):
 
 ```
-npm install
-npm run dist        # Windows: ra file .exe (portable + bản cài đặt)
+npm ci
+npm run dist        # Windows: ra dist/VanPhongAI-<phiên bản>-Setup.exe
 npm run dist:mac    # macOS: ra file .zip cho Mac chip Apple (M1–M4)
 npm run dist:linux  # Ubuntu/Linux: ra file .deb + .AppImage (x64)
 ```
@@ -314,6 +329,10 @@ npm run test:office   # giao diện văn phòng – mở app thật bằng Playw
 npm run test:chat     # tab Chat – cần Codex CLI (npm i -g @openai/codex), dùng gateway giả lập, không tốn lượt thật
 npm run test:history  # liên thông lịch sử ChatGPT Work – cũng cần Codex CLI
 npm run test:lobby    # Sảnh online + màn chiếu YouTube + báo bản app mới qua Sảnh – chạy Gateway thật từ ../ltn-memory-gateway/ltn-memory-gateway (hoặc biến GATEWAY_DIR)
+npm run test:lobby-chat  # gửi ảnh, @gọi tên, trả lời, thu hồi, tab Quản trị
+npm run test:lobby-play  # nhảy cùng nhịp, tương tác giữa nhân vật, mèo chung, chế độ nhẹ
+npm run test:npc         # Trợ lý SIMI: tour, chỉ tay từng bước, hỏi đáp bằng tài khoản NPC, admin sửa hướng dẫn
+npm run test:flicker     # chống chớp: không có mặt trùng mặt phẳng, xoay camera không lấp lánh
 npm run test:tools    # điều khiển máy + Computer Use + trình duyệt SIMI + hỏi quyền + tự cập nhật – cần Codex CLI;
                       # trên Linux chạy: xvfb-run -a -s "-screen 0 1600x1000x24" npm run test:tools (cần xdotool, imagemagick, x11-xserver-utils)
 npm run test:computer-setup  # nút "Cài bổ sung Computer Use" (bộ cài giả lập, không cài plugin thật)
