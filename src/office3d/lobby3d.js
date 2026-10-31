@@ -12,6 +12,14 @@ const ROOM = BAR;
 function angLerp(a, b, t) { const d = ((b - a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; return a + d * t; }
 const STATUS_ICON = { idle: '☕', chat: '💬', work: '🏢', image: '🎨', video: '🎬', web: '🔎', doc: '📄', away: '🌙' };
 const ACTION_OF = { '👋': 'wave', '🕺': 'dance', '🎉': 'cheer', '🙌': 'cheer', '☕': 'drink' };
+// sàn nhảy (khớp bar.js): đứng trong đây thì app gợi ý chọn điệu nhảy
+const FLOOR = { x1: -5.1, x2: 1.1, z1: 1.9, z2: 7.1 };
+const BPM = 120;
+const MEET = { hug: 0.5, dance: 0.95, highfive: 0.62, cheers: 0.62, coffee: 0.68 };
+const FX = { highfive: '🙌', hug: '🤗', cheers: '🥂', coffee: '☕', dance: '💃' };
+// quầy Trợ lý SIMI (NPC hướng dẫn): giữa quán, cạnh chỗ mọi người xuất hiện
+const NPC = { x: 3.4, z: 0.9, face: 0.72 };
+const NPC_LOOK = { id: 'npc', name: 'Trợ lý SIMI', shirt: '#0a78f0', pants: '#142c5a', hair: '#2b1d14', hairStyle: 'bob', accessory: 'headphones', accent: '#f5c518', skin: '#f1c9a5' };
 
 // hồ sơ nhân vật (từ Sảnh) → dữ liệu cho Person
 export function avatarToLook(m) {
@@ -101,7 +109,13 @@ class Lobby3D {
     this.nav.blockRect(ROOM.maxX - 0.2, ROOM.minZ, ROOM.maxX, ROOM.maxZ, 0.15);
     this.nav.blockRect(ROOM.minX, ROOM.maxZ - 0.2, ROOM.maxX, ROOM.maxZ, 0.15);
     for (const o of this.world.obstacles) this.nav.blockRect(...o);
+    this.buildNpcDesk();
     this.cat = new Cat(this.scene, this.nav);
+    this.cat.onFx = (emoji) => this.fx(null, emoji);
+    this.setNpc(null);
+    this.skew = 0;              // lệch giờ so với Gateway (để nhảy cùng nhịp, mèo đúng giờ)
+    this.light = false;         // chế độ nhẹ: độ phân giải 1x, không bóng đổ, tối đa 30 khung hình/giây
+    this.capFps = false;
 
     this.raycaster = new THREE.Raycaster(); this.ndc = new THREE.Vector2(); this.tmpV = new THREE.Vector3();
     this.floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -110,7 +124,13 @@ class Lobby3D {
     this.bindInput();
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(root); this.resize();
     this.clock = new THREE.Clock();
-    const loop = () => { if (this.dead) return; this.raf = requestAnimationFrame(loop); if (!this.paused) this.frame(); };
+    // tab Sảnh đang ẩn → không vẽ; chế độ nhẹ → tối đa ~30 khung hình mỗi giây
+    const loop = (ts) => {
+      if (this.dead) return; this.raf = requestAnimationFrame(loop);
+      if (this.paused) return;
+      if ((this.capFps || this.light) && ts - (this.lastTs || 0) < 31) return;
+      this.lastTs = ts; this.frame();
+    };
     loop();
   }
 
@@ -180,6 +200,8 @@ class Lobby3D {
     }
     return best && best.p;
   }
+  pickNpc(clientX, clientY) { return !!this.npc && this.ray(clientX, clientY).intersectObjects([this.npc.person.root, this.npcDesk], true).length > 0; }
+  pickCat(clientX, clientY) { return this.ray(clientX, clientY).intersectObject(this.cat.root, true).length > 0; }
   pickSeat(clientX, clientY) {
     const hit = this.ray(clientX, clientY).intersectObjects(this.world.seatMeshes, false)[0];
     return hit ? this.seats.get(hit.object.userData.seatId) : null;
@@ -210,15 +232,19 @@ class Lobby3D {
       }
       // dò người / ghế dưới chuột tối đa ~12 lần mỗi giây (dò mỗi lần di chuột làm khựng)
       const x = e.clientX, y = e.clientY;
-      const pick = () => { hoverAt = performance.now(); c.style.cursor = this.pickPerson(x, y) || this.pickSeat(x, y) ? 'pointer' : 'crosshair'; };
+      const pick = () => { hoverAt = performance.now(); c.style.cursor = this.pickPerson(x, y) || this.pickNpc(x, y) || this.pickCat(x, y) || this.pickSeat(x, y) ? 'pointer' : 'crosshair'; };
       clearTimeout(hoverTimer);
       if (performance.now() - hoverAt > 80) pick(); else hoverTimer = setTimeout(pick, 90);
     });
     c.addEventListener('pointerup', (e) => {
       if (down && !down.moved) {
         const p = this.pickPerson(e.clientX, e.clientY);
-        const st = !p && this.pickSeat(e.clientX, e.clientY);
-        if (p && !p.me) this.opts.onPersonClick && this.opts.onPersonClick(p.m.id, e.clientX, e.clientY);
+        const npc = !p && this.pickNpc(e.clientX, e.clientY);
+        const cat = !p && !npc && this.pickCat(e.clientX, e.clientY);
+        const st = !p && !cat && !npc && this.pickSeat(e.clientX, e.clientY);
+        if (npc) { this.npcWave(); this.opts.onNpcClick && this.opts.onNpcClick(e.clientX, e.clientY); }
+        else if (cat) this.opts.onCatClick && this.opts.onCatClick(e.clientX, e.clientY);
+        else if (p && !p.me) this.opts.onPersonClick && this.opts.onPersonClick(p.m.id, e.clientX, e.clientY);
         else if (p && p.me) this.opts.onSelfClick && this.opts.onSelfClick(e.clientX, e.clientY);
         else if (st) this.sitSelf(st.id);
         else { const pt = this.pickFloor(e.clientX, e.clientY); if (pt) this.walkSelf(pt.x, pt.z, true); }
@@ -240,7 +266,7 @@ class Lobby3D {
       let p = this.people.get(m.id);
       const look = avatarToLook(m);
       const sig = JSON.stringify(look);
-      if (p && p.sig !== sig) { this.scene.remove(p.person.root); p.person = this.makePerson(look, i, p.pos, p.facing); p.sig = sig; }
+      if (p && p.sig !== sig) { this.scene.remove(p.person.root); p.person = this.makePerson(look, i, p.pos, p.facing); p.person.dance = p.dance || null; p.sig = sig; }
       if (!p) {
         const start = this.freeSpot(m.pos ? m.pos.x : (i % 5) * 1.4 - 3, m.pos ? m.pos.z : 1 + Math.floor(i / 5));
         p = { m, me: !!m.me, pos: start, path: [], facing: Math.random() * 6, sig, speed: 1.9, seat: null, pendingSeat: null };
@@ -251,6 +277,7 @@ class Lobby3D {
         if (st && !this.seatTaken(st.id, m.id)) this.sitNow(p, st);
       }
       p.m = m; p.me = !!m.me;
+      if (!p.me && (m.dance || null) !== (p.dance || null) && !p.meet) this.setDance(m.id, m.dance || null);
       this.updatePlate(p);
     });
     for (const [id, p] of [...this.people]) if (!keep.has(id)) this.removePerson(id, p);
@@ -258,6 +285,7 @@ class Lobby3D {
 
   makePerson(look, i, pos, facing) {
     const person = new Person(look, i);
+    person.root.userData.character = true; // nhân vật luôn chuyển động – bài quét mặt trùng của đồ đạc bỏ qua
     person.root.position.set(pos.x, 0, pos.z); person.root.rotation.y = facing || 0;
     // 30 người x ~20 khối mà đổ bóng thật thì rất nặng → dùng vệt bóng mềm dưới chân
     person.root.traverse((o) => { if (o.isMesh) o.castShadow = false; });
@@ -295,7 +323,8 @@ class Lobby3D {
     const m = p.m; const st = m.status || {};
     p.plate.querySelector('.pl-name').textContent = (p.me ? '⭐ ' : '') + m.name;
     // trạng thái đã kèm biểu tượng (vd. "🎨 Đang tạo ảnh") thì giữ nguyên, chưa có thì thêm
-    p.plate.querySelector('.pl-title').textContent = st.text ? (/^\p{Extended_Pictographic}/u.test(st.text) ? st.text : `${STATUS_ICON[st.activity] || '☕'} ${st.text}`) : `${STATUS_ICON[st.activity] || '☕'} ${m.teamName || ''}`.trim();
+    p.plate.querySelector('.pl-title').textContent = p.dance ? '💃 Đang nhảy' : st.text ? (/^\p{Extended_Pictographic}/u.test(st.text) ? st.text : `${STATUS_ICON[st.activity] || '☕'} ${st.text}`) : `${STATUS_ICON[st.activity] || '☕'} ${m.teamName || ''}`.trim();
+    p.plate.classList.toggle('dancing', !!p.dance);
     p.plate.classList.toggle('busy', !!st.activity && !['idle', 'away'].includes(st.activity));
     p.plate.title = `${m.name} · ${m.teamName || ''}${m.role ? ' · ' + m.role : ''}`;
     p.busy = !!st.activity && !['idle', 'away'].includes(st.activity);
@@ -303,19 +332,21 @@ class Lobby3D {
 
   // ---------------- di chuyển ----------------
   standUp(p) { p.seat = null; p.pendingSeat = null; p.sitting = false; }
+  // đi chỗ khác là thôi nhảy / thôi tương tác
+  stopMoves(p) { p.meet = null; if (p.dance) { p.dance = null; p.person.dance = null; this.updatePlate(p); if (p.me) this.opts.onDance && this.opts.onDance(null, true); } }
   sitNow(p, st) {
     p.path = []; p.pos = { x: st.x, z: st.z }; p.facing = st.face;
     p.seat = st.id; p.pendingSeat = null; p.sitting = true; p.seatH = st.h;
   }
   walk(p, x, z) {
-    this.standUp(p);
+    this.standUp(p); this.stopMoves(p);
     const to = this.freeSpot(x, z);
     p.path = this.nav.find({ x: p.pos.x, z: p.pos.z }, to);
     return to;
   }
   // đi tới lối vào ghế rồi bước vào ngồi
   walkToSeat(p, st) {
-    this.standUp(p);
+    this.standUp(p); this.stopMoves(p);
     p.pendingSeat = st.id;
     p.path = [...this.nav.find({ x: p.pos.x, z: p.pos.z }, this.freeSpot(st.approach.x, st.approach.z)), { x: st.x, z: st.z }];
   }
@@ -349,7 +380,7 @@ class Lobby3D {
 
   // ---------------- lời nói, biểu cảm ----------------
   say(id, text, ms = 5200) {
-    const p = this.people.get(id); if (!p) return;
+    const p = id === 'npc' ? this.npc : this.people.get(id); if (!p) return;
     for (const b of [...this.bubbles]) if (b._p === p) { b.remove(); this.bubbles.delete(b); }
     const b = document.createElement('div');
     b.className = 'bubble3d k-chat'; b.style.zIndex = '5000';
@@ -371,13 +402,122 @@ class Lobby3D {
     setTimeout(() => { this.emotes.delete(e); e.remove(); }, 1700);
   }
 
+  // hiệu ứng nổi trên đầu người (p) hoặc trên đầu mèo (p = null)
+  fx(p, emoji, ms = 1700) {
+    const e = document.createElement('div');
+    e.className = 'emote'; e.textContent = emoji; e._p = p; e._cat = !p;
+    this.layer.appendChild(e); this.emotes.add(e);
+    setTimeout(() => { this.emotes.delete(e); e.remove(); }, ms);
+  }
+
+  // ---------------- NPC Trợ lý SIMI ----------------
+  buildNpcDesk() {
+    const g = new THREE.Group(); g.position.set(NPC.x, 0, NPC.z); g.rotation.y = NPC.face;
+    const m = (c, r = 0.6) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.86, 0.5), m('#142c5a', 0.7)); body.position.set(0, 0.43, 0.32);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.05, 0.62), m('#0a78f0', 0.35)); top.position.set(0, 0.885, 0.32);
+    // biển "Hỏi Trợ lý SIMI" trên mặt trước quầy (cách mặt quầy 1 cm – không trùng mặt phẳng)
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 160;
+    const x = cv.getContext('2d'); x.fillStyle = '#142c5a'; x.fillRect(0, 0, 512, 160);
+    x.fillStyle = '#f5c518'; x.font = 'bold 64px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('❓ HỎI SIMI', 256, 62);
+    x.fillStyle = '#ffffff'; x.font = 'bold 30px sans-serif'; x.fillText('Trợ lý hướng dẫn', 256, 122);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.02, 0.32), new THREE.MeshBasicMaterial({ map: tex })); sign.position.set(0, 0.5, 0.58);
+    for (const o of [body, top]) { o.castShadow = true; o.receiveShadow = true; }
+    g.add(body, top, sign); this.scene.add(g); this.npcDesk = g;
+    // chặn chỗ quầy cho người / mèo không đi xuyên qua
+    const c = Math.cos(NPC.face), s = Math.sin(NPC.face);
+    const pts = [[-0.7, 0], [0.7, 0], [-0.7, 0.65], [0.7, 0.65], [-0.7, -0.6], [0.7, -0.6]].map(([lx, lz]) => [NPC.x + lx * c + lz * s, NPC.z - lx * s + lz * c]);
+    this.nav.blockRect(Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1])), 0.05);
+  }
+
+  // info: { name, avatar } (tài khoản admin chọn) hoặc null → nhân vật mặc định
+  setNpc(info) {
+    const look = { ...NPC_LOOK, ...(info && info.avatar ? info.avatar : {}), id: 'npc' };
+    const sig = JSON.stringify(look);
+    if (!this.npc) {
+      const plate = document.createElement('div'); plate.className = 'plate3d lobby npc';
+      plate.innerHTML = '<span class="npc-q">❓</span><span class="pl-row"><span class="pl-name"></span></span><span class="pl-sub"><span class="pl-title">Bấm để hỏi mình</span></span>';
+      plate.addEventListener('click', (e) => { const r = plate.getBoundingClientRect(); this.npcWave(); this.opts.onNpcClick && this.opts.onNpcClick(r.left + r.width / 2, r.bottom); e.stopPropagation(); });
+      this.layer.append(plate);
+      this.npc = { plate, facing: NPC.face, pos: { x: NPC.x - Math.sin(NPC.face) * 0.12, z: NPC.z - Math.cos(NPC.face) * 0.12 }, m: { id: 'npc' } };
+    }
+    if (this.npc.sig !== sig) {
+      if (this.npc.person) this.scene.remove(this.npc.person.root);
+      this.npc.person = this.makePerson(look, 7, this.npc.pos, this.npc.facing);
+      this.npc.sig = sig;
+    }
+    this.npc.plate.querySelector('.pl-name').textContent = '🤖 ' + (info && info.name ? info.name : 'Trợ lý SIMI');
+  }
+  npcWave() { if (this.npc) this.npc.person.doAction('wave', 1500); }
+  // NPC nói (bong bóng) – dùng chung kiểu bong bóng với người
+  npcSay(text, ms = 5200) { if (this.npc) { this.npc.lastSay = text; this.say('npc', text, ms); } }
+
+  // ---------------- mèo / nhảy / tương tác (Gateway điều khiển) ----------------
+  setSkew(ms) { this.skew = Number(ms) || 0; }
+  setCat(st) { this.cat.command(st, this.skew); }
+  beat() { return (Date.now() + this.skew) / 1000 * BPM / 60; }
+
+  setDance(id, style) {
+    const p = this.people.get(id); if (!p) return;
+    p.dance = style || null; p.person.dance = p.dance;
+    if (style && p.pendingSeat) { p.pendingSeat = null; p.path = []; }
+    this.updatePlate(p);
+  }
+  danceSelf(style) {
+    const p = this.self(); if (!p) return;
+    this.setDance(p.m.id, style);
+    this.opts.onDance && this.opts.onDance(style || null, false);
+  }
+  onFloor(p) { return !!p && p.pos.x > FLOOR.x1 && p.pos.x < FLOOR.x2 && p.pos.z > FLOOR.z1 && p.pos.z < FLOOR.z2; }
+
+  // a đi tới trước mặt b rồi cả hai cùng diễn (đập tay, ôm, cụng ly, mời cà phê, nhảy đôi)
+  interact(ev) {
+    const A = this.people.get(ev.a), B = this.people.get(ev.b); if (!A || !B || A === B) return;
+    if ((ev.kind === 'hug' || ev.kind === 'dance') && B.sitting) this.standUp(B);
+    const ang = Math.atan2(A.pos.x - B.pos.x, A.pos.z - B.pos.z) || 0.6;
+    const d = MEET[ev.kind] || 0.65;
+    const meet = this.freeSpot(B.pos.x + Math.sin(ang) * d, B.pos.z + Math.cos(ang) * d);
+    this.standUp(A);
+    A.path = this.nav.find({ x: A.pos.x, z: A.pos.z }, meet);
+    A.meet = { other: B, kind: ev.kind, style: ev.style, deadline: performance.now() / 1000 + 7 };
+    if (A.me) this.follow = true;
+  }
+
+  startMeet(A, mt) {
+    const B = mt.other;
+    A.path = [];
+    A.facing = Math.atan2(B.pos.x - A.pos.x, B.pos.z - A.pos.z);
+    if (!B.sitting) B.facing = Math.atan2(A.pos.x - B.pos.x, A.pos.z - B.pos.z);
+    const k = mt.kind;
+    if (k === 'coffee') { A.person.doAction('give', 1500); setTimeout(() => { if (this.people.has(B.m.id)) B.person.doAction('drink', 2400); }, 1100); }
+    else if (k === 'dance') { for (const q of [A, B]) { q.dance = mt.style || 'groove'; q.person.dance = q.dance; this.updatePlate(q); } }
+    else for (const q of [A, B]) q.person.doAction(k, k === 'hug' ? 2800 : k === 'cheers' ? 2300 : 1700);
+    this.fx(A, FX[k] || '✨');
+    if (k === 'hug' || k === 'highfive') this.fx(B, FX[k]);
+  }
+
+  // chế độ nhẹ cho máy yếu (Cài đặt hoặc tự bật khi khung hình thấp)
+  setLight(on) {
+    this.light = !!on;
+    const dpr = on ? 1 : Math.min(window.devicePixelRatio || 1, MAX_DPR);
+    this.perf.dpr = dpr; this.renderer.setPixelRatio(dpr);
+    const shadows = !on && !this.perf.noShadow;
+    if (this.renderer.shadowMap.enabled !== shadows) {
+      this.renderer.shadowMap.enabled = shadows;
+      this.scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
+    }
+    this.resize();
+  }
+
   // ---------------- vòng lặp ----------------
   frame() {
     const dt = Math.min(0.05, this.clock.getDelta());
     const t = (this.t = (this.t || 0) + dt);
     const now = performance.now() / 1000;
     for (const fn of this.world.animated) fn(t, dt);
-    this.cat.update(dt, now);
+    const beat = this.beat();
+    this.cat.update(dt, now, { posOf: (id) => { const q = this.people.get(id); return q && q.pos; } });
     this.keyboardMove(dt);
     this.marker.material.opacity = Math.max(0, this.marker.material.opacity - dt * 0.8);
     for (const p of this.people.values()) {
@@ -388,12 +528,15 @@ class Lobby3D {
           p.pos.x = tg.x; p.pos.z = tg.z; p.path.shift();
           if (!p.path.length && p.pendingSeat) { const st = this.seats.get(p.pendingSeat); if (st) this.sitNow(p, st); }
         } else { p.pos.x += dx / d * step; p.pos.z += dz / d * step; }
+        if (p.meet && now > p.meet.deadline) p.path = [];
         if (d > 0.001) p.facing = angLerp(p.facing, Math.atan2(dx, dz), 1 - Math.exp(-dt * 12));
         moving = p.path.length > 0;
       } else if (p.keyMove) {
         moving = true;
       }
+      if (p.meet && !p.path.length) { const mt = p.meet; p.meet = null; this.startMeet(p, mt); }
       if (p.danceUntil && now < p.danceUntil && !moving) p.facing += dt * 5;
+      if (p.dance === 'spin' && !moving && !p.sitting) p.facing += dt * 3.2;
       const seated = !!p.sitting && !moving;
       const rootY = seated ? Math.max(0, (p.seatH || 0.45) - 0.45) : 0;
       p.person.root.position.set(p.pos.x, rootY, p.pos.z);
@@ -401,9 +544,20 @@ class Lobby3D {
       p.person.root.rotation.y = p.facing;
       // đang dùng AI: đứng thì nhìn quanh, ngồi thì gõ phím
       if (p.busy && !moving && !seated && !p.person.action && Math.random() < dt * 0.15) p.person.doAction('look', 1600);
-      p.person.animate(dt, now, { moving, speed: p.speed, seated, typing: seated && p.busy });
+      p.person.animate(dt, now, { moving, speed: p.speed, seated, typing: seated && p.busy && !p.dance, beat });
       p.keyMove = false;
     }
+    if (this.npc) {
+      const q = this.npc; q.person.root.position.set(q.pos.x, 0, q.pos.z); q.person.root.rotation.y = q.facing;
+      q.person.animate(dt, now, { moving: false, speed: 0, seated: false, typing: false, beat });
+      // mình đi ngang qua quầy → NPC vẫy tay chào (mỗi 90 giây tối đa 1 lần)
+      const me2 = this.self();
+      if (me2 && Math.hypot(me2.pos.x - q.pos.x, me2.pos.z - q.pos.z) < 2.3 && (!q.greetAt || now - q.greetAt > 90)) {
+        q.greetAt = now; this.npcWave(); this.npcSay(this.opts.npcGreeting ? this.opts.npcGreeting() : 'Cần giúp gì không? Bấm vào mình nhé 👋');
+      }
+    }
+    const meP = this.self(); const fl = this.onFloor(meP) && !(meP && meP.path.length);
+    if (fl !== this.wasFloor) { this.wasFloor = fl; this.opts.onFloor && this.opts.onFloor(fl); }
     // camera: trượt mượt về góc/độ phóng muốn tới, đi theo nhân vật của mình
     const v = this.view, g = this.goal;
     const kr = 1 - Math.exp(-dt * 10);
@@ -434,9 +588,9 @@ class Lobby3D {
       P.slow++;
       if (P.dpr > 1.01) { P.dpr = Math.max(1, P.dpr - 0.25); this.renderer.setPixelRatio(P.dpr); this.resize(); }
       else if (P.slow >= 3 && this.renderer.shadowMap.enabled) {
-        this.renderer.shadowMap.enabled = false;
+        this.renderer.shadowMap.enabled = false; P.noShadow = true;
         this.scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
-      }
+      } else if (P.slow >= 6 && !this.capFps) { this.capFps = true; this.opts.onSlow && this.opts.onSlow(); } // vẫn chậm: vẽ 30 khung/giây cho êm
     } else P.slow = 0;
   }
 
@@ -454,6 +608,7 @@ class Lobby3D {
     const wx = (fx * Math.cos(az) + fz * Math.sin(az)) / len, wz = (-fx * Math.sin(az) + fz * Math.cos(az)) / len;
     const nx = p.pos.x + wx * 2.4 * dt, nz = p.pos.z + wz * 2.4 * dt;
     p.path = []; if (p.sitting || p.pendingSeat) this.standUp(p);
+    if (p.dance || p.meet) this.stopMoves(p);
     this.follow = true;
     if (this.nav.isFree(nx, nz)) { p.pos.x = nx; p.pos.z = nz; }
     p.facing = angLerp(p.facing, Math.atan2(wx, wz), 1 - Math.exp(-dt * 14));
@@ -465,7 +620,8 @@ class Lobby3D {
   project(v) { const p = v.project(this.cam); return { x: (p.x + 1) / 2 * this.cssW, y: (1 - p.y) / 2 * this.cssH }; }
 
   placeDom() {
-    for (const p of this.people.values()) {
+    const all = this.npc && this.npc.person ? [...this.people.values(), this.npc] : this.people.values();
+    for (const p of all) {
       const h = this.project(p.person.headWorld(this.tmpV).setY(this.tmpV.y + 0.12));
       p.anchor = h;
       if (!p.plateH) p.plateH = p.plate.offsetHeight || 34;
@@ -484,7 +640,11 @@ class Lobby3D {
       b.style.transform = `translate(${x}px, ${a.y - (b._p.plateH || 34) - 8}px) translate(-50%, -100%)`;
       b.style.setProperty('--tail', (a.x - x) + 'px');
     }
-    for (const e of this.emotes) { const a = e._p.anchor; if (a) e.style.transform = `translate(${a.x + 24}px, ${a.y - (e._p.plateH || 34) - 4}px) translate(-50%, -100%)`; }
+    let catA = null;
+    for (const e of this.emotes) {
+      if (e._cat) { catA = catA || this.project(this.cat.headWorld(this.tmpV)); e.style.transform = `translate(${catA.x}px, ${catA.y - 8}px) translate(-50%, -100%)`; continue; }
+      const a = e._p.anchor; if (a) e.style.transform = `translate(${a.x + 24}px, ${a.y - (e._p.plateH || 34) - 4}px) translate(-50%, -100%)`;
+    }
   }
 
   destroy() { this.dead = true; cancelAnimationFrame(this.raf); this.ro.disconnect(); this.renderer.dispose(); this.wrap.remove(); }

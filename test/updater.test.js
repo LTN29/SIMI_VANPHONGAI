@@ -98,3 +98,24 @@ test('mở lại app: file đã tải còn nguyên thì dùng luôn, không tả
     assert.equal(s.st.gets, 1);
   } finally { s.close(); }
 });
+
+test('bản portable cũ (Windows) → cập nhật bằng bản cài Setup khi không còn bản portable', async () => {
+  const plat = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  process.env.PORTABLE_EXECUTABLE_FILE = 'C:\\x\\VanPhongAI.exe';
+  const srv = http.createServer((req, res) => {
+    if (req.url === '/latest.json') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ version: '9.9.9', files: { 'win-setup': { name: 'VanPhongAI-9.9.9-Setup.exe', size: 3, sha256: 'a'.repeat(64) } } })); }
+    res.writeHead(404); res.end();
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  try {
+    const { u } = make(`http://127.0.0.1:${srv.address().port}`, tmp(), { autoDownload: () => false });
+    assert.equal(u.state.kind, 'win-portable');
+    const st = await u.check();
+    assert.equal(st.status, 'available');
+    assert.equal(st.kind, 'win-setup', 'dùng bản cài thay cho bản portable');
+    assert.equal(st.file.name, 'VanPhongAI-9.9.9-Setup.exe');
+  } finally {
+    srv.close(); delete process.env.PORTABLE_EXECUTABLE_FILE; Object.defineProperty(process, 'platform', plat);
+  }
+});

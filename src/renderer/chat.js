@@ -87,6 +87,7 @@
     $('main.layout').classList.toggle('hidden', v !== 'office');
     $('#chatView').classList.toggle('hidden', v !== 'chat');
     const lobbyView = $('#lobbyView'); if (lobbyView) lobbyView.classList.toggle('hidden', v !== 'lobby');
+    if (window.VPAdmin && $('#adminView')) window.VPAdmin.visible(v === 'admin');
     document.body.classList.toggle('in-chat', v !== 'office');
     if (window.__office) window.__office.paused = v !== 'office';
     if (window.VPLobby) window.VPLobby.visible(v === 'lobby');

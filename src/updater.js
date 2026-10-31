@@ -7,7 +7,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 
-const CHECK_EVERY_MS = 60 * 60 * 1000; // ngoài ra Sảnh online báo ngay khi admin đăng bản mới
+const CHECK_EVERY_MS = 10 * 60 * 1000; // chỉ đọc 1 file latest.json nhỏ; ngoài ra Sảnh online báo ngay khi có bản mới
 
 // "0.10.2" > "0.9.9"
 function newer(a, b) {
@@ -88,7 +88,11 @@ class Updater {
       if (res.status === 404) return this._set({ status: 'none', checkedAt: Date.now() });
       if (!res.ok) throw new Error(`Gateway trả lỗi ${res.status}`);
       const j = await res.json();
-      const file = j.files && this.state.kind && j.files[this.state.kind];
+      // bản portable (chạy ngay) không còn phát hành từ 0.9.13 → cập nhật bằng bản cài Setup (cài xong mở bản đã cài)
+      let kind = assetKey();
+      if (kind === 'win-portable' && j.files && !j.files[kind] && j.files['win-setup']) kind = 'win-setup';
+      if (kind !== this.state.kind) this.state.kind = kind;
+      const file = j.files && kind && j.files[kind];
       if (!j.version || !newer(j.version, this.state.current)) return this._set({ status: 'none', latest: j.version || '', checkedAt: Date.now() });
       if (keep && this.state.version === j.version) {
         if (this.state.status === 'available' && this.autoDownload()) setImmediate(() => this.download().catch(() => { /* lần sau */ }));

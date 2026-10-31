@@ -898,6 +898,7 @@
     const notify = el('input', { type: 'checkbox', id: 'chkNotify', checked: c.notify !== false });
     const sound = el('input', { type: 'checkbox', id: 'chkSound', checked: c.sound !== false });
     const lobbyOn = el('input', { type: 'checkbox', id: 'chkLobby', checked: c.lobbyEnabled !== false });
+    const lobbyLight = el('input', { type: 'checkbox', id: 'chkLobbyLight', checked: c.lobbyLight === true });
     const CLIS = [['claude', 'Claude Code'], ['codex', 'Codex'], ['antigravity', 'Antigravity (agy)'], ['gemini', 'Gemini CLI']];
     const cli = {};
     for (const [k] of CLIS) { const v = c.cli[k] || { cmd: k === 'antigravity' ? 'agy' : k, extraArgs: '' }; cli[k] = { cmd: el('input', { value: v.cmd }), extra: el('input', { value: v.extraArgs || '', placeholder: '(không bắt buộc)' }) }; }
@@ -916,6 +917,7 @@
       el('div', { class: 'field row' }, notify, el('label', { for: 'chkNotify', text: 'Thông báo + âm báo khi xong việc' })),
       el('div', { class: 'field row' }, sound, el('label', { for: 'chkSound', text: 'Âm thanh dễ thương khi bấm, tương tác, vuốt mèo' })),
       el('div', { class: 'field row' }, lobbyOn, el('label', { for: 'chkLobby', text: 'Vào Sảnh online khi mở app (đồng nghiệp thấy bạn đang dùng AI, nhắn tin được)' })),
+      el('div', { class: 'field row' }, lobbyLight, el('label', { for: 'chkLobbyLight', text: 'Chế độ nhẹ cho Sảnh 3D (máy yếu / pin): độ nét vừa đủ, tắt bóng đổ, 30 khung hình/giây – máy chậm thì app cũng tự giảm' })),
       el('div', { class: 'field row' }, pcOn, el('label', { for: 'chkPc', text: 'Cho AI trong tab Chat điều khiển chuột & bàn phím (luôn hỏi bạn cho phép trước)' })),
       el('div', { class: 'field row' }, pcMin, el('label', { for: 'chkPcMin', text: 'Thu nhỏ Văn Phòng AI khi AI đang điều khiển máy' })),
       upd ? el('div', { class: 'section-title', text: 'Cập nhật' }) : null, upd ? upd.node : null,
@@ -933,6 +935,8 @@
       c.notify = notify.checked; c.sound = sound.checked;
       if ((c.lobbyEnabled !== false) !== lobbyOn.checked) window.vp.lobby.connect(lobbyOn.checked);
       c.lobbyEnabled = lobbyOn.checked;
+      c.lobbyLight = lobbyLight.checked;
+      if (window.VPLobby && window.VPLobby.setLight) window.VPLobby.setLight(c.lobbyLight);
       for (const [k] of CLIS) c.cli[k] = { cmd: cli[k].cmd.value.trim() || (k === 'antigravity' ? 'agy' : k), extraArgs: cli[k].extra.value.trim() };
       c.ollamaUrl = ollama.value.trim() || 'http://127.0.0.1:11434';
       c.chatEngine = engine.value;
@@ -1121,7 +1125,7 @@
     // tiện ích dùng chung cho tab Chat (chat.js)
     window.VP = { el, $, icon, toast, avatar, store, S, sfx, cleanErr, agentById, connected, openAccounts, refreshAccounts, openModal, closeModal };
     if (window.VPUpdate) window.VPUpdate.init(window.VP).catch((e) => console.warn('cập nhật', e));
-    if (window.VPChat) window.VPChat.init(window.VP).then(() => window.VPLobby && window.VPLobby.init(window.VP)).catch((e) => console.warn('chat/sảnh', e));
+    if (window.VPChat) window.VPChat.init(window.VP).then(() => { if (window.VPAdmin) window.VPAdmin.init(window.VP); }).then(() => window.VPLobby && window.VPLobby.init(window.VP)).catch((e) => console.warn('chat/sảnh', e));
   }
   init().catch((e) => { document.body.innerHTML = `<pre style="padding:20px;color:#ffb3b3">Lỗi khởi động: ${String(e && e.stack || e)}</pre>`; });
 })();

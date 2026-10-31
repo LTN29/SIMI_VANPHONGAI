@@ -27,7 +27,7 @@
 .lb-toast { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 7; pointer-events: none; }
 .lb-tt { background: var(--panel); border: 1.5px solid var(--line2); border-radius: 999px; padding: 6px 14px; font-weight: 800; font-size: 12.5px; box-shadow: var(--shadow); animation: bounceIn .3s var(--spring); transition: opacity .4s, transform .4s; }
 .lb-tt.out { opacity: 0; transform: translateY(-8px); }
-.lb-overlay { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px); z-index: 8; }
+.lb-overlay { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 70%, transparent); z-index: 8; }
 .lb-card { background: var(--panel); border: 1.5px solid var(--line2); border-radius: 22px; padding: 24px 28px; max-width: 420px; text-align: center; box-shadow: var(--shadow); animation: pop .3s ease-out; }
 .lb-card h3 { margin: 6px 0; font-size: 19px; font-weight: 900; } .lb-card p { color: var(--muted); margin: 0 0 14px; }
 .spin.big { width: 30px; height: 30px; border-width: 3px; display: inline-block; }
@@ -65,9 +65,12 @@
 .lb-msg.mine { flex-direction: row-reverse; }
 .lb-msg.mine .lb-w { flex-direction: row-reverse; }
 .lb-msg.mine .lb-t { background: linear-gradient(180deg, var(--accent2), var(--accent)); color: #fff; border: 0; border-radius: 14px 4px 14px 14px; }
-.lb-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
-.lb-input input { flex: 1; border: 1.5px solid var(--line2); background: var(--input); border-radius: 12px; padding: 9px 12px; outline: none; }
-.lb-input input:focus { border-color: var(--accent2); }
+.lb-input { display: flex; gap: 6px; padding: 10px; align-items: flex-end; }
+.lb-input textarea { flex: 1; resize: none; border: 1.5px solid var(--line2); background: var(--input); color: var(--text); border-radius: 12px; padding: 9px 12px; outline: none; font: inherit; font-size: 13.5px; line-height: 1.4; max-height: 120px; min-height: 40px; }
+.lb-input textarea:focus { border-color: var(--accent2); }
+.lb-input textarea:disabled { opacity: .6; }
+.lb-attach { flex: none; width: 40px; height: 40px; border-radius: 12px; border: 1.5px solid var(--line2); background: var(--panel2); font-size: 18px; cursor: pointer; transition: .15s var(--spring); }
+.lb-attach:hover { border-color: var(--accent2); transform: translateY(-1px); }
 .lb-pop .lb-pop-st { margin: 10px 0; font-size: 12.5px; font-weight: 800; color: var(--accent); }
 
 /* Tủ đồ */
@@ -105,7 +108,8 @@
 .lb-ideas { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; width: 100%; max-width: 280px; }
 .lb-idea { border: 1.5px solid var(--line2); background: var(--panel2); border-radius: 12px; padding: 8px 12px; font-weight: 800; font-size: 12.5px; color: var(--text); cursor: pointer; text-align: left; transition: .15s var(--spring); }
 .lb-idea:hover { border-color: var(--accent2); background: var(--hover); transform: translateX(3px); }
-.lb-me, .lb-top .btn, .lb-conn, .lb-emotes { background: color-mix(in srgb, var(--panel) 86%, transparent); backdrop-filter: blur(10px) saturate(1.3); -webkit-backdrop-filter: blur(10px) saturate(1.3); }
+/* không làm mờ nền (backdrop-filter) trên cảnh 3D: rất tốn GPU vì phải tính lại mỗi khung hình */
+.lb-me, .lb-top .btn, .lb-conn, .lb-emotes { background: color-mix(in srgb, var(--panel) 95%, transparent); }
 .lb-top .btn { height: 36px; border-radius: 12px; }
 .lb-conn { height: 32px; display: inline-flex; align-items: center; }
 .lb-emotes { padding: 6px 8px; gap: 2px; }
@@ -153,3 +157,145 @@
 .lb-hiddenbar { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 12px; max-width: calc(100% - 24px);
   background: var(--panel); border: 1.5px solid #f2b45a; border-radius: 14px; padding: 8px 10px 8px 14px; box-shadow: var(--shadow); font-weight: 700; font-size: 13px; }
 .lb-hiddenbar span { min-width: 0; }
+
+
+/* ---------- chat Sảnh: ảnh, @tag, trả lời, thu hồi (0.9.13) ---------- */
+.lb-chat { position: relative; }
+.lb-chat.drop::after { content: 'Thả ảnh vào đây để gửi'; position: absolute; inset: 8px; border: 2px dashed var(--accent2); border-radius: 16px; background: color-mix(in srgb, var(--panel) 90%, transparent); display: grid; place-items: center; font-weight: 900; color: var(--accent); z-index: 4; pointer-events: none; }
+.lb-compose { position: relative; border-top: 1px solid var(--line); flex: none; }
+.lb-muted { margin: 8px 10px 0; padding: 7px 10px; border-radius: 10px; background: #fff3e0; color: #9a5a00; font-weight: 800; font-size: 12.5px; }
+.lb-replybar { display: flex; align-items: center; gap: 6px; margin: 8px 10px 0; padding: 6px 6px 6px 10px; border-left: 3px solid var(--accent2); background: var(--panel2); border-radius: 8px; }
+.lb-replybar .grow { min-width: 0; display: flex; flex-direction: column; }
+.lb-replybar b { font-size: 12px; color: var(--accent); } .lb-replybar small { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-replybar .lc-ic, .lb-pin .lc-ic, .lb-announce .lc-ic { border: 0; background: none; width: 28px; height: 28px; border-radius: 8px; cursor: pointer; color: var(--muted); }
+.lb-tray { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px 10px 0; }
+.lb-tr { position: relative; width: 64px; height: 64px; border-radius: 10px; overflow: hidden; background: var(--panel2); border: 1.5px solid var(--line); display: grid; place-items: center; }
+.lb-tr img { width: 100%; height: 100%; object-fit: cover; }
+.lb-tr .x { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; cursor: pointer; }
+.lb-tr.busy { opacity: .7; }
+.gif { position: absolute; left: 4px; bottom: 4px; font-style: normal; font-size: 9.5px; font-weight: 900; background: rgba(0,0,0,.6); color: #fff; border-radius: 4px; padding: 0 4px; }
+.lb-mpop { position: absolute; left: 10px; right: 10px; bottom: calc(100% - 4px); background: var(--panel); border: 1.5px solid var(--line2); border-radius: 14px; box-shadow: var(--shadow); padding: 5px; z-index: 5; max-height: 280px; overflow: auto; }
+.lb-mi { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; border-radius: 9px; padding: 6px 8px; cursor: pointer; text-align: left; color: var(--text); }
+.lb-mi .avimg { border-radius: 7px; } .lb-mi b { font-size: 13px; } .lb-mi small { margin-left: auto; color: var(--ok); font-size: 11px; font-weight: 800; }
+.lb-mi.on, .lb-mi:hover { background: var(--accentSoft); }
+.lb-mall { width: 22px; text-align: center; }
+.lb-newmsg { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 4; border: 0; border-radius: 999px; padding: 6px 14px; background: var(--accent); color: #fff; font-weight: 800; font-size: 12px; box-shadow: var(--shadow); cursor: pointer; }
+.lb-adm { font-size: 11px; margin-left: 4px; }
+.lb-msg { position: relative; }
+.lb-msg .lb-b { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.lb-msg.mine .lb-b { align-items: flex-end; }
+.lb-msg.tagged .lb-t { box-shadow: 0 0 0 2px #f5c518; }
+.lb-msg.flash .lb-b { animation: lbFlash 1.4s ease-out; }
+@keyframes lbFlash { 0%, 30% { background: var(--accentSoft); border-radius: 12px; } 100% { background: transparent; } }
+.lb-tag { font-weight: 800; color: var(--accent); }
+.lb-tag.me { background: #fff1b8; color: #7a5200; border-radius: 4px; padding: 0 2px; }
+.lb-msg.mine .lb-tag { color: #fff; text-decoration: underline; }
+.lb-link { color: inherit; text-decoration: underline; word-break: break-all; }
+.lb-quote { display: flex; flex-direction: column; align-items: flex-start; max-width: 100%; border: 0; border-left: 3px solid var(--accent2); background: var(--panel2); border-radius: 6px; padding: 3px 8px; cursor: pointer; text-align: left; color: var(--text); }
+.lb-quote b { font-size: 11.5px; color: var(--accent); } .lb-quote span { font-size: 12px; color: var(--muted); max-width: 230px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-imgs { display: grid; gap: 3px; width: 236px; border-radius: 12px; overflow: hidden; }
+.lb-imgs.n1 { grid-template-columns: 1fr; } .lb-imgs.n2, .lb-imgs.n4 { grid-template-columns: 1fr 1fr; } .lb-imgs.n3 { grid-template-columns: 1fr 1fr 1fr; }
+.lb-imgs:not(.n1) .lb-img { aspect-ratio: 1 !important; }
+.lb-img { position: relative; display: block; width: 100%; max-height: 300px; padding: 0; border: 0; background: var(--panel3); cursor: zoom-in; overflow: hidden; }
+.lb-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lb-img.gone::after { content: 'Ảnh đã bị xoá'; position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; color: var(--muted); font-weight: 800; }
+.lb-acts { position: absolute; top: -6px; right: 4px; display: none; gap: 2px; background: var(--panel); border: 1.5px solid var(--line2); border-radius: 9px; padding: 2px; box-shadow: var(--shadow); z-index: 2; }
+.lb-msg.mine .lb-acts { right: auto; left: 4px; }
+.lb-msg:hover .lb-acts, .lb-acts:focus-within { display: flex; }
+.lb-acts button { border: 0; background: none; min-width: 26px; height: 24px; border-radius: 7px; cursor: pointer; font-size: 13px; color: var(--muted); font-weight: 800; }
+.lb-acts button:hover { background: var(--hover); color: var(--text); }
+.lb-acts .del.armed { background: var(--red); color: #fff; padding: 0 8px; }
+.lb-viewer { position: fixed; inset: 0; z-index: 9999; background: rgba(10, 14, 24, .86); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; animation: pop .15s ease-out; }
+.lb-viewer img { max-width: 100%; max-height: calc(100% - 60px); object-fit: contain; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,.4); }
+.lb-viewer .lv-bar { display: flex; gap: 8px; }
+.lb-pin { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 10px; width: min(560px, calc(100% - 24px)); background: var(--panel); border: 1.5px solid #f5c518; border-radius: 14px; padding: 7px 8px 7px 12px; box-shadow: var(--shadow); }
+.lb-pin .grow, .lb-announce .grow { min-width: 0; display: flex; flex-direction: column; }
+.lb-pin b { font-size: 13px; } .lb-pin small { color: var(--muted); font-size: 11px; font-weight: 700; }
+.lb-announce { position: fixed; right: 20px; top: 76px; z-index: 9000; display: flex; gap: 10px; align-items: flex-start; width: 340px; background: var(--panel); border: 1.5px solid var(--accent2); border-radius: 16px; padding: 12px 8px 12px 14px; box-shadow: var(--shadow); animation: bounceIn .3s var(--spring); transition: opacity .5s, transform .5s; }
+.lb-announce.out { opacity: 0; transform: translateY(-8px); }
+.lb-announce .ic, .lb-pin .ic { font-size: 20px; }
+.lb-announce b { font-size: 12px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; } .lb-announce small { color: var(--muted); font-weight: 700; }
+.lb-room .badge.at { background: #f59e0b; }
+
+
+/* ---------- 0.9.14: nhảy, tương tác, mèo ---------- */
+.lb-emotes .sep { width: 1px; align-self: stretch; margin: 6px 4px; background: var(--line2); }
+.lb-emotes .lb-dancebtn.on { background: var(--accentSoft); box-shadow: inset 0 0 0 2px var(--accent2); }
+.lb-dancepick { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: center; max-width: calc(100% - 24px);
+  background: var(--panel); border: 1.5px solid var(--line2); border-radius: 16px; padding: 7px 8px 7px 12px; box-shadow: var(--shadow); animation: pop .18s ease-out; }
+.lb-dancepick small { font-weight: 800; color: var(--muted); margin-right: 4px; flex-basis: 100%; text-align: center; }
+.lb-dancepick .dz { display: inline-flex; align-items: center; gap: 4px; border: 1.5px solid var(--line2); background: var(--panel2); border-radius: 999px; padding: 4px 10px; font-weight: 800; font-size: 12.5px; cursor: pointer; color: var(--text); transition: transform .12s; }
+.lb-dancepick .dz:hover { transform: translateY(-2px); border-color: var(--accent2); }
+.lb-dancepick .dz.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.lb-dancepick .dz.stop { border-color: var(--red); color: var(--red); }
+.lb-dancepick .lc-ic { border: 0; background: none; width: 26px; height: 26px; border-radius: 8px; cursor: pointer; color: var(--muted); }
+.lb-invite { position: absolute; left: 50%; top: 116px; transform: translateX(-50%); z-index: 8; display: flex; align-items: center; gap: 10px; width: min(440px, calc(100% - 24px)); overflow: hidden;
+  background: var(--panel); border: 2px solid #ff7aa8; border-radius: 16px; padding: 10px 12px; box-shadow: var(--shadow); animation: bounceIn .3s var(--spring); }
+.lb-invite .ic { font-size: 26px; }
+.lb-invite .grow { min-width: 0; display: flex; flex-direction: column; }
+.lb-invite b { font-size: 13.5px; } .lb-invite small { color: var(--muted); font-weight: 700; }
+.lb-invite .bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: #ff7aa8; transform-origin: left; animation: lbShrink linear forwards; }
+@keyframes lbShrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+.lb-pop.cat .cat-ic { width: 48px; height: 48px; display: grid; place-items: center; font-size: 30px; background: #fff1e0; border-radius: 14px; }
+.lb-pop.cat .igrid { grid-template-columns: repeat(2, 1fr); }
+.plate3d.lobby.dancing .pl-title { color: #d63384; }
+.lb-person .avimg { box-shadow: 0 0 0 2px var(--panel); }
+.lb-person { position: relative; }
+.lb-person::after { content: ''; position: absolute; left: 30px; top: 30px; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--panel); }
+
+/* ---------- 0.9.15: NPC Trợ lý SIMI ---------- */
+.plate3d.lobby.npc { border-color: #f5c518; background: #fffbea; }
+.plate3d.lobby.npc .pl-title { color: #8a6400; }
+.plate3d .npc-q { position: absolute; left: 50%; top: -26px; transform: translateX(-50%); font-size: 18px; animation: npcBob 1.6s ease-in-out infinite; pointer-events: none; }
+@keyframes npcBob { 0%, 100% { margin-top: 0; } 50% { margin-top: -5px; } }
+.lb-npc { position: absolute; top: 62px; right: 12px; z-index: 7; width: min(380px, calc(100% - 24px)); max-height: calc(100% - 210px); /* chừa chỗ thanh biểu cảm / thanh nhắc ở đáy */ display: flex; flex-direction: column;
+  background: var(--panel); border: 1.5px solid var(--line2); border-radius: 18px; box-shadow: var(--shadow); animation: pop .2s ease-out; overflow: hidden; }
+.np-h { display: flex; align-items: center; gap: 10px; padding: 12px 10px 8px 14px; }
+.np-h .np-av { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 24px; background: #e6f1ff; flex: none; }
+.np-h .grow { min-width: 0; display: flex; flex-direction: column; }
+.np-h b { font-size: 15px; font-weight: 900; } .np-h small { color: var(--muted); font-weight: 700; font-size: 12px; }
+.lb-npc .lc-ic, .npc-coach .lc-ic { border: 0; background: none; width: 30px; height: 30px; border-radius: 9px; cursor: pointer; color: var(--muted); font-size: 15px; }
+.np-tabs { display: flex; gap: 4px; padding: 0 10px 8px; border-bottom: 1px solid var(--line); }
+.np-tab { flex: 1; border: 0; background: var(--panel2); border-radius: 10px; padding: 7px 4px; font-weight: 800; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.np-tab.on { background: var(--accentSoft); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--accent2); }
+.np-body { overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 7px; min-height: 0; }
+.np-welcome { background: linear-gradient(135deg, #e6f1ff, #fff6dc); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.np-welcome small { color: var(--muted); font-weight: 700; }
+.np-row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.np-guide { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 1.5px solid var(--line); background: var(--panel2); border-radius: 13px; padding: 9px 10px; cursor: pointer; color: var(--text); transition: transform .12s; }
+.np-guide:hover { border-color: var(--accent2); transform: translateX(3px); }
+.np-guide .ic { font-size: 20px; width: 26px; text-align: center; }
+.np-guide .grow { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.np-guide b { font-size: 13px; } .np-guide small { color: var(--muted); font-weight: 700; font-size: 11.5px; }
+.np-guide .go { font-size: 20px; color: var(--muted); }
+.np-tip { border: 1.5px solid var(--line); border-radius: 13px; padding: 9px 11px; display: flex; flex-direction: column; gap: 5px; }
+.np-tip b { font-size: 13px; }
+.np-tip .bad, .np-tip .good { display: flex; gap: 6px; font-size: 12.5px; line-height: 1.4; border-radius: 9px; padding: 5px 8px; }
+.np-tip i { font-style: normal; font-weight: 900; font-size: 10.5px; white-space: nowrap; text-transform: uppercase; padding-top: 2px; }
+.np-tip .bad { background: #fff0f0; color: #8a2b2b; } .np-tip .good { background: #eafaf1; color: #145c34; }
+.np-chat { display: flex; flex-direction: column; gap: 6px; min-height: 120px; max-height: 340px; overflow: auto; }
+.np-msg { max-width: 90%; border-radius: 13px; padding: 7px 10px; font-size: 13px; line-height: 1.45; }
+.np-msg.bot { align-self: flex-start; background: var(--panel2); border: 1.5px solid var(--line); }
+.np-msg.user { align-self: flex-end; background: var(--accent); color: #fff; }
+.np-msg.err { border-color: #f2b45a; }
+.np-msg .md p { margin: 0 0 6px; } .np-msg .md p:last-child { margin: 0; } .np-msg .md ol, .np-msg .md ul { margin: 2px 0; padding-left: 20px; }
+.np-msg.typing { display: flex; gap: 4px; padding: 10px 12px; }
+.np-msg.typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: npcDot 1s infinite; }
+.np-msg.typing i:nth-child(2) { animation-delay: .15s; } .np-msg.typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes npcDot { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+.np-sugg { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.np-sugg button { text-align: left; border: 1.5px solid var(--line2); background: var(--panel); border-radius: 10px; padding: 6px 9px; font-weight: 700; font-size: 12px; cursor: pointer; color: var(--text); }
+.np-sugg button:hover { border-color: var(--accent2); }
+.np-input { display: flex; gap: 6px; align-items: flex-end; }
+.np-input textarea { flex: 1; resize: none; border: 1.5px solid var(--line2); border-radius: 12px; padding: 8px 10px; background: var(--input); color: var(--text); font: inherit; font-size: 13px; }
+.np-input textarea:focus { outline: none; border-color: var(--accent2); }
+.npc-coach { position: fixed; left: 20px; bottom: 20px; z-index: 9500; width: 340px; background: var(--panel); border: 2px solid #f5c518; border-radius: 18px; padding: 10px 12px 12px; box-shadow: 0 12px 40px rgba(10, 30, 70, .25); animation: bounceIn .3s var(--spring); }
+.npc-coach .nc-h { display: flex; align-items: center; gap: 6px; }
+.npc-coach .nc-h b { font-size: 13px; } .npc-coach .nc-h small { color: var(--muted); font-weight: 800; font-size: 11.5px; }
+.npc-coach p { margin: 8px 2px 10px; font-size: 13.5px; line-height: 1.5; }
+.npc-coach .nc-dots { display: flex; gap: 4px; margin-bottom: 10px; }
+.npc-coach .nc-dots i { flex: 1; height: 4px; border-radius: 3px; background: var(--line); }
+.npc-coach .nc-dots i.done { background: var(--accent2); } .npc-coach .nc-dots i.on { background: #f5c518; }
+.npc-coach .nc-row { display: flex; gap: 6px; align-items: center; }
+.npc-spot { position: fixed; z-index: 9400; pointer-events: none; border: 3px solid #f5c518; border-radius: 14px; box-shadow: 0 0 0 4000px rgba(10, 20, 40, .18); animation: npcSpot 1.2s ease-in-out infinite; transition: left .2s, top .2s, width .2s, height .2s; }
+@keyframes npcSpot { 0%, 100% { outline: 0 solid rgba(245, 197, 24, .5); } 50% { outline: 8px solid rgba(245, 197, 24, 0); } }

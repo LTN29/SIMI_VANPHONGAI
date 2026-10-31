@@ -1,4 +1,5 @@
-// Nhân vật low-poly có khớp: đi, ngồi, gõ phím, nói, uống nước, vươn vai, nhìn quanh.
+// Nhân vật low-poly có khớp: đi, ngồi, gõ phím, nói, uống nước, vươn vai, nhìn quanh, nhảy (6 điệu theo nhịp chung),
+// đập tay, ôm, cụng ly, mời cà phê. Toàn bộ là chuyển động bằng code – không tải thêm mô hình nào.
 import * as THREE from 'three';
 
 export const SKINS = ['#f1c9a5', '#e2ae84', '#f6d7bd', '#c98e62', '#ebbf98', '#d9a074'];
@@ -24,7 +25,8 @@ export class Person {
     this.phase = Math.random() * 10;
     this.blinkAt = performance.now() / 1000 + 1 + Math.random() * 3;
     this.talkUntil = 0;
-    this.action = null;      // 'stretch' | 'drink' | 'look' | 'place' | null
+    this.action = null;      // 'stretch' | 'drink' | 'look' | 'place' | 'highfive' | 'hug' | 'cheers' | 'give' | …
+    this.dance = null;       // điệu nhảy liên tục: groove | disco | robot | shuffle | spin | hands
     this.actionUntil = 0;
     this.build(agent);
   }
@@ -163,7 +165,8 @@ export class Person {
   doAction(name, ms) { this.action = name; this.actionUntil = performance.now() / 1000 + ms / 1000; }
 
   // moving: tốc độ hiện tại (m/s); seated, typing: trạng thái ngồi/gõ
-  animate(dt, t, { moving, speed, seated, typing }) {
+  // beat: nhịp chung (giây × số nhịp/giây, theo giờ Gateway) – ai nhảy cũng khớp nhịp với nhau
+  animate(dt, t, { moving, speed, seated, typing, beat }) {
     const p = this.pose;
     const T = { legL: 0, legR: 0, armLx: 0, armRx: 0, armLz: 0.1, armRz: -0.1, headY: 0, headX: 0, lean: 0, lift: 0 };
     if (this.action && t > this.actionUntil) this.action = null;
@@ -211,7 +214,21 @@ export class Person {
       if (!seated) T.lift = Math.abs(Math.sin(t * 7)) * 0.16;
     } else if (this.action === 'place') {
       T.armLx = -1.2; T.armRx = -1.2; T.lean = 0.25; T.headX = 0.25;
+    } else if (this.action === 'highfive') {
+      // giơ tay lên chạm tay người đối diện, nảy nhẹ lúc chạm
+      const left = this.actionUntil - t;
+      T.armRx = -2.55; T.armRz = -0.15; T.headX = -0.12;
+      if (left < 1.0 && left > 0.7) { T.armRx = -2.2; if (!seated) T.lift = 0.08; }
+    } else if (this.action === 'hug') {
+      T.armLx = -1.35; T.armRx = -1.35; T.armLz = -0.55; T.armRz = 0.55; T.lean = 0.16; T.headY = 0.25;
+      if (!seated) T.lift = Math.sin(t * 3) * 0.015;
+    } else if (this.action === 'cheers') {
+      const left = this.actionUntil - t;
+      T.armRx = left < 1.3 && left > 0.9 ? -1.95 : -1.55; T.armRz = 0.05; T.headX = -0.05;
+    } else if (this.action === 'give') {
+      T.armRx = -1.35; T.armRz = 0.12; T.lean = 0.08; T.headX = 0.1;
     }
+    if (this.dance && !moving && !this.action) this.dancePose(T, beat === undefined ? t * 2 : beat, seated);
     const talking = t < this.talkUntil;
     if (talking && !seated && !moving && !this.action) {
       T.armRx = -0.55 + Math.sin(t * 5.5) * 0.35; T.armRz = -0.25;
@@ -219,7 +236,7 @@ export class Person {
     } else if (talking) {
       T.headX += Math.sin(t * 4) * 0.06;
     }
-    this.cup.visible = this.action === 'drink';
+    this.cup.visible = this.action === 'drink' || this.action === 'cheers' || this.action === 'give';
     this.paper.visible = this.action === 'place' || this.carrying === true;
     if (this.carrying && !moving && !this.action) { T.armLx = -0.9; }
     else if (this.carrying && moving) { T.armLx = -0.9; }
@@ -239,6 +256,49 @@ export class Person {
     for (const e of this.eyes) e.scale.y = eyeY;
     // miệng khi nói
     this.mouth.scale.set(talking ? 0.8 : 1, talking ? 1 + Math.abs(Math.sin(t * 17)) * 2.6 : 1, 1);
+  }
+
+  // 6 điệu nhảy; b = số nhịp đã qua (chung cho cả Sảnh) → mọi người nhún cùng lúc
+  dancePose(T, b, seated) {
+    const B = b * Math.PI; // nửa vòng mỗi nhịp
+    const bounce = Math.abs(Math.sin(B));
+    switch (this.dance) {
+      case 'disco': {
+        const up = Math.sin(B / 2) > 0;
+        T.armRx = up ? -2.75 : -0.5; T.armRz = up ? -0.55 : -0.2; T.armLx = -0.25; T.armLz = 0.95;
+        T.headY = up ? 0.3 : -0.1; T.headX = up ? -0.2 : 0.05;
+        if (!seated) { T.lift = bounce * 0.05; T.legL = Math.sin(B) * 0.22; T.legR = -Math.sin(B) * 0.08; }
+        break;
+      }
+      case 'robot': {
+        const q = Math.sin(B) > 0 ? 1 : -1; const q2 = Math.sin(B / 2) > 0 ? 1 : -1;
+        T.armLx = -1.45 - q * 0.45; T.armRx = -1.45 + q * 0.45; T.armLz = 0.15; T.armRz = -0.15;
+        T.headY = q2 * 0.4; T.headX = 0; T.lean = 0;
+        if (!seated) { T.lift = q > 0 ? 0.02 : 0; T.legL = q > 0 ? 0.15 : 0; T.legR = q < 0 ? 0.15 : 0; }
+        break;
+      }
+      case 'shuffle': {
+        const w = Math.sin(B * 2);
+        T.armLx = w * 0.7; T.armRx = -w * 0.7; T.armLz = 0.25; T.armRz = -0.25; T.lean = 0.08;
+        T.headY = Math.sin(B) * 0.15;
+        if (!seated) { T.legL = w * 0.55; T.legR = -w * 0.55; T.lift = Math.abs(w) * 0.07; }
+        break;
+      }
+      case 'spin':
+        T.armLx = -0.15; T.armRx = -0.15; T.armLz = 1.35; T.armRz = -1.35; T.headX = -0.1;
+        if (!seated) T.lift = bounce * 0.06;
+        break;
+      case 'hands':
+        T.armLx = -2.9 + Math.sin(B) * 0.25; T.armRx = -2.9 - Math.sin(B) * 0.25; T.armLz = 0.45 + Math.sin(B) * 0.2; T.armRz = -0.45 + Math.sin(B) * 0.2; T.headX = -0.22;
+        if (!seated) T.lift = bounce * 0.13;
+        break;
+      default: { // groove
+        const w = Math.sin(B);
+        T.armLx = -1.6 + w * 1.0; T.armRx = -1.6 - w * 1.0; T.armLz = 0.5; T.armRz = -0.5;
+        T.headY = Math.sin(B / 2) * 0.3;
+        if (!seated) { T.lift = bounce * 0.09; T.legL = w * 0.3; T.legR = -w * 0.3; }
+      }
+    }
   }
 
   headWorld(target) {

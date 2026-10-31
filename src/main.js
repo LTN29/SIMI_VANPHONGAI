@@ -1,5 +1,5 @@
 // Tiến trình chính của Electron: cửa sổ, hàng đợi việc cho văn phòng, chat, các lệnh IPC cho giao diện.
-const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage, Menu, Notification, powerMonitor, systemPreferences } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage, Menu, Notification, powerMonitor, systemPreferences, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -12,11 +12,15 @@ const { ChatEngine } = require('./chat');
 const { CodexAppServer } = require('./codex-server');
 const { Updater, newer } = require('./updater');
 const { LobbyClient } = require('./lobby-client');
+const { ImageCache, ID: IMG_ID } = require('./lobby-images');
+const { hideSimiTask } = require('./simi-task');
 const { refreshPath } = require('./sys');
 
 // test tự động dùng thư mục dữ liệu riêng để không đụng dữ liệu thật
 if (process.env.VPAI_USER_DATA) app.setPath('userData', process.env.VPAI_USER_DATA);
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
+// ảnh chat Sảnh: vpimg://img/<id> – phải đăng ký trước khi app sẵn sàng
+protocol.registerSchemesAsPrivileged([{ scheme: 'vpimg', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
 const ICON = path.join(__dirname, 'renderer', 'icon.png');
 const MODEL_CACHE_MS = 10 * 60 * 1000;
@@ -31,6 +35,7 @@ let updater = null;       // tự cập nhật app qua SIMI Gateway
 let notifiedUpdate = '';  // phiên bản đã báo
 let simiUpdating = null;  // cập nhật SIMI đang chạy
 let lobby = null;         // Sảnh online trên SIMI Gateway
+let lobbyImages = null;   // bộ đệm ảnh chat Sảnh
 const queue = [];          // các task chờ
 let running = null;        // { task, ac }
 const modelCache = new Map();
@@ -232,6 +237,25 @@ function registerIpc() {
   handle('lobby:members', () => lobby.members());
   handle('lobby:cinema', (payload) => lobby.cinema(payload || {}));
   handle('lobby:cinemaState', () => lobby.cinemaState());
+  handle('lobby:upload', (payload) => lobby.upload(payload || {}));
+  handle('lobby:deleteMsg', (room, id) => lobby.deleteMsg(room, id));
+  handle('lobby:admin', () => lobby.admin());
+  handle('lobby:adminDo', (payload) => lobby.adminDo(payload || {}));
+  handle('lobby:cat', (payload) => lobby.call('cat', payload || {}));
+  handle('lobby:interact', (payload) => lobby.call('interact', payload || {}));
+  handle('lobby:npc', () => lobby.call('npc', undefined, 'GET'));
+  handle('lobby:npcAsk', (payload) => lobby.npcAsk(payload || {}));
+  // lưu ảnh trong chat về máy (hộp chọn chỗ lưu)
+  handle('lobby:saveImage', async (id) => {
+    if (!IMG_ID.test(String(id))) throw new Error('Ảnh không hợp lệ');
+    const r = await lobbyImages.get(String(id), false);
+    if (r.status !== 200) throw new Error('Ảnh không còn trên máy chủ');
+    const ext = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' }[r.type] || 'img';
+    const pick = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath('downloads'), `anh-sanh-${String(id).slice(0, 8)}.${ext}`) });
+    if (pick.canceled || !pick.filePath) return null;
+    fs.writeFileSync(pick.filePath, r.data);
+    return pick.filePath;
+  });
 
   // SIMI Gateway
   handle('simi:status', () => simi.status(store.getConfig().cli.codex.cmd || 'codex'));
@@ -380,7 +404,7 @@ function createWindow() {
     win.removeMenu();
   }
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  win.on('focus', () => { if (updater) updater.checkSoon(20 * 60 * 1000); }); // quay lại app sau một lúc → xem có bản mới không
+  win.on('focus', () => { if (updater) updater.checkSoon(2 * 60 * 1000); }); // quay lại app sau một lúc → xem có bản mới không
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.webContents.on('before-input-event', (_e, input) => {
@@ -416,17 +440,40 @@ app.whenReady().then(() => {
   chat = new ChatEngine({ userData: app.getPath('userData'), getConfig: () => store.getConfig(), emit, defaultDir: chatDir, hiddenDirs: () => [workDir()], codex: codexServer, extraConfig: computerMcp });
   lobby = new LobbyClient({
     getAuth: () => simi.gatewayAuth(),
+    appInfo: { version: app.getVersion(), os: `${process.platform}-${process.arch}` },
     emit: (ev, data) => {
       emit({ type: 'lobby', ev, data });
       // admin vừa đăng bản app mới trên Gateway → kiểm tra & tải sẵn ngay, không đợi lượt kiểm tra định kỳ
       if (ev === 'app-release' || (ev === 'hello' && data.app && newer(data.app.version, app.getVersion()))) updater.checkSoon(0);
       // tin nhắn riêng khi đang ở cửa sổ khác → thông báo
-      if (ev === 'message' && data.room.startsWith('dm:') && lobby.me && data.from !== lobby.me.id) {
-        notify(`💬 ${data.name} nhắn bạn`, data.text.slice(0, 140), () => win.webContents.send('evt', { type: 'lobby-open', room: data.room }));
+      if (ev === 'message' && lobby.me && data.from !== lobby.me.id) {
+        const body = (data.text || (data.images && data.images.length ? '📷 Đã gửi ảnh' : '')).slice(0, 140);
+        const open = () => win.webContents.send('evt', { type: 'lobby-open', room: data.room, msg: data.id });
+        const tagged = (data.mentions || []).includes(lobby.me.id) || ((data.mentions || []).includes('all'));
+        if (data.room.startsWith('dm:')) notify(`💬 ${data.name} nhắn bạn`, body, open);
+        else if (tagged) notify(`🔔 ${data.name} nhắc đến bạn trong Sảnh`, body, open);
       }
+      if (ev === 'announce' && data.popup) notify('📢 Thông báo từ admin', data.text.slice(0, 200), () => win.webContents.send('evt', { type: 'lobby-open', room: 'all' }));
     },
   });
+  lobbyImages = new ImageCache({ dir: path.join(app.getPath('userData'), 'lobby-images'), fetchFile: (id, thumb) => lobby.file(id, thumb) });
+  protocol.handle('vpimg', async (req) => {
+    const u = new URL(req.url);
+    const id = u.pathname.replace(/^\/+/, '');
+    try {
+      const r = await lobbyImages.get(id, u.searchParams.get('t') === '1');
+      if (r.status !== 200) return new Response('', { status: r.status || 404 });
+      return new Response(r.data, { status: 200, headers: { 'content-type': r.type, 'cache-control': 'max-age=31536000, immutable' } });
+    } catch { return new Response('', { status: 502 }); }
+  });
   if (store.getConfig().lobbyEnabled !== false) lobby.start();
+  // Windows: cho tác vụ tự cập nhật SIMI chạy ẩn (hết cảnh cửa sổ đen bật lên vài giây) – làm 1 lần, sau khi app mở 1 phút
+  if (process.platform === 'win32' && !store.getConfig().simiTaskHidden) {
+    setTimeout(() => hideSimiTask().then((r) => {
+      console.log('[simi-task]', r);
+      if (['hidden', 'migrated', 'none'].includes(r)) { const c = store.getConfig(); c.simiTaskHidden = true; store.saveConfig(c); }
+    }), 60000).unref?.();
+  }
   powerMonitor.on('resume', () => { lobby.kick(); updater.checkSoon(5 * 60 * 1000); });
   registerIpc();
   youtubeReferer();

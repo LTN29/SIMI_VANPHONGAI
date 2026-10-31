@@ -118,10 +118,10 @@ Một key team là dùng được **mọi model trong Combo** admin cấp trên 
 Admin đăng bản mới lên Gateway → máy nhân viên **tự tải sẵn ở chế độ nền** (kiểm tra mã SHA-256) → báo **"Văn Phòng AI x.y.z đã sẵn sàng"** → người dùng bấm **Cập nhật ngay** là xong. App tự đóng, cài bản mới đúng kiểu đang dùng rồi mở lại; đoạn chat, cài đặt, nhân vật giữ nguyên.
 
 - **Báo ở đâu**: thẻ thông báo góc trên bên phải (kèm vài dòng có gì mới), nút **⬆️ Cập nhật x.y.z** trên thanh trên cùng, và thông báo của Windows / Mac / Ubuntu nếu đang ở cửa sổ khác (bấm vào là mở app).
-- **Báo khi nào**: máy đang mở Sảnh online nhận tin **ngay khi admin đăng bản** (vài giây). Ngoài ra app tự kiểm tra lúc mở, mỗi giờ, khi quay lại app sau 20 phút và khi máy ngủ dậy.
+- **Báo khi nào**: máy đang mở Sảnh online nhận tin **ngay khi admin đăng bản** (vài giây). Ngoài ra app tự kiểm tra lúc mở, mỗi 10 phút, khi quay lại app sau 2 phút và khi máy ngủ dậy (mỗi lần chỉ đọc 1 file nhỏ).
 - **Để sau**: ẩn thẻ 4 giờ, nút trên thanh trên cùng vẫn còn để cập nhật lúc nào cũng được. Bản đã tải được giữ lại, lần mở app sau không tải lại.
 - **Cài thế nào**:
-  - Windows bản cài: cài đè im lặng. Windows bản chạy ngay: thay file `.exe` đang dùng.
+  - Windows: cài đè im lặng rồi mở lại. Từ 0.9.13 không còn phát hành bản chạy ngay (portable); máy đang dùng bản chạy ngay bấm **Cập nhật ngay** sẽ được cài bản Setup, từ đó mở app bằng biểu tượng Văn Phòng AI trên Desktop.
   - Mac: thay `VanPhongAI.app` trong Applications (tự gỡ cờ cách ly, tự ký như script cài).
   - Ubuntu `.deb`: Ubuntu hỏi mật khẩu máy một lần để cài. AppImage: thay file.
 
@@ -199,13 +199,27 @@ Căn phòng 3D chung của cả công ty trên SIMI Gateway. App tự vào Sản
 - **Đi lại**: bấm xuống sàn để đi tới đó, hoặc dùng **W A S D** / phím mũi tên. Camera luôn đi theo nhân vật của bạn. Kéo chuột xoay góc nhìn, lăn chuột phóng to (camera trượt mượt), bấm đúp để về góc nhìn mặc định. Máy yếu thì app tự giảm độ phân giải / bóng đổ để giữ mượt.
 - **Ngồi xuống**: bấm vào một ghế (ghế quầy bar, ghế bàn ăn, sofa) – nhân vật đi tới và ngồi; mọi người đều thấy bạn đang ngồi đó. Ghế có người rồi thì không ngồi được. Bấm phím di chuyển hoặc bấm xuống sàn để đứng dậy.
 - **🗺 Toàn cảnh** để nhìn cả quán xem ai đang ở đâu, **🎯 Về chỗ mình** để camera quay lại nhân vật của bạn. Khi nhìn xa, bảng tên thu nhỏ cho đỡ rối.
-- **Biểu cảm**: thanh 👋 ❤️ 😂 🎉 🕺 ☕ 👍 🙌 dưới màn hình – nhân vật vẫy tay, nhảy, ăn mừng…
+- **Biểu cảm**: thanh 👋 ❤️ 😂 🎉 ☕ 👍 🙌 dưới màn hình – nhân vật vẫy tay, ăn mừng…
+- **💃 Nhảy**: bấm 🕺 cuối thanh biểu cảm → chọn 1 trong 6 điệu (Lắc lư, Disco, Robot, Shuffle, Xoay vòng, Giơ tay). Nhân vật nhảy liên tục tới khi bấm **⏹ Dừng** hoặc đi chỗ khác. Mọi người nhún **cùng một nhịp** (tính theo giờ Gateway) nên cả quán nhảy khớp nhau. Bước lên sàn nhảy là app tự gợi ý chọn điệu.
+- **Tương tác với đồng nghiệp**: bấm vào một người → **✋ Đập tay, 🥂 Cụng ly, ☕ Mời cà phê** (diễn luôn), **🤗 Ôm, 💃 Mời nhảy** (người kia nhận thẻ mời, bấm Đồng ý mới diễn). Nhân vật của bạn đi tới trước mặt người đó, hai người quay vào nhau rồi cùng diễn; cả Sảnh đều thấy.
+- **🐱 Mít – mèo của quán**: cả công ty thấy cùng một con mèo (Gateway điều khiển). Bấm vào Mít → **Vuốt ve** (Mít nhảy cẫng, bay tim), **Cho ăn** (bát thức ăn hiện ra, Mít chạy tới ăn), **Chơi len** (Mít vồ cuộn len), **Gọi Mít theo** (Mít đi theo bạn 30 giây).
+- **Nhẹ cho mọi máy**: mọi chuyển động làm bằng code (không tải thêm mô hình), phần tính toán mỗi khung hình dưới 1 ms cho cả quán; rời tab Sảnh là dừng vẽ 3D; máy chậm thì tự giảm độ nét → tắt bóng đổ → vẽ 30 khung hình/giây. Bật hẳn **Chế độ nhẹ cho Sảnh 3D** trong **Cài đặt** cho máy yếu / chạy pin. Các nút nổi trên Sảnh không dùng hiệu ứng làm mờ nền (rất tốn GPU).
 - **🎬 Màn chiếu**: bấm **🎬 Màn chiếu** → dán link YouTube → **+ Thêm**. Video phát trên màn chiếu ở tường sau, mọi người trong Sảnh xem cùng một đoạn (đồng bộ theo giờ Gateway).
   - **Xếp hàng theo lượt**: mỗi người 1 video mỗi vòng, tối đa 3 video chờ; bảng hiện "Lượt của bạn: thứ …". Gỡ được video của mình khỏi hàng chờ.
   - **Chuyển bài**: người chọn video bấm **⏭ Bỏ qua** là chuyển ngay; người khác bấm **⏭ Chuyển bài** để bỏ phiếu, đủ quá nửa số người online thì chuyển. Hết video tự chiếu bài kế tiếp.
   - 🔊 / 🔇 bật tắt tiếng trên máy mình, 🎯 đưa camera ra trước màn chiếu. Rời tab Sảnh thì video trên máy mình tự tắt, quay lại thì chiếu tiếp đúng đoạn đang phát.
   - Video riêng tư hoặc chủ kênh không cho phát nhúng sẽ bị từ chối ngay khi thêm.
-- **Nhắn tin**: phòng **Cả công ty** và **nhắn riêng** (bấm vào một người → 💬 Nhắn riêng). Tin ở phòng chung hiện thành bong bóng trên đầu nhân vật; tin nhắn riêng thì không. Có thông báo khi có người nhắn riêng lúc bạn đang ở cửa sổ khác.
+- **Nhắn tin**: phòng **Cả công ty** và **nhắn riêng** (bấm vào một người → 💬 Nhắn riêng). Tin ở phòng chung hiện thành bong bóng trên đầu nhân vật; tin nhắn riêng thì không. Có thông báo khi có người nhắn riêng lúc bạn đang ở cửa sổ khác. **Enter** gửi, **Shift + Enter** xuống dòng.
+  - **Gửi ảnh**: nút 🖼️, dán ảnh bằng **Ctrl + V** (chụp màn hình xong dán luôn) hoặc kéo thả ảnh vào khung chat; tối đa 4 ảnh mỗi tin. App nén ảnh ngay trên máy (cạnh dài 1600px, ~200–400 KB, bỏ thông tin ẩn như GPS) trong luồng riêng nên Sảnh không bị khựng. Khung chat chỉ tải ảnh thu nhỏ khi cuộn tới; bấm ảnh để xem lớn, **⬇ Lưu ảnh** để tải về. GIF giữ nguyên chuyển động.
+  - **@ gọi tên**: gõ `@` rồi vài chữ của tên → chọn người (↑ ↓ Enter). Người được tag nhận thông báo kể cả khi đang ở tab khác, phòng có tin tag mình hiện dấu **@** vàng. Admin có thêm **@mọi người**.
+  - **Trả lời**: rê chuột vào tin → **↩** → tin gửi đi kèm trích đoạn tin gốc và tự tag người được trả lời; bấm trích đoạn để nhảy tới tin gốc.
+  - **Thu hồi**: rê chuột vào tin của mình → **🗑** bấm 2 lần. Admin xoá được tin trong phòng chung (không xem / xoá được tin nhắn riêng của người khác).
+- **🤖 Trợ lý SIMI (NPC)**: đứng ở quầy **❓ HỎI SIMI** giữa Sảnh, đi ngang qua là vẫy tay hỏi "Cần giúp gì không?". Bấm vào để mở:
+  - **📘 Hướng dẫn** – 8 bài từng bước (làm quen app, Chat, dự án, Computer Use, giao việc, Sảnh, màn chiếu / nhảy / mèo, cập nhật). Mỗi bước hiện thẻ hướng dẫn góc dưới trái và **vòng sáng chỉ đúng nút cần bấm**, tự chuyển sang tab Chat / Văn phòng khi cần.
+  - **💡 Mẹo AI** – 8 mẹo viết yêu cầu cho AI, mỗi mẹo có ví dụ "chưa tốt" / "tốt hơn".
+  - **💬 Hỏi đáp** – hỏi tự do; AI trả lời dựa trên hướng dẫn app + ghi chú của admin, chạy bằng **tài khoản admin chọn cho Trợ lý** (người hỏi không tốn lượt; mỗi người tối đa 30 câu / giờ).
+  - Lần đầu vào Sảnh, Trợ lý chào và mời **đi tour 1 phút**.
+- **🛡️ Quản trị** (chỉ admin – tài khoản trong `LOBBY_ADMINS` của Gateway): ai đang online và mỗi máy chạy bản app nào; khoá chat (15 phút → 1 ngày), mời ra khỏi Sảnh; phân quyền gửi ảnh / @mọi người / thêm video / nhắn riêng theo mặc định → team → từng người; khoá màn chiếu, chuyển bài, xoá hàng chờ; thông báo ghim trên đầu Sảnh + thông báo nổi trên mọi máy; nhật ký mọi thao tác; mục **🤖 Trợ lý (NPC)**: chọn tài khoản chatbot làm Trợ lý, ghi chú riêng của công ty cho AI, sửa / thêm hướng dẫn từng bước (mọi máy nhận ngay, không cần phát hành app). Nút **🔑 Admin Console** mở trang web quản lý key / hạn mức AI.
 - **👁 Đang hiện / 🙈 Đang ẩn**: ẩn để đồng nghiệp không thấy bạn online (vẫn nhắn tin được). Khi đang ẩn, Sảnh hiện thanh nhắc **Bạn đang ẩn** và nút **Hiện lại**; trạng thái ẩn được Gateway nhớ cả khi tắt mở app.
 - **Danh sách online luôn khớp**: Gateway gửi danh sách ai đang online mỗi 30 giây, máy nào lỡ mất sự kiện vào / rời (mạng chập chờn) tự sửa lại. Một tài khoản mở app trên nhiều máy thì các máy đó là cùng một người nên không thấy nhau; app ghi "đang mở trên 2 máy" dưới tên bạn. Tắt hẳn Sảnh trong **Cài đặt**.
 - Tin nhắn được Gateway giữ 30 ngày (admin chỉnh được), không đi qua AI và không vào bộ nhớ team.

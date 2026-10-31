@@ -18,6 +18,7 @@ run(async () => {
     const groups = new Map(); let id = 0;
     S.scene.traverse((o) => {
       if (!o.isMesh || o.isInstancedMesh || !o.visible || !o.material || o.material.visible === false || o.material.depthWrite === false) return;
+      for (let q = o; q; q = q.parent) if (q.userData && q.userData.character) return; // nhân vật (NPC) xoay nghiêng, luôn chuyển động
       const me = id++; const pos = o.geometry.attributes.position; const idx = o.geometry.index; const n = idx ? idx.count : pos.count;
       const a = new V(), b = new V(), c = new V();
       for (let i = 0; i < n; i += 3) {
