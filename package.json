@@ -1,7 +1,7 @@
 {
   "name": "vanphong-ai",
   "productName": "VanPhongAI",
-  "version": "0.9.11",
+  "version": "0.9.12",
   "description": "Văn phòng AI - giao việc cho các agent như một trò chơi",
   "main": "src/main.js",
   "author": "LEGION",
