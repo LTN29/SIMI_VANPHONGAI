@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="vi" data-theme="pastel">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://i.ytimg.com; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com">
+  <title>Văn Phòng AI</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="chat.css">
+  <link rel="stylesheet" href="lobby.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><img src="icon.png" alt=""><div><b>Văn Phòng</b> <span>AI</span></div></div>
+    <div class="brands" aria-label="Thương hiệu">
+      <span class="bl uniq" title="UNIQ"><img src="brand/uniq.png" alt="UNIQ"></span>
+      <span class="bl crenot" title="Crénot"><img src="brand/crenot.png" alt="Crénot"></span>
+      <span class="bl simi" title="SIMI.vn"><img src="brand/simi.png" alt="SIMI.vn"></span>
+    </div>
+    <div class="status" id="status">
+      <span class="dot"></span>
+      <span id="statusText">Đang rảnh</span>
+      <span class="stages hidden" id="statusStages"></span>
+    </div>
+    <nav class="actions">
+      <button class="tbtn" id="btnAccounts" title="Kết nối tài khoản Claude / ChatGPT / Gemini / Ollama"><i data-ic="plug"></i><span>Kết nối</span><em class="badge" id="accBadge">…</em></button>
+      <button class="tbtn" id="btnTeam" title="Gán model cho cả phòng"><i data-ic="users"></i><span>Đội ngũ</span></button>
+      <button class="tbtn" id="btnFolder" title="Mở thư mục kết quả"><i data-ic="folder"></i><span>Kết quả</span></button>
+      <button class="tbtn icon theme-btn" id="btnTheme" title="Đổi giao diện sáng / tối">🌙</button>
+      <button class="tbtn icon" id="btnSettings" title="Cài đặt"><i data-ic="gear"></i></button>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <aside class="panel left">
+      <section class="composer">
+        <div class="composer-head"><h2>Giao việc mới</h2><button class="linkbtn small" id="btnTplToggle" type="button">Mẫu việc ▾</button></div>
+        <div class="tpls" id="tpls"></div>
+        <input id="cardTitle" placeholder="Tiêu đề (không bắt buộc)" maxlength="120">
+        <textarea id="cardText" rows="5" placeholder="Mô tả việc cần làm…  VD: Soạn email mời phụ huynh họp ngày 5/11, kèm nội dung chính."></textarea>
+        <div class="assign-label"><span>Giao cho</span><b id="assignName"></b></div>
+        <div class="assign-chips" id="assignChips"></div>
+        <div class="composer-actions">
+          <button class="btn primary grow" id="btnGo" type="button"><i data-ic="send"></i> Giao ngay</button>
+          <button class="btn ghost" id="btnDraft" type="button" title="Lưu thành thẻ để kéo thả sau">Lưu thẻ</button>
+        </div>
+        <p class="hint">Ctrl + Enter để giao ngay · Kéo thẻ thả vào bàn bất kỳ để giao</p>
+      </section>
+      <div class="lists">
+        <section><h3>Đang làm <span class="count" id="cRun">0</span></h3><div id="listRun" class="cards"></div></section>
+        <section><h3>Thẻ chờ giao <span class="count" id="cDraft">0</span></h3><div id="listDraft" class="cards"></div></section>
+        <section><h3>Đã xong <span class="count" id="cDone">0</span></h3><div id="listDone" class="cards"></div></section>
+      </div>
+    </aside>
+
+    <section class="office-wrap">
+      <div class="roster" id="roster"></div>
+      <div id="setupBanner" class="banner hidden"></div>
+      <div id="office" class="office"></div>
+      <div class="view-tools">
+        <div class="seg" role="group" aria-label="Kiểu hiển thị">
+          <button data-view="3d" title="Văn phòng 3D">3D</button>
+          <button data-view="2d" title="Văn phòng pixel 2D (nhẹ hơn)">2D</button>
+        </div>
+        <button class="btn small" id="btnDecor" title="Đổi màu tường, sàn, thảm">🎨 Trang trí</button>
+        <button class="btn small" id="viewReset" title="Về góc nhìn mặc định">⟲ Góc nhìn</button>
+      </div>
+      <div class="view-hint" id="viewHint">Bấm nhân vật để tương tác · Bấm mèo 🐱 · Kéo: xoay · Lăn: phóng to</div>
+    </section>
+
+    <aside class="panel right">
+      <div class="tabs">
+        <button class="tab active" data-tab="log">Nhật ký phòng</button>
+        <button class="tab" data-tab="tray">Khay kết quả <span class="count" id="cTray">0</span></button>
+      </div>
+      <div id="tab-log" class="tabbody"><div id="log" class="log"></div></div>
+      <div id="tab-tray" class="tabbody hidden"><div id="tray" class="tray"></div></div>
+    </aside>
+  </main>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="sheet">
+      <header><h2 id="modalTitle"></h2><button class="x" id="modalClose" aria-label="Đóng">✕</button></header>
+      <div id="modalBody" class="sheet-body"></div>
+      <footer id="modalFoot"></footer>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script src="md.js"></script>
+  <script src="office.js"></script>
+  <script src="office3d.bundle.js"></script>
+  <script src="chat.js"></script>
+  <script src="lobby.js"></script>
+  <script src="update.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+# bản build và gói cài (GitHub Actions tự build, không đưa lên repo)
+windows/
+linux/
+goi-cai-dat/
+mac/*.zip
+VanPhongAI*.exe
+*.zip
+*.blockmap
+_vp_tmp/
+.idea/
+.vscode/
+*.log
+.env

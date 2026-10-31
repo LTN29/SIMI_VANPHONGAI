@@ -1,0 +1,128 @@
+{
+  "name": "vanphong-ai",
+  "productName": "VanPhongAI",
+  "version": "0.9.11",
+  "description": "Văn phòng AI - giao việc cho các agent như một trò chơi",
+  "main": "src/main.js",
+  "author": "LEGION",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "npm run build:office && electron .",
+    "build:office": "esbuild src/office3d/office3d.js --bundle --format=iife --minify --target=chrome120 --outfile=src/renderer/office3d.bundle.js",
+    "lint": "eslint .",
+    "test": "node test/orch.test.js && node --test test/computer-use.test.js test/computer-use-setup.test.js test/computer.test.js test/updater.test.js",
+    "test:office": "node test/ui-office.test.js",
+    "test:chat": "node test/ui-chat.test.js",
+    "test:history": "node test/ui-history.test.js",
+    "test:lobby": "node test/ui-lobby.test.js",
+    "dist": "npm run build:office && electron-builder --win portable nsis --x64",
+    "dist:mac": "npm run build:office && electron-builder --mac zip --arm64",
+    "dist:linux": "npm run build:office && electron-builder --linux AppImage deb --x64",
+    "test:tools": "node test/ui-tools.test.js",
+    "test:computer-setup": "node test/ui-computer-setup.test.js",
+    "test:flicker": "node test/ui-flicker.test.js",
+    "release": "node scripts/release.mjs"
+  },
+  "build": {
+    "appId": "vn.local.vanphongai",
+    "productName": "VanPhongAI",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "!src/office3d/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "icon": "build/icon.png",
+      "legalTrademarks": ""
+    },
+    "portable": {
+      "artifactName": "VanPhongAI-${version}-portable.exe"
+    },
+    "nsis": {
+      "artifactName": "VanPhongAI-${version}-Setup.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Văn Phòng AI"
+    },
+    "copyright": "Dùng cá nhân",
+    "publish": null,
+    "mac": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "artifactName": "VanPhongAI-${version}-mac-${arch}.${ext}",
+      "extendInfo": {
+        "NSHumanReadableCopyright": "Dùng cá nhân",
+        "LSApplicationCategoryType": "public.app-category.productivity"
+      }
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "executableName": "vanphong-ai",
+      "synopsis": "Văn phòng AI kiểu game: giao việc cho agent, chat, sảnh online",
+      "maintainer": "Van Phong AI <vanphongai@localhost>",
+      "artifactName": "VanPhongAI-${version}-linux-${arch}.${ext}",
+      "desktop": {
+        "Name": "Văn Phòng AI",
+        "Comment": "Văn phòng AI kiểu game: giao việc cho agent, chat, sảnh online",
+        "StartupWMClass": "VanPhongAI",
+        "Keywords": "AI;Chat;SIMI;"
+      }
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "xdotool",
+        "imagemagick",
+        "x11-xserver-utils"
+      ],
+      "afterInstall": "build/linux-after-install.sh",
+      "afterRemove": "build/linux-after-remove.sh"
+    },
+    "asarUnpack": [
+      "src/computer/**"
+    ]
+  },
+  "devDependencies": {
+    "@fontsource/nunito": "^5.1.0",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.17.0",
+    "globals": "^15.14.0",
+    "playwright": "1.63.0",
+    "three": "^0.169.0"
+  },
+  "homepage": "https://simi.vn"
+}

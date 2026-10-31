@@ -1,0 +1,845 @@
+// Chat kiểu ChatGPT Work / Codex Desktop, chạy Codex ngầm (codex app-server) qua SIMI Gateway:
+// mỗi đoạn chat = 1 phiên Codex (nhớ hội thoại), có skill, plugin (Computer Use…), MCP (trình duyệt SIMI), ảnh, file,
+// và hỏi quyền ngay trong đoạn chat khi Codex cần làm việc ngoài phạm vi cho phép.
+const fs = require('fs');
+const path = require('path');
+const simi = require('./simi');
+const { computerUseStatus, computerGuide } = require('./computer-use');
+
+const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
+const OUT_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|mp4|mov|webm|mp3|wav|m4a|pdf|docx?|xlsx?|pptx?|csv|md|txt|html?|json|zip)$/i;
+const MENTIONED_FILE = /(?:[A-Za-z]:\\|\/|\.{0,2}[\\/]?)?[^\s"'`<>|*?()[\]]+\.(?:png|jpe?g|gif|webp|svg|mp4|mov|webm|mp3|wav|pdf|docx?|xlsx?|pptx?|csv|md|html?|zip)\b/gi;
+// cảnh báo vô hại của Codex, không hiện cho người dùng
+const NOISE = /Model metadata for|was recorded with model|Consider switching back|could not create PATH aliases/i;
+// lệnh bị sandbox chặn (hay gặp với skill cần mạng / ghi ngoài thư mục dự án, nhất là trên Windows)
+const BLOCKED = /CreateRestrictedToken|sandbox (denied|error)|blocked by sandbox|Access is denied|Operation not permitted|EACCES|network (access )?(is )?(blocked|disabled|denied)|getaddrinfo|ENOTFOUND/i;
+const CHAT_GUIDE = [
+  'Bạn đang chạy trong app Văn Phòng AI. Thao tác máy tính diễn ra trên máy người dùng, không phải máy Gateway.',
+  'Chỉ đọc trang web thì ưu tiên MCP simi_browser khi có. Không nhầm lỗi browser access host của công cụ trình duyệt với runtime @oai/sky điều khiển Windows.',
+].join('\n');
+// gợi ý kèm tin nhắn khi người dùng gọi @ (người dùng đã chọn rõ công cụ → ưu tiên đúng công cụ đó)
+const TOOL_HINT = {
+  vp_computer: 'Người dùng chọn @Máy tính: dùng công cụ điều khiển máy tính vp_computer của Văn Phòng AI cho yêu cầu này (screenshot trước, rồi bấm / gõ / cuộn theo toạ độ trên ảnh).',
+  simi_browser: 'Người dùng chọn @Trình duyệt SIMI: dùng MCP simi_browser cho yêu cầu này.',
+};
+const PLUGIN_HINT = (m) => (/computer-use/.test(m.id) ? 'Người dùng chọn plugin Computer Use OpenAI: dùng node_repl + @oai/sky theo skill computer-use cho yêu cầu này.' : `Người dùng gọi plugin ${m.name}: dùng plugin này cho yêu cầu.`);
+const BROWSER_HOST = /browser access host|browser[- ]host is unavailable/i;
+const NO_CODEX = 'Không tìm thấy Codex trên máy. Bấm "Cài đặt SIMI" ở mục Kết nối.';
+const STOPPED = 'Đã dừng';
+
+class ChatStore {
+  constructor(dir) {
+    this.dir = path.join(dir, 'chats');
+    this.files = path.join(dir, 'chat-files');
+    fs.mkdirSync(this.dir, { recursive: true });
+    fs.mkdirSync(this.files, { recursive: true });
+  }
+  file(id) { if (!/^[a-z0-9]+$/i.test(id)) throw new Error('Mã đoạn chat không hợp lệ'); return path.join(this.dir, id + '.json'); }
+  get(id) { try { return JSON.parse(fs.readFileSync(this.file(id), 'utf8')); } catch { return null; } }
+  save(t) {
+    t.updatedAt = Date.now();
+    const f = this.file(t.id); const tmp = f + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(t), 'utf8'); fs.renameSync(tmp, f);
+    return t;
+  }
+  list() {
+    const out = [];
+    for (const f of fs.readdirSync(this.dir)) {
+      if (!f.endsWith('.json')) continue;
+      try {
+        const t = JSON.parse(fs.readFileSync(path.join(this.dir, f), 'utf8'));
+        out.push({ id: t.id, title: t.title, project: t.project, agentId: t.agentId || null, model: t.model, updatedAt: t.updatedAt, pinned: !!t.pinned, archived: !!t.archived, n: (t.messages || []).length, codexThread: t.codexThread || null, origin: t.origin || 'app' });
+      } catch { /* bỏ file hỏng */ }
+    }
+    return out.sort((a, b) => (b.pinned - a.pinned) || b.updatedAt - a.updatedAt);
+  }
+  remove(id) { try { fs.unlinkSync(this.file(id)); } catch { /* đã xóa */ } }
+  hidden() { try { return new Set(JSON.parse(fs.readFileSync(path.join(this.dir, '_hidden.list'), 'utf8'))); } catch { return new Set(); } }
+  hide(codexId) { const h = this.hidden(); h.add(codexId); fs.writeFileSync(path.join(this.dir, '_hidden.list'), JSON.stringify([...h])); }
+}
+
+// liệt kê file trong thư mục dự án để phát hiện file mới/vừa sửa sau mỗi lượt
+function snapshot(dir, limit = 4000) {
+  const map = new Map();
+  const walk = (d, depth) => {
+    if (map.size > limit || depth > 3) return;
+    let ents = []; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      if (e.name.startsWith('.') || e.name === 'node_modules' || e.name === '__pycache__') continue;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p, depth + 1);
+      else if (OUT_EXT.test(e.name)) { try { map.set(p, fs.statSync(p).mtimeMs); } catch { /* bỏ qua */ } }
+    }
+  };
+  walk(dir, 0);
+  return map;
+}
+
+// Một bước công cụ → khối hiển thị. Nhận cả JSON của `codex exec --json` (command_execution, aggregated_output…)
+// lẫn lịch sử từ app-server (commandExecution, aggregatedOutput…).
+const snake = (t) => String(t || '').replace(/[A-Z]/g, (m) => '_' + m.toLowerCase());
+const STATUS = { inProgress: 'in_progress', in_progress: 'in_progress', failed: 'failed', declined: 'failed' };
+function stepFromItem(it) {
+  const status = STATUS[it.status] || 'completed';
+  switch (snake(it.type)) {
+    case 'command_execution':
+      return { sk: 'cmd', title: it.command || 'Chạy lệnh', output: String(it.aggregated_output ?? it.aggregatedOutput ?? '').slice(-4000), exit: it.exit_code ?? it.exitCode, status };
+    case 'mcp_tool_call':
+    case 'dynamic_tool_call':
+      return { sk: 'tool', server: it.server || it.namespace || '', title: [TOOL_SHORT[it.server] || it.server || it.namespace, it.server === VPC ? vpcLabel(it.tool, it.arguments) : it.tool].filter(Boolean).join(' · ') || 'Công cụ', output: it.error ? String(it.error.message || JSON.stringify(it.error)).slice(0, 800) : '', status: it.error ? 'failed' : status };
+    case 'web_search':
+      return { sk: 'web', title: it.query || 'Tìm trên web', status };
+    case 'file_change': {
+      const kind = (c) => (typeof c.kind === 'string' ? c.kind : c.kind && c.kind.type);
+      const changes = it.changes || [];
+      return { sk: 'file', title: changes.map((c) => `${kind(c) === 'add' ? '+' : kind(c) === 'delete' ? '−' : '~'} ${path.basename(c.path || '')}`).join(', ') || 'Sửa file', files: changes.map((c) => c.path), status };
+    }
+    case 'reasoning': {
+      const text = it.text || [...(it.summary || []), ...(it.content || [])].join('\n');
+      return text.trim() ? { sk: 'think', title: 'Suy nghĩ', output: text.slice(0, 4000), status: 'completed' } : null;
+    }
+    case 'todo_list':
+      return { sk: 'plan', title: 'Kế hoạch', items: (it.items || []).map((x) => ({ text: x.text, done: !!x.completed })), status: 'completed' };
+    case 'plan':
+      return { sk: 'plan', title: 'Kế hoạch', items: String(it.text || '').split(/\r?\n/).filter((l) => l.trim()).map((l) => ({ text: l.replace(/^\s*[-*\d.)]+\s*/, ''), done: false })), status: 'completed' };
+    case 'image_generation':
+      return { sk: 'tool', title: 'Tạo ảnh' + (it.revisedPrompt ? ': ' + it.revisedPrompt.slice(0, 80) : ''), files: it.savedPath ? [it.savedPath] : [], status };
+    default:
+      return null;
+  }
+}
+
+// mô tả ngắn 1 thao tác điều khiển máy: "Bấm (640, 400)", "Gõ: xin chào"…
+function vpcLabel(tool, a) {
+  a = a || {};
+  const xy = (x, y) => (x !== undefined && y !== undefined ? ` (${x}, ${y})` : '');
+  switch (tool) {
+    case 'list_windows': return 'Xem danh sách cửa sổ';
+    case 'focus_window': return 'Chọn cửa sổ ' + (a.window_id || '');
+    case 'screenshot': return 'Chụp màn hình';
+    case 'click': return (a.double ? 'Bấm đúp' : a.button === 'right' ? 'Bấm chuột phải' : 'Bấm') + xy(a.x, a.y);
+    case 'move': return 'Di chuột' + xy(a.x, a.y);
+    case 'drag': return 'Kéo thả' + xy(a.from_x, a.from_y) + ' →' + xy(a.to_x, a.to_y);
+    case 'scroll': return (Number(a.amount) < 0 ? 'Cuộn lên' : 'Cuộn xuống') + xy(a.x, a.y);
+    case 'type_text': return 'Gõ: ' + String(a.text || '').replace(/\s+/g, ' ').slice(0, 60);
+    case 'press_keys': return 'Phím ' + (a.keys || '');
+    case 'open': return 'Mở ' + (a.target || '');
+    case 'wait': return `Chờ ${a.seconds || 1} giây`;
+    default: return tool || '';
+  }
+}
+
+// tiêu đề đoạn chat từ tin nhắn đầu: bỏ mã skill ($simi-...), viết hoa chữ đầu
+function titleFrom(text) {
+  const plain = text.replace(/\$[\w-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const skill = (text.match(/\$([\w-]+)/) || [])[1];
+  const t = (plain || (skill ? 'Skill ' + skill : 'Đoạn chat')).slice(0, 60);
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+function buildPrompt(t, text, atts, persona) {
+  let prompt = text;
+  const files = atts.filter((a) => !a.image);
+  if (files.length) prompt += `\n\nTệp đính kèm (đọc trực tiếp từ đường dẫn):\n${files.map((a) => `- ${a.path}`).join('\n')}`;
+  if (persona) prompt = `${persona}\n\n---\n\n${prompt}`;
+  if (t.codexThread) return prompt; // phiên cũ đã có hướng dẫn chung
+  return prompt + '\n\n(Trả lời bằng tiếng Việt, trừ khi người dùng yêu cầu khác. Nếu tạo file, lưu vào thư mục làm việc hiện tại và nêu đường dẫn.)';
+}
+
+// file kết quả: mới / vừa sửa trong thư mục dự án, file Codex báo đã sửa, file được nhắc tới trong câu trả lời
+function collectFiles(dir, before, t0, blocks) {
+  const files = new Set();
+  if (before) for (const [p, m] of snapshot(dir)) if ((!before.has(p) || before.get(p) < m) && m >= t0 - 2000) files.add(p);
+  const add = (f) => { const p = path.resolve(dir, f); try { if (fs.statSync(p).isFile()) files.add(p); } catch { /* không tồn tại */ } };
+  for (const b of blocks) if (b.files) b.files.forEach(add);
+  const txt = blocks.filter((b) => b.kind === 'text').map((b) => b.text).join('\n');
+  (txt.match(MENTIONED_FILE) || []).forEach(add);
+  return [...files].slice(0, 24).map((p) => ({ path: p, name: path.basename(p), image: IMG_EXT.test(p) }));
+}
+
+// ---------- lịch sử từ Codex (ChatGPT Work) ----------
+const PERSONA_SPLIT = '\n\n---\n\n';
+const OUR_HINT = /\n\n\(Trả lời bằng tiếng Việt, trừ khi người dùng yêu cầu khác\.[^)]*\)\s*$/;
+// bỏ phần vai trò + hướng dẫn mà app tự chèn vào tin nhắn đầu
+function cleanUserText(text) {
+  let t = String(text || '').replace(OUR_HINT, '').replace(/\n\n\(Người dùng (?:chọn|gọi) [^)]*\)\s*$/, '');
+  if (/^Bạn là .+ trong Văn Phòng AI\./.test(t) && t.includes(PERSONA_SPLIT)) t = t.slice(t.indexOf(PERSONA_SPLIT) + PERSONA_SPLIT.length);
+  return t.replace(/\n\nTệp đính kèm \(đọc trực tiếp từ đường dẫn\):\n(- .+\n?)+$/, '').trim();
+}
+
+const normPath = (p) => { const r = path.resolve(String(p || '')).replace(/[\\/]+$/, ''); return process.platform === 'win32' ? r.toLowerCase() : r; };
+const samePath = (a, b) => normPath(a) === normPath(b);
+const underPath = (base, p) => normPath(p) === normPath(base) || normPath(p).startsWith(normPath(base) + path.sep);
+
+function threadTitle(th) {
+  const t = th.name || cleanUserText(th.preview).replace(/\s+/g, ' ').trim();
+  return (t || 'Đoạn chat').slice(0, 80);
+}
+
+// lượt hội thoại của app-server → tin nhắn dạng của tab Chat
+function messagesFromThread(th, saveDataImage) {
+  const msgs = [];
+  for (const turn of th.turns || []) {
+    let bot = null;
+    const ts = (turn.startedAt || th.updatedAt) * 1000;
+    const assistant = () => bot || (bot = { role: 'assistant', model: th.model || '', blocks: [], files: [], ts, status: turn.status === 'failed' ? 'error' : 'done', ms: turn.durationMs || 0 });
+    for (const it of turn.items || []) {
+      if (it.type === 'userMessage') {
+        const parts = it.content || [];
+        const pm = parts.filter((c) => c.type === 'mention' && /^plugin:\/\//.test(c.path || '')).map((c) => ({ kind: 'plugin', id: c.path.slice(9), name: c.name }));
+        const text = cleanUserText(parts.map((c) => (c.type === 'text' ? c.text : c.type === 'skill' ? `$${c.name}` : c.type === 'mention' ? (/^plugin:/.test(c.path || '') ? '' : `$${c.name}`) : '')).filter(Boolean).join(' '));
+        const attachments = [];
+        for (const c of parts) {
+          if (c.type === 'localImage' && c.path) attachments.push({ path: c.path, name: path.basename(c.path), image: true });
+          else if (c.type === 'image' && /^data:image\//.test(c.url || '')) { const p = saveDataImage(c.url); if (p) attachments.push({ path: p, name: path.basename(p), image: true }); }
+          else if (c.type === 'localAudio' && c.path) attachments.push({ path: c.path, name: path.basename(c.path), image: false });
+        }
+        msgs.push({ role: 'user', text: pm.length ? `${pm.map((m) => '@' + m.name).join(' ')} ${text}`.trim() : text, attachments, ts, ...(pm.length ? { mentions: pm } : {}) });
+      } else if (it.type === 'agentMessage') {
+        if (it.text) assistant().blocks.push({ kind: 'text', text: it.text });
+      } else {
+        const st = stepFromItem(it);
+        if (st) assistant().blocks.push({ ...st, id: it.id, kind: 'step' });
+      }
+    }
+    if (bot) {
+      if (turn.error && turn.error.message) bot.error = turn.error.message;
+      bot.files = collectFiles(th.cwd, null, 0, bot.blocks);
+      msgs.push(bot);
+    }
+  }
+  return msgs;
+}
+
+function wasBlocked(stderr, blocks) {
+  const failed = (b) => b.status === 'failed' || (b.exit !== undefined && b.exit !== null && b.exit !== 0);
+  return BLOCKED.test(stderr) || blocks.some((b) => b.kind === 'step' && b.output && failed(b) && BLOCKED.test(b.output));
+}
+
+// ---------- hỏi quyền (yêu cầu từ Codex app-server) → khối "ask" hiện trong đoạn chat ----------
+// Legacy Computer Use/browser MCP names; Windows @oai/sky runs through node_repl.
+const isCU = (n) => /^(computer[-_]use|cua[-_]repl)$/i.test(String(n || ''));
+const VPC = 'vp_computer'; // công cụ điều khiển máy tính của Văn Phòng AI (src/computer/mcp.js)
+const VPC_READONLY = new Set(['screenshot', 'wait', 'list_windows']);
+const TOOL_SHORT = { 'computer-use': 'Computer Use', cua_repl: 'Computer Use', simi_browser: 'Trình duyệt SIMI', vp_computer: 'Điều khiển máy' };
+const SERVER_NAME = { 'computer-use': 'Computer Use (điều khiển máy tính)', cua_repl: 'Computer Use (điều khiển máy tính)', simi_browser: 'Trình duyệt SIMI', vp_computer: 'Điều khiển máy tính' };
+const serverName = (n) => SERVER_NAME[n] || n || 'Công cụ';
+const ALLOW = { id: 'accept', label: 'Cho phép', done: '✓ Đã cho phép', style: 'primary' };
+const DECLINE = { id: 'decline', label: 'Từ chối', done: '✕ Đã từ chối', style: 'ghost' };
+const SESSION = { id: 'session', label: 'Luôn cho phép trong đoạn chat này', done: '✓ Luôn cho phép trong đoạn chat này' };
+const ALWAYS = { id: 'always', label: 'Luôn cho phép', done: '✓ Luôn cho phép (đã lưu)' };
+
+// câu hỏi dạng form (MCP elicitation / request_user_input) → các ô nhập đơn giản
+function schemaFields(schema) {
+  const props = (schema && schema.properties) || {};
+  const req = new Set((schema && schema.required) || []);
+  return Object.entries(props).slice(0, 8).map(([name, f]) => {
+    const opts = f.enum || (f.oneOf || f.anyOf || []).map((o) => o.const).filter((x) => x !== undefined);
+    const labels = f.enumNames || (f.oneOf || f.anyOf || []).map((o) => o.title || o.const);
+    return { name, label: f.title || name, hint: f.description || '', type: f.type === 'boolean' ? 'bool' : opts.length ? 'choice' : f.type === 'number' || f.type === 'integer' ? 'number' : 'text', options: opts.map((v, i) => ({ value: v, label: labels[i] || v })), required: req.has(name), value: f.default ?? '' };
+  });
+}
+
+function askFrom(method, p) {
+  switch (method) {
+    case 'item/commandExecution/requestApproval': {
+      const net = p.networkApprovalContext && p.networkApprovalContext.host;
+      return { icon: '⌘', title: net ? `Cho phép truy cập mạng tới ${net}?` : 'Cho phép chạy lệnh này?', text: p.reason || 'Lệnh cần quyền ngoài phạm vi đang cho phép.', detail: p.command || '', options: [ALLOW, SESSION, DECLINE] };
+    }
+    case 'item/fileChange/requestApproval':
+      return { icon: '📝', title: 'Cho phép sửa file?', text: p.reason || 'Codex muốn tạo/sửa file ngoài thư mục dự án.', detail: p.grantRoot || '', options: [ALLOW, SESSION, DECLINE] };
+    case 'item/permissions/requestApproval': {
+      const pm = p.permissions || {};
+      const parts = [];
+      if (pm.network && pm.network.enabled) parts.push('Truy cập mạng');
+      const fsx = pm.fileSystem || {};
+      for (const w of fsx.write || []) parts.push('Ghi: ' + w);
+      for (const r of fsx.read || []) parts.push('Đọc: ' + r);
+      return { icon: '🔐', title: 'Cho phép thêm quyền?', text: p.reason || 'Codex cần thêm quyền để làm tiếp.', detail: parts.join('\n'), options: [ALLOW, SESSION, DECLINE] };
+    }
+    case 'mcpServer/elicitation/request': {
+      const meta = p._meta || {};
+      if (meta.codex_approval_kind === 'mcp_tool_call') {
+        const tool = (String(p.message || '').match(/tool "([^"]+)"/) || [])[1] || '';
+        const disp = meta.tool_params_display || [];
+        const params = disp.map((x) => `${x.display_name || x.name}: ${typeof x.value === 'string' ? x.value : JSON.stringify(x.value)}`).join('\n');
+        const persist = meta.persist || [];
+        const opts = [ALLOW, ...(persist.includes('session') ? [SESSION] : []), ...(persist.includes('always') ? [ALWAYS] : []), DECLINE];
+        if (p.serverName === VPC) {
+          const tool = (String(p.message || '').match(/tool "([^"]+)"/) || [])[1] || '';
+          const args = Object.fromEntries(disp.map((x) => [x.name, x.value]));
+          return { icon: '🖱️', title: 'AI muốn điều khiển chuột & bàn phím trên máy bạn', text: `Bước đầu tiên: ${vpcLabel(tool, args)}. Bạn bấm "Dừng" bất cứ lúc nào để AI dừng lại.`, detail: '', options: [{ ...SESSION, label: 'Cho phép trong đoạn chat này', style: 'primary' }, { ...ALLOW, label: 'Chỉ bước này', style: '' }, DECLINE] };
+        }
+        if (isCU(p.serverName)) {
+          // Computer Use xin quyền điều khiển 1 app cụ thể (Chrome, Excel, Zalo…)
+          const appName = (disp.find((x) => /^app/i.test(x.name || x.display_name || '')) || {}).value;
+          return { icon: '🖥️', title: appName ? `Computer Use muốn điều khiển ${appName}` : 'Computer Use muốn điều khiển máy tính', text: appName ? 'AI sẽ nhìn màn hình, bấm và gõ trong app này.' : (p.message || meta.tool_description || ''), detail: appName ? '' : params, options: opts };
+        }
+        return { icon: '🧩', title: tool ? `${serverName(p.serverName)} muốn dùng "${tool}"` : `${serverName(p.serverName)} xin phép`, text: meta.tool_description || (tool ? '' : p.message || ''), detail: params, options: opts };
+      }
+      if (p.mode === 'url') return { icon: '🔗', title: `${serverName(p.serverName)} cần bạn mở trang`, text: p.message, url: p.url, options: [{ id: 'accept', label: 'Mở trang & tiếp tục', done: '✓ Đã mở trang', style: 'primary', open: p.url }, DECLINE] };
+      const fields = schemaFields(p.requestedSchema);
+      return { icon: '❓', title: `${serverName(p.serverName)} hỏi`, text: p.message || '', fields, options: [{ ...ALLOW, label: fields.length ? 'Gửi' : 'Đồng ý', done: '✓ Đã trả lời' }, DECLINE] };
+    }
+    case 'item/tool/requestUserInput':
+      return {
+        icon: '❓', title: 'Codex cần bạn trả lời', text: '',
+        fields: (p.questions || []).map((q) => ({ name: q.id, label: q.header || q.question, hint: q.header ? q.question : '', type: q.options && q.options.length ? 'choice' : 'text', secret: !!q.isSecret, other: !!q.isOther, options: (q.options || []).map((o) => ({ value: o.label, label: o.label, hint: o.description })), required: true, value: '' })),
+        options: [{ id: 'accept', label: 'Gửi', done: '✓ Đã trả lời', style: 'primary' }, { id: 'decline', label: 'Bỏ qua', done: 'Đã bỏ qua', style: 'ghost' }],
+      };
+    default:
+      return null;
+  }
+}
+
+// khóa nhớ "luôn cho phép trong đoạn chat này" (đúng công cụ / đúng lệnh)
+function askKey(method, p) {
+  if (method === 'mcpServer/elicitation/request') {
+    const meta = p._meta || {};
+    if (meta.codex_approval_kind !== 'mcp_tool_call') return null;
+    if (p.serverName === VPC) return `mcp:${VPC}:*`; // cho phép 1 lần cho mọi thao tác chuột/bàn phím trong đoạn chat
+    return `mcp:${p.serverName}:${(String(p.message || '').match(/tool "([^"]+)"/) || [])[1] || ''}`;
+  }
+  if (method === 'item/commandExecution/requestApproval') return p.networkApprovalContext ? `net:${p.networkApprovalContext.host}` : p.command ? `cmd:${String(p.command).slice(0, 400)}` : null;
+  if (method === 'item/fileChange/requestApproval') return `file:${p.grantRoot || ''}`;
+  if (method === 'item/permissions/requestApproval') return `perm:${JSON.stringify(p.permissions || {}).slice(0, 400)}`;
+  return null;
+}
+
+function declineFor(method) {
+  if (/commandExecution|fileChange/.test(method)) return { decision: 'decline' };
+  if (method === 'mcpServer/elicitation/request') return { action: 'decline' };
+  if (method === 'item/permissions/requestApproval') return { permissions: {}, scope: 'turn' };
+  if (method === 'item/tool/requestUserInput') return { answers: {} };
+  if (method === 'execCommandApproval' || method === 'applyPatchApproval') return { decision: 'denied' };
+  return null;
+}
+
+function responseFor(method, p, choice, block) {
+  const ok = choice !== 'decline';
+  if (!ok) return declineFor(method);
+  const values = block.values || {};
+  switch (method) {
+    case 'item/commandExecution/requestApproval':
+    case 'item/fileChange/requestApproval':
+      return { decision: choice === 'session' ? 'acceptForSession' : 'accept' };
+    case 'item/permissions/requestApproval':
+      return { permissions: p.permissions || {}, scope: choice === 'session' ? 'session' : 'turn' };
+    case 'mcpServer/elicitation/request': {
+      const r = { action: 'accept', content: {} };
+      if (choice === 'session' || choice === 'always') r._meta = { persist: choice };
+      for (const f of block.fields || []) {
+        const v = values[f.name];
+        if (v === undefined || v === '') continue;
+        r.content[f.name] = f.type === 'bool' ? v === true || v === 'true' : f.type === 'number' ? Number(v) : v;
+      }
+      return r;
+    }
+    case 'item/tool/requestUserInput': {
+      const answers = {};
+      for (const f of block.fields || []) if (values[f.name] !== undefined && values[f.name] !== '') answers[f.name] = { answers: [String(values[f.name])] };
+      return { answers };
+    }
+    default:
+      return declineFor(method);
+  }
+}
+
+class ChatEngine {
+  constructor({ userData, getConfig, emit, defaultDir, hiddenDirs = () => [], codex, extraConfig = () => ({}) }) {
+    this.extraConfig = extraConfig; // cấu hình Codex thêm cho mỗi phiên (MCP điều khiển máy tính)
+    this.store = new ChatStore(userData);
+    this.getConfig = getConfig;
+    this.emit = emit;
+    this.defaultDir = defaultDir;
+    this.hiddenDirs = hiddenDirs; // thư mục mà Codex chạy cho việc khác (khu làm việc của văn phòng) – không hiện
+    this.codex = codex;           // CodexAppServer: chạy lượt chat + đọc lịch sử ChatGPT Work
+    this.running = new Map();     // threadId -> lượt đang chạy
+    this.asks = new Map();        // yêu cầu xin quyền đang chờ người dùng
+    this.askSeq = 0;
+    codex.on('request', (r) => this._onServerRequest(r));
+  }
+
+  // ---------- liên thông với ChatGPT Work / Codex Desktop ----------
+  // đoạn chat của Codex chưa có trong app (đã có thì hiện như đoạn chat bình thường)
+  async listExternal() {
+    const linked = new Set(this.store.list().map((t) => t.codexThread).filter(Boolean));
+    const hidden = this.store.hidden();
+    const skip = this.hiddenDirs();
+    const projects = this.getConfig().chatProjects || [];
+    const threads = await this.codex.listThreads();
+    return threads
+      .filter((th) => !linked.has(th.id) && !hidden.has(th.id) && !th.parentThreadId && !skip.some((d) => underPath(d, th.cwd)))
+      .map((th) => {
+        const pr = projects.find((p) => samePath(p.dir, th.cwd));
+        return { id: 'cx' + th.id.replace(/-/g, ''), codexId: th.id, title: threadTitle(th), project: samePath(th.cwd, this.defaultDir()) ? '' : pr ? pr.dir : th.cwd, updatedAt: th.updatedAt * 1000, external: true, model: th.model || '' };
+      });
+  }
+
+  // mở 1 đoạn chat của Codex trong app: nạp toàn bộ hội thoại, liên kết để chat tiếp bằng `codex exec resume`
+  async importExternal(codexId) {
+    const existing = this.store.list().find((t) => t.codexThread === codexId);
+    if (existing) return this.sync(existing.id);
+    const th = await this.codex.readThread(codexId);
+    const t = this.create({ project: samePath(th.cwd, this.defaultDir()) ? '' : th.cwd, model: th.model || '', title: threadTitle(th) });
+    Object.assign(t, { codexThread: th.id, origin: 'codex', messages: messagesFromThread(th, (u) => this._saveDataImage(t.id, u)), codexUpdatedAt: th.updatedAt });
+    return this.store.save(t);
+  }
+
+  // đoạn chat đã liên kết: nếu bên ChatGPT Work có lượt mới thì nạp lại toàn bộ
+  async sync(id) {
+    const t = this.store.get(id);
+    if (!t || !t.codexThread || this.running.has(id)) return t;
+    const meta = await this.codex.readThread(t.codexThread, false).catch(() => null);
+    if (!meta || meta.updatedAt === t.codexUpdatedAt) return t; // Codex chưa đổi gì kể từ lần đọc trước
+    const th = await this.codex.readThread(t.codexThread);
+    const userTurns = t.messages.filter((m) => m.role === 'user').length;
+    t.codexUpdatedAt = th.updatedAt;
+    if ((th.turns || []).length !== userTurns) {
+      t.messages = messagesFromThread(th, (u) => this._saveDataImage(t.id, u));
+      if (th.name && t.origin === 'codex') t.title = th.name.slice(0, 80);
+    }
+    return this.store.save(t);
+  }
+
+  // xóa đoạn chat; everywhere = xóa luôn phiên Codex (mất cả trong ChatGPT Work, không khôi phục được)
+  async remove(id, { everywhere = false } = {}) {
+    const t = this.store.get(id);
+    this.stop(id);
+    if (t && t.codexThread) {
+      this.store.hide(t.codexThread); // không để nó hiện lại thành đoạn chat của ChatGPT Work
+      if (everywhere) await this._codexDelete(t.codexThread);
+    }
+    this.store.remove(id);
+    return true;
+  }
+
+  async _codexDelete(codexId) {
+    try { await this.codex.request('thread/delete', { threadId: codexId }, 60000); } catch (e) {
+      if (!/not found|no rollout|no such|does not exist|unknown thread/i.test(e.message)) throw new Error('Không xóa được trong ChatGPT Work: ' + e.message);
+    }
+  }
+
+  // lưu trữ / bỏ lưu trữ: ẩn khỏi danh sách, đồng bộ sang ChatGPT Work (Codex) nếu đoạn chat liên thông
+  async archive(id, on = true) {
+    const t = this.store.get(id); if (!t) throw new Error('Không tìm thấy đoạn chat');
+    if (on && this.running.has(id)) throw new Error('Đoạn chat đang trả lời – chờ xong rồi lưu trữ');
+    t.archived = !!on;
+    if (t.codexThread) await this.codex.request(on ? 'thread/archive' : 'thread/unarchive', { threadId: t.codexThread }, 60000).catch(() => { /* phiên Codex đã mất – vẫn lưu trữ trong app */ });
+    return this.store.save(t);
+  }
+
+  // đoạn chat của ChatGPT Work chưa mở trong app
+  async archiveExternal(codexId, on = true) {
+    await this.codex.request(on ? 'thread/archive' : 'thread/unarchive', { threadId: codexId }, 60000);
+    return true;
+  }
+
+  async deleteExternal(codexId) {
+    await this._codexDelete(codexId);
+    this.store.hide(codexId);
+    return true;
+  }
+
+  // danh sách đã lưu trữ: của app + của ChatGPT Work
+  async listArchived() {
+    const mine = this.store.list().filter((t) => t.archived);
+    const linked = new Set(this.store.list().map((t) => t.codexThread).filter(Boolean));
+    const hidden = this.store.hidden();
+    const skip = this.hiddenDirs();
+    let ext = []; let error = '';
+    try {
+      ext = (await this.codex.listThreads(300, true))
+        .filter((th) => !linked.has(th.id) && !hidden.has(th.id) && !th.parentThreadId && !skip.some((d) => underPath(d, th.cwd)))
+        .map((th) => ({ id: 'cx' + th.id.replace(/-/g, ''), codexId: th.id, title: threadTitle(th), project: samePath(th.cwd, this.defaultDir()) ? '' : th.cwd, updatedAt: th.updatedAt * 1000, external: true, archived: true }));
+    } catch (e) { error = e.message; }
+    return { threads: [...mine, ...ext].sort((a, b) => b.updatedAt - a.updatedAt), error };
+  }
+
+  _saveDataImage(threadId, url) {
+    const m = String(url).match(/^data:image\/(png|jpe?g|gif|webp);base64,(.+)$/);
+    if (!m || m[2].length > 20 * 1024 * 1024) return null;
+    return this.saveUpload(threadId, 'anh.' + m[1].replace('jpeg', 'jpg'), Buffer.from(m[2], 'base64'));
+  }
+
+  create({ project, model, agentId, title, effort, sandbox }) {
+    const t = {
+      id: 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title: title || 'Đoạn chat mới', project: project || '', model: model || '', effort: effort || '', sandbox: sandbox || 'workspace-write',
+      agentId: agentId || null, codexThread: null, createdAt: Date.now(), messages: [],
+    };
+    return this.store.save(t);
+  }
+
+  update(id, patch) {
+    const t = this.store.get(id); if (!t) throw new Error('Không tìm thấy đoạn chat');
+    for (const k of ['title', 'model', 'effort', 'sandbox', 'pinned', 'project', 'agentId']) if (k in patch) t[k] = patch[k];
+    if ('project' in patch) t.codexThread = null; // đổi thư mục → bắt đầu phiên Codex mới
+    return this.store.save(t);
+  }
+
+  dirOf(t) {
+    const d = t.project && fs.existsSync(t.project) ? t.project : this.defaultDir();
+    fs.mkdirSync(d, { recursive: true });
+    return d;
+  }
+
+  // lưu ảnh dán từ clipboard / kéo thả không có đường dẫn
+  saveUpload(threadId, name, bytes) {
+    const dir = path.join(this.store.files, String(threadId || 'chung').replace(/[^a-z0-9]/gi, ''));
+    fs.mkdirSync(dir, { recursive: true });
+    const safe = (String(name || 'anh.png').replace(/[^\w.\-]+/g, '_').slice(-60)) || 'anh.png';
+    const p = path.join(dir, Date.now().toString(36) + '-' + safe);
+    fs.writeFileSync(p, Buffer.from(bytes));
+    return p;
+  }
+
+  // chỉ cho xem/mở file trong thư mục chat, dự án đã thêm, hoặc file đã xuất hiện trong một đoạn chat
+  canAccess(p) {
+    const r = path.resolve(String(p || ''));
+    const within = (base) => { const rel = path.relative(base, r); return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel); };
+    if (within(this.store.files) || within(this.defaultDir())) return true;
+    if ((this.getConfig().chatProjects || []).some((pr) => pr.dir && within(pr.dir))) return true;
+    return this._knownFiles().has(r);
+  }
+
+  _knownFiles() {
+    if (this._known && Date.now() - this._known.t < 5000) return this._known.set;
+    const set = new Set();
+    for (const f of fs.readdirSync(this.store.dir)) {
+      if (!f.endsWith('.json')) continue;
+      try {
+        for (const m of JSON.parse(fs.readFileSync(path.join(this.store.dir, f), 'utf8')).messages || []) {
+          for (const a of [...(m.attachments || []), ...(m.files || [])]) set.add(path.resolve(a.path));
+        }
+      } catch { /* bỏ file hỏng */ }
+    }
+    this._known = { t: Date.now(), set };
+    return set;
+  }
+
+  stop(id) {
+    const r = this.running.get(id); if (!r) return false;
+    r.stopped = true;
+    if (r.turnId) this.codex.request('turn/interrupt', { threadId: r.codexId, turnId: r.turnId }).catch(() => r.abort('Đã dừng'));
+    else r.abort(STOPPED);
+    return true;
+  }
+
+  // ---------- hỏi quyền: Codex xin phép → hộp "Cho phép / Từ chối" trong đoạn chat ----------
+  _onServerRequest({ id, method, params }) {
+    const run = [...this.running.values()].find((r) => r.codexId && r.codexId === params.threadId);
+    const ask = run && askFrom(method, params);
+    if (!ask) {
+      // lượt không thuộc app (hoặc loại yêu cầu chưa hỗ trợ) → từ chối an toàn để Codex không bị treo
+      const d = declineFor(method);
+      return d ? this.codex.respond(id, d) : this.codex.respondError(id, 'Văn Phòng AI chưa hỗ trợ yêu cầu ' + method);
+    }
+    // đã chọn "Luôn cho phép trong đoạn chat này" cho đúng việc này → tự đồng ý
+    const key = askKey(method, params);
+    if (key && (run.t.allow || []).includes(key)) return this.codex.respond(id, responseFor(method, params, 'session', { fields: [] }));
+    const rid = 'a' + (++this.askSeq);
+    const block = { kind: 'ask', id: rid, ...ask, answer: null };
+    this.asks.set(rid, { srvId: id, method, params, run, block });
+    run.msg.blocks.push(block);
+    run.emitBlocks(true);
+    this.emit({ type: 'chat-ask', threadId: run.threadId, title: run.title, ask: block });
+  }
+
+  _computer(run, active) {
+    if (!!run.computer === active) return;
+    run.computer = active;
+    this.emit({ type: 'chat-computer', threadId: run.threadId, active });
+  }
+
+  answer(threadId, rid, choice, values) {
+    const a = this.asks.get(rid);
+    if (!a || a.run.threadId !== threadId) throw new Error('Yêu cầu này đã hết hạn');
+    this.asks.delete(rid);
+    const opt = a.block.options.find((o) => o.id === choice) || a.block.options.find((o) => o.id === 'decline');
+    if (values && typeof values === 'object') a.block.values = Object.fromEntries(Object.entries(values).slice(0, 12).map(([k, v]) => [String(k), typeof v === 'boolean' ? v : String(v).slice(0, 4000)]));
+    a.block.answer = opt.done;
+    const key = opt.id === 'session' && askKey(a.method, a.params);
+    if (key) { const t = a.run.t; t.allow = [...new Set([...(t.allow || []), key])].slice(-60); this.store.save(t); }
+    this.codex.respond(a.srvId, responseFor(a.method, a.params, opt.id, a.block));
+    if (opt.id !== 'decline' && a.params.serverName === VPC) setTimeout(() => { if (this.running.get(threadId) === a.run) this._computer(a.run, true); }, 200);
+    a.run.emitBlocks(true);
+    return true;
+  }
+
+  // Codex tự hủy yêu cầu (lượt bị dừng…) → đánh dấu để nút bấm không còn tác dụng
+  _onResolved(params) {
+    for (const [rid, a] of this.asks) {
+      if (a.srvId === params.requestId && a.params.threadId === params.threadId) {
+        this.asks.delete(rid);
+        if (!a.block.answer) { a.block.answer = 'Đã hủy'; a.run.emitBlocks(true); }
+      }
+    }
+  }
+
+  _expireAsks(run) {
+    for (const [rid, a] of this.asks) if (a.run === run) { this.asks.delete(rid); if (!a.block.answer) a.block.answer = 'Đã hủy'; }
+  }
+
+  // agentId + persona: nhân sự phụ trách đoạn chat (vai trò được nhắc lại mỗi khi đổi người)
+  async send(id, { text, attachments = [], model, effort, persona, agentId, mentions = [] }) {
+    if (this._computerUseSetup) throw new Error('Đang thiết lập Computer Use. Chờ hoàn tất rồi gửi tin nhắn.');
+    const t = this.store.get(id); if (!t) throw new Error('Không tìm thấy đoạn chat');
+    if (this.running.has(id)) throw new Error('Đoạn chat này đang trả lời, chờ chút hoặc bấm Dừng');
+    text = String(text || '').trim();
+    if (!text && !attachments.length) throw new Error('Tin nhắn đang trống');
+    if (model !== undefined) t.model = model;
+    if (effort !== undefined) t.effort = effort;
+    if (agentId !== undefined) t.agentId = agentId || null;
+    const dir = this.dirOf(t);
+    const atts = attachments.filter((a) => a && a.path && fs.existsSync(a.path)).map((a) => ({ path: a.path, name: a.name || path.basename(a.path), image: IMG_EXT.test(a.path) }));
+
+    // @Máy tính, @Trình duyệt SIMI, @plugin – giống gõ @ trong ChatGPT Work
+    const ments = (Array.isArray(mentions) ? mentions : []).filter((m) => m && typeof m.id === 'string' && typeof m.name === 'string' && /^(tool|plugin)$/.test(m.kind))
+      .slice(0, 8).map((m) => ({ kind: m.kind, id: m.id.slice(0, 120), name: m.name.slice(0, 60) }));
+    const user = { role: 'user', text, attachments: atts, ts: Date.now(), ...(ments.length ? { mentions: ments } : {}) };
+    const msg = { role: 'assistant', model: t.model, agentId: t.agentId || null, blocks: [], files: [], ts: Date.now(), status: 'running' };
+    t.messages.push(user, msg);
+    if (t.title === 'Đoạn chat mới' && text) t.title = titleFrom(text);
+    this.store.save(t);
+
+    const needPersona = !!persona && t.personaFor !== (t.agentId || null);
+    const hints = ments.map((m) => (m.kind === 'tool' ? TOOL_HINT[m.id] : PLUGIN_HINT(m))).filter(Boolean);
+    const prompt = buildPrompt(t, hints.length ? `${text}\n\n(${hints.join(' ')})` : text, atts, needPersona ? persona : '');
+    if (needPersona) t.personaFor = t.agentId || null;
+    simi.refreshEnv();
+    const before = snapshot(dir);
+    const t0 = Date.now();
+    const emit = (ev) => this.emit({ type: 'chat', threadId: id, ...ev });
+    emit({ ev: 'start', message: msg, user });
+
+    const srv = this.codex;
+    return new Promise((resolve) => {
+      let done = false; let lastSave = 0; let emitTimer = null;
+      const items = new Map(); // id bước của Codex → block
+      const run = { threadId: id, title: t.title, t, msg, codexId: null, turnId: null, stopped: false };
+      const emitBlocks = (now) => {
+        const go = () => { emitTimer = null; emit({ ev: 'blocks', blocks: msg.blocks }); if (Date.now() - lastSave > 1500) { lastSave = Date.now(); this.store.save(t); } };
+        if (now) { clearTimeout(emitTimer); go(); } else if (!emitTimer) emitTimer = setTimeout(go, 60);
+      };
+      run.emitBlocks = emitBlocks;
+      const finish = (error) => {
+        if (done) return; done = true;
+        clearTimeout(emitTimer);
+        srv.off('notification', onNote); srv.off('exit', onExit);
+        // nhả phiên sau mỗi lượt để ChatGPT Work chat tiếp được ngay trên cùng phiên (Codex chỉ cho 1 nơi ghi 1 lúc);
+        // lần sau app đọc lại bản mới nhất từ đĩa
+        if (run.codexId) srv.loaded.delete(run.codexId);
+        srv.release();
+        if (!srv.active) srv.stop();
+        else if (run.codexId) srv.request('thread/unsubscribe', { threadId: run.codexId }).catch(() => { /* đã đóng */ });
+        this._expireAsks(run);
+        this._computer(run, false);
+        this.running.delete(id);
+        msg.files = collectFiles(dir, before, t0, msg.blocks);
+        if (msg.blocks.some((b) => b.kind === 'step' && isCU(b.server) && BROWSER_HOST.test(b.output || ''))) {
+          msg.blocks.push({ kind: 'note', text: 'Công cụ trình duyệt báo thiếu browser access host. Lỗi này không chứng minh plugin Windows Computer Use bị hỏng. Kiểm tra runtime OpenAI trong 🧰 Công cụ; thao tác cửa sổ Windows dùng node_repl + @oai/sky, chỉ đọc trang có thể dùng Trình duyệt SIMI.' });
+        }
+        if (t.sandbox === 'read-only' && wasBlocked('', msg.blocks)) {
+          msg.blocks.push({ kind: 'note', text: 'Có lệnh bị chặn vì đoạn chat đang ở chế độ "🔒 Chỉ đọc". Đổi quyền ở dưới ô chat rồi gửi lại nếu cần tạo/sửa file.' });
+        }
+        this._finish(t, msg, { error: run.stopped ? STOPPED : error, ms: Date.now() - t0 }, emit, resolve);
+      };
+      run.abort = finish;
+
+      const upsert = (it) => {
+        if (it.type === 'userMessage') return;
+        let block;
+        if (it.type === 'agentMessage') block = { kind: 'text', id: it.id, text: it.text || (items.get(it.id) || {}).text || '' };
+        else {
+          const st = stepFromItem(it); if (!st) return;
+          block = { ...st, id: it.id, kind: 'step' };
+          if (it.type === 'mcpToolCall' && it.status !== 'inProgress') this._toolResult(t.id, it, block);
+        }
+        const old = items.get(it.id);
+        if (old) msg.blocks[msg.blocks.indexOf(old)] = block; else msg.blocks.push(block);
+        items.set(it.id, block);
+        emitBlocks();
+      };
+      const onNote = (method, p) => {
+        if (!run.codexId || p.threadId !== run.codexId) { if (method === 'serverRequest/resolved') this._onResolved(p); return; }
+        if (run.turnId && p.turnId && p.turnId !== run.turnId) return;
+        switch (method) {
+          case 'item/started': case 'item/completed':
+            upsert(p.item);
+            // AI bắt đầu cầm chuột (đã được cho phép) → báo để thu nhỏ cửa sổ app cho khỏi che màn hình
+            if (method === 'item/started' && p.item.type === 'mcpToolCall' && p.item.server === VPC && !VPC_READONLY.has(p.item.tool)) {
+              setTimeout(() => { if (!done && ![...this.asks.values()].some((a) => a.run === run)) this._computer(run, true); }, 300);
+            }
+            break;
+          case 'item/agentMessage/delta': {
+            const b = items.get(p.itemId);
+            if (b) b.text += p.delta || ''; else upsert({ type: 'agentMessage', id: p.itemId, text: p.delta || '' });
+            emitBlocks(); break;
+          }
+          case 'serverRequest/resolved': this._onResolved(p); break;
+          case 'error':
+            if (!p.willRetry && p.error && !NOISE.test(p.error.message || '')) msg.error = p.error.message;
+            break;
+          case 'thread/tokenUsage/updated': msg.usage = (p.tokenUsage && p.tokenUsage.last) || null; break;
+          case 'turn/completed': {
+            const tr = p.turn || {};
+            for (const it of tr.items || []) upsert(it);
+            const err = tr.status === 'failed' ? ((tr.error && tr.error.message) || msg.error || 'Lượt trả lời thất bại') : tr.status === 'interrupted' ? STOPPED : '';
+            finish(err || (msg.blocks.some((b) => b.kind === 'text') ? '' : msg.error || ''));
+            break;
+          }
+          default:
+        }
+      };
+      const onExit = (e) => finish(e && /Không tìm thấy Codex/.test(e.message) ? NO_CODEX : 'Codex dừng đột ngột: ' + (e ? e.message : ''));
+      this.running.set(id, run);
+      srv.hold();
+      srv.on('notification', onNote);
+      srv.on('exit', onExit);
+
+      (async () => {
+        const set = simi.chatSettings({ model: t.model, effort: t.effort, sandbox: t.sandbox });
+        const gen = await srv.start();
+        const cu = await this.computerUse();
+        const guide = CHAT_GUIDE + '\n' + computerGuide({ native: !!(cu && cu.native), enabled: this.getConfig().computerControl !== false });
+        const threadOpts = { cwd: dir, model: set.model, modelProvider: set.modelProvider, approvalPolicy: set.approvalPolicy, sandbox: set.sandbox, config: { ...set.config, ...this.extraConfig() }, developerInstructions: guide };
+        if (t.codexThread && !srv.loaded.has(t.codexThread)) {
+          try {
+            await srv.request('thread/resume', { ...threadOpts, threadId: t.codexThread, excludeTurns: true }, 60000);
+            if (srv.gen === gen) srv.loaded.add(t.codexThread);
+          } catch (e) {
+            if (/active writer/i.test(e.message)) throw new Error('Đoạn chat này đang mở và chạy trong ChatGPT Work. Chờ bên đó trả lời xong (hoặc đóng đoạn chat bên đó) rồi gửi lại.');
+            if (!/not found|no rollout|no such|unknown thread|does not exist|không tìm thấy/i.test(e.message)) throw e;
+            t.codexThread = null; // phiên Codex cũ đã bị xóa → bắt đầu phiên mới, giữ nguyên lịch sử hiển thị
+          }
+        }
+        if (!t.codexThread) {
+          const r = await srv.request('thread/start', threadOpts, 60000);
+          t.codexThread = r.thread.id;
+          if (srv.gen === gen) srv.loaded.add(t.codexThread);
+          this.store.save(t);
+        }
+        run.codexId = t.codexThread;
+        if (run.stopped) return finish(STOPPED);
+        const input = [{ type: 'text', text: prompt, text_elements: [] }, ...atts.filter((a) => a.image).map((a) => ({ type: 'localImage', path: a.path })),
+          ...ments.filter((m) => m.kind === 'plugin').map((m) => ({ type: 'mention', name: m.name, path: `plugin://${m.id}` }))];
+        const r = await srv.request('turn/start', { threadId: t.codexThread, input, cwd: dir, model: set.model, effort: set.effort, approvalPolicy: set.approvalPolicy, sandboxPolicy: set.sandboxPolicy }, 60000);
+        run.turnId = r.turn && r.turn.id;
+        if (run.stopped && run.turnId) srv.request('turn/interrupt', { threadId: run.codexId, turnId: run.turnId }).catch(() => finish(STOPPED));
+      })().catch((e) => finish(/Không tìm thấy Codex|ENOENT/.test(e.message) ? NO_CODEX : e.message));
+    });
+  }
+
+  // ảnh chụp màn hình (Computer Use, trình duyệt) trong kết quả công cụ → lưu file để xem lại trong đoạn chat
+  _toolResult(threadId, it, block) {
+    // một số bản Codex gói kết quả có ảnh thành 1 đoạn text JSON {"content":[…]} → mở ra
+    const flat = (list) => (list || []).flatMap((c) => {
+      if (c && c.type === 'text' && /^\s*\{"content":\[/.test(c.text || '')) { try { return flat(JSON.parse(c.text).content); } catch { return [c]; } }
+      return [c];
+    });
+    const content = flat(it.result && it.result.content);
+    const text = content.filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim();
+    if (text && !block.output) block.output = text.slice(0, 1500);
+    const img = content.filter((c) => c.type === 'image' && c.data).pop();
+    if (img) {
+      try {
+        const ext = /jpe?g/.test(img.mimeType || '') ? 'jpg' : 'png';
+        block.shot = this.saveUpload(threadId, 'man-hinh.' + ext, Buffer.from(img.data, 'base64'));
+      } catch { /* bỏ qua ảnh hỏng */ }
+    }
+  }
+
+  // ---------- công cụ: Computer Use, trình duyệt SIMI, plugin, MCP ----------
+  async tools() {
+    const cfg = simi.readCodexConfig();
+    const out = { engine: { cmd: this.codex.getCmd(), desktop: !!simi.desktopCodex() && this.codex.getCmd() === simi.desktopCodex() }, browserConfigured: !!cfg.browserMcp, plugins: [], mcp: [], errors: [] };
+    const [pl, mcp] = await Promise.all([
+      this.codex.plugins().catch((e) => ({ plugins: [], errors: [e.message] })),
+      this.codex.mcpServers().catch((e) => { out.errors.push(e.message); return []; }),
+    ]);
+    out.plugins = pl.plugins; out.errors.push(...(pl.errors || [])); out.mcp = mcp;
+    out.computerUse = computerUseStatus(pl.plugins, mcp);
+    const br = mcp.find((m) => m.name === simi.BROWSER_MCP);
+    out.browser = { configured: !!cfg.browserMcp, status: br ? br.status : cfg.browserMcp ? 'notStarted' : 'notInstalled', tools: br ? br.tools : 0, error: br && br.error };
+    return out;
+  }
+
+  async computerUse() {
+    try {
+      const [plugins, servers] = await Promise.all([this.codex.plugins(), this.codex.mcpServers()]);
+      return computerUseStatus(plugins.plugins, servers);
+    } catch { return null; }
+  }
+
+  async checkComputerUse({ setup = false } = {}) {
+    if (this._computerUseSetup && !setup) throw new Error('Đang cài bổ sung Computer Use. Chờ hoàn tất rồi kiểm tra lại.');
+    if (this.getConfig().computerControl === false) throw new Error('Điều khiển máy tính đang tắt trong Cài đặt.');
+    if (this.running.size) throw new Error('Chờ lượt chat đang chạy kết thúc rồi kiểm tra lại.');
+    this.codex.hold();
+    try {
+      const info = await this.computerUse();
+      if (!info || !info.native) throw new Error(info && (info.error || info.note) || 'Plugin OpenAI hoặc runtime node_repl chưa sẵn sàng.');
+      // Read-only probe: exercise the actual bridge without screenshots or input.
+      const result = await this.codex.callTool('node_repl', 'js', {
+        code: "if (!globalThis.sky) { const { sky } = await import('@oai/sky'); globalThis.sky = sky; } nodeRepl.write(JSON.stringify({ target: sky.target, appCount: (await sky.list_apps()).length }));",
+        title: 'Kiểm tra Computer Use OpenAI (chỉ đọc danh sách ứng dụng)',
+      }, this.defaultDir());
+      const text = (result.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+      if (result.isError) throw new Error(text || 'Runtime OpenAI báo lỗi.');
+      let probe; try { probe = JSON.parse(text); } catch { throw new Error('Runtime chưa trả về kết quả kiểm tra hợp lệ.'); }
+      if (probe.target !== 'windows' || !Number.isInteger(probe.appCount)) throw new Error('Runtime Windows chưa sẵn sàng.');
+      return { ok: true, backend: 'openai', appCount: probe.appCount };
+    } finally { this.codex.release(); }
+  }
+
+  async setupComputerUse() {
+    if (this._computerUseSetup || this.running.size || this.codex.active) throw new Error('Chờ lượt chat hoặc kiểm tra đang chạy kết thúc rồi cài bổ sung.');
+    if (this.getConfig().computerControl === false) throw new Error('Điều khiển máy tính đang tắt. Bật lại trong Cài đặt trước khi thiết lập.');
+    const helpUrl = 'https://learn.chatgpt.com/docs/computer-use';
+    const result = (status, message, extra = {}) => ({ ok: status === 'ready', status, message, helpUrl, ...extra });
+    if (process.platform !== 'win32') return result('unsupported', 'Luồng thiết lập này hiện hỗ trợ Windows. Xem hướng dẫn OpenAI cho máy của bạn.');
+    this._computerUseSetup = true;
+    try {
+      let installedNow = false;
+      this.codex.hold();
+      try {
+        const catalog = await this.codex.plugins();
+        const entries = catalog.plugins.filter(p => p.name === 'computer-use');
+        const installed = entries.find(p => p.installed && p.enabled !== false) || entries.find(p => p.installed);
+        // Respect an existing user/admin decision; do not silently re-enable it.
+        if (installed && installed.enabled === false) return result('disabled', 'Plugin Computer Use đang tắt. Bật lại trong phần Plugins của Codex rồi kiểm tra lại.');
+        if (!installed) {
+          const candidate = entries.find(p => p.available);
+          if (!candidate) return result('unavailable', 'Danh mục hiện tại chưa có plugin Computer Use được phép cài. Cài hoặc cập nhật ứng dụng Codex chính thức, mở Plugins để thiết lập rồi quay lại kiểm tra.');
+          await this.codex.installPlugin(candidate.name, candidate.marketplacePath);
+          installedNow = true;
+        }
+      } finally { this.codex.release(); }
+      // Restart only while no chat is active, so new plugin configuration is loaded.
+      if (installedNow) this.codex.stop();
+      try {
+        const probe = await this.checkComputerUse({ setup: true });
+        return result('ready', 'Computer Use OpenAI đã được kiểm tra và hoạt động. Không có thao tác chuột hoặc bàn phím trong lần kiểm tra này.', { installedNow, appCount: probe.appCount });
+      } catch (e) {
+        return result('runtimeMissing', (installedNow ? 'Đã chạy bước cài plugin, nhưng ' : 'Plugin đã có, nhưng ') + 'runtime chưa được kiểm tra thành công. Cài hoặc cập nhật ứng dụng Codex chính thức và thiết lập Computer Use theo hướng dẫn, sau đó bấm kiểm tra lại.', { installedNow, detail: e.message });
+      }
+    } finally { this._computerUseSetup = false; }
+  }
+
+  installPlugin(name, marketplacePath) { return this.codex.installPlugin(name, marketplacePath); }
+
+  openBrowser(url) { return this.codex.callTool(simi.BROWSER_MCP, 'browser_open_window', url ? { url } : {}, this.defaultDir()); }
+
+  _finish(t, msg, { error, ms }, emit, resolve) {
+    msg.status = error ? (error === STOPPED ? 'stopped' : 'error') : 'done';
+    if (error) msg.error = error;
+    msg.ms = ms || 0;
+    t.codexUpdatedAt = null; // lần mở sau đối chiếu lại với Codex (số lượt khớp thì giữ nguyên)
+    this.store.save(t);
+    emit({ ev: 'done', message: msg, title: t.title, codexThread: t.codexThread });
+    resolve({ ok: !error, message: msg });
+  }
+}
+
+module.exports = { ChatEngine };

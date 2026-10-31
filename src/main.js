@@ -1,0 +1,445 @@
+// Tiến trình chính của Electron: cửa sổ, hàng đợi việc cho văn phòng, chat, các lệnh IPC cho giao diện.
+const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage, Menu, Notification, powerMonitor, systemPreferences } = require('electron');
+const path = require('path');
+const fs = require('fs');
+
+const { Store } = require('./store');
+const { SOURCES, callAgent } = require('./providers');
+const { runTask } = require('./orchestrator');
+const accounts = require('./accounts');
+const simi = require('./simi');
+const { ChatEngine } = require('./chat');
+const { CodexAppServer } = require('./codex-server');
+const { Updater, newer } = require('./updater');
+const { LobbyClient } = require('./lobby-client');
+const { refreshPath } = require('./sys');
+
+// test tự động dùng thư mục dữ liệu riêng để không đụng dữ liệu thật
+if (process.env.VPAI_USER_DATA) app.setPath('userData', process.env.VPAI_USER_DATA);
+if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
+
+const ICON = path.join(__dirname, 'renderer', 'icon.png');
+const MODEL_CACHE_MS = 10 * 60 * 1000;
+const MAX_UPLOAD = 30 * 1024 * 1024;
+const MAX_PREVIEW = 15 * 1024 * 1024;
+
+let win = null;
+let store = null;
+let chat = null;
+let codexServer = null;   // `codex app-server`: chạy chat, hỏi quyền, plugin, đọc lịch sử ChatGPT Work
+let updater = null;       // tự cập nhật app qua SIMI Gateway
+let notifiedUpdate = '';  // phiên bản đã báo
+let simiUpdating = null;  // cập nhật SIMI đang chạy
+let lobby = null;         // Sảnh online trên SIMI Gateway
+const queue = [];          // các task chờ
+let running = null;        // { task, ac }
+const modelCache = new Map();
+
+// ---------------- thư mục ----------------
+function ensureDir(d) { fs.mkdirSync(d, { recursive: true }); return d; }
+function outputDir() {
+  const cfg = store.getConfig();
+  return ensureDir(cfg.outputDir && cfg.outputDir.trim() ? cfg.outputDir : path.join(app.getPath('documents'), 'VanPhongAI'));
+}
+const workDir = () => ensureDir(path.join(outputDir(), '_khu-lam-viec'));
+const chatDir = () => ensureDir(path.join(outputDir(), 'Chat'));
+
+function inside(base, p) {
+  const rel = path.relative(base, path.resolve(p));
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+const insideOutput = (p) => inside(outputDir(), p);
+const canOpenChatFile = (p) => typeof p === 'string' && (insideOutput(p) || chat.canAccess(p));
+
+// ---------------- sự kiện tới giao diện + thông báo ----------------
+function focusWindow() { if (!win) return; if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+
+function notify(title, body, onClick) {
+  if (store.getConfig().notify === false || !Notification.isSupported() || !win || win.isFocused()) return;
+  const n = new Notification({ title, body, icon: ICON });
+  n.on('click', () => { focusWindow(); if (onClick) onClick(); });
+  n.show();
+}
+
+function emit(e) {
+  if (win && !win.isDestroyed()) win.webContents.send('evt', e);
+  if (e.type === 'result') notify('Văn Phòng AI – Đã xong việc', e.title);
+  if (e.type === 'chat-computer') onComputer(e);
+  // bản mới đã tải sẵn → báo 1 lần cho mỗi phiên bản (đang ở cửa sổ khác thì hiện thông báo của hệ điều hành)
+  if (e.type === 'update' && e.state.status === 'ready' && e.state.version && notifiedUpdate !== e.state.version) {
+    notifiedUpdate = e.state.version;
+    notify(`⬆️ Văn Phòng AI ${e.state.version} đã sẵn sàng`, 'Bấm để cập nhật – app tự cài và mở lại sau khoảng 20 giây.', () => win.webContents.send('evt', { type: 'update-open' }));
+  }
+  if (e.type === 'chat-ask') {
+    notify(`🔐 Cần bạn cho phép: ${e.title || 'Chat'}`.slice(0, 80), `${e.ask.title}${e.ask.detail ? ' – ' + String(e.ask.detail).split('\n')[0] : ''}`.slice(0, 140),
+      () => win.webContents.send('evt', { type: 'chat-open', threadId: e.threadId }));
+  }
+  if (e.type === 'chat' && e.ev === 'done') {
+    const m = e.message || {};
+    const txt = (m.blocks || []).filter((x) => x.kind === 'text').map((x) => x.text).join(' ').replace(/\s+/g, ' ').slice(0, 140);
+    notify(m.error ? 'Văn Phòng AI – Chat bị lỗi' : `Đã trả lời: ${e.title || ''}`.slice(0, 80), m.error || txt || 'Xong',
+      () => win.webContents.send('evt', { type: 'chat-open', threadId: e.threadId }));
+  }
+}
+
+// ---------------- điều khiển máy tính (MCP vp_computer cho tab Chat) ----------------
+// chạy bằng chính file thực thi của app ở chế độ Node; trong bản đóng gói, script nằm ở app.asar.unpacked
+const computerScript = () => path.join(__dirname, 'computer', 'mcp.js').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+function computerMcp() {
+  if (store.getConfig().computerControl === false) return {};
+  return {
+    'mcp_servers.vp_computer.command': process.execPath,
+    'mcp_servers.vp_computer.args': [computerScript()],
+    // Codex chỉ chuyển một ít biến môi trường cho MCP → đưa thêm biến cần để thấy màn hình (DISPLAY…) và chạy PowerShell
+    'mcp_servers.vp_computer.env': {
+      ELECTRON_RUN_AS_NODE: '1',
+      ...Object.fromEntries(['DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'XDG_SESSION_TYPE', 'DBUS_SESSION_BUS_ADDRESS', 'PATH', 'Path', 'SystemRoot', 'windir', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'HOME', 'LANG']
+        .filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
+    },
+  };
+}
+
+// kiểm tra máy có điều khiển được không (quyền macOS, xdotool trên Linux)
+function computerCheck() {
+  const cfg = store.getConfig();
+  const out = { enabled: cfg.computerControl !== false, platform: process.platform, ok: true, issues: [] };
+  if (process.platform === 'darwin') {
+    out.accessibility = systemPreferences.isTrustedAccessibilityClient(false);
+    out.screen = systemPreferences.getMediaAccessStatus('screen');
+    if (!out.accessibility) out.issues.push('Chưa cấp quyền Accessibility (điều khiển chuột, bàn phím)');
+    if (out.screen !== 'granted') out.issues.push('Chưa cấp quyền Screen Recording (chụp màn hình)');
+  } else if (process.platform === 'linux') {
+    const has = (c) => (process.env.PATH || '').split(':').some((d) => d && fs.existsSync(path.join(d, c)));
+    if (!process.env.DISPLAY) out.issues.push('Đang ở phiên Wayland – chọn "Ubuntu on Xorg" khi đăng nhập');
+    if (!has('xdotool')) out.issues.push('Thiếu xdotool (sudo apt install xdotool)');
+    if (!has('import')) out.issues.push('Thiếu ImageMagick (sudo apt install imagemagick)');
+  }
+  out.ok = out.issues.length === 0;
+  return out;
+}
+
+// AI đang cầm chuột → thu nhỏ app cho khỏi che màn hình; xong lượt thì hiện lại
+const computerRuns = new Set();
+let computerHid = false;
+function onComputer(e) {
+  if (e.active) computerRuns.add(e.threadId); else computerRuns.delete(e.threadId);
+  if (!win || win.isDestroyed() || store.getConfig().computerMinimize === false) return;
+  if (computerRuns.size && !computerHid && !win.isMinimized()) { computerHid = true; win.minimize(); }
+  if (!computerRuns.size && computerHid) { computerHid = false; win.restore(); win.focus(); }
+}
+
+// ---------------- hàng đợi việc của văn phòng ----------------
+async function pump() {
+  if (running || queue.length === 0) return;
+  const task = queue.shift();
+  const ac = new AbortController();
+  running = { task, ac };
+  try {
+    await runTask(task, {
+      config: store.getConfig(), emit, signal: ac.signal,
+      getSecret: (n) => store.getSecret(n), workDir: workDir(), outputDir: outputDir(),
+    });
+  } catch (e) {
+    const cancelled = ac.signal.aborted;
+    emit({ type: 'task', id: task.id, status: cancelled ? 'cancelled' : 'error', note: e.message });
+    emit({ type: 'log', level: cancelled ? 'info' : 'error', text: cancelled ? `Đã dừng việc "${task.title}"` : e.message });
+    for (const a of store.getConfig().agents) emit({ type: 'agent', id: a.id, state: 'idle' });
+  } finally {
+    running = null;
+    setImmediate(pump);
+  }
+}
+
+// ---------------- IPC ----------------
+function registerIpc() {
+  const handle = (ch, fn) => ipcMain.handle(ch, (_e, ...a) => fn(...a));
+
+  // cấu hình + khóa API
+  handle('config:get', () => ({ config: store.getConfig(), sources: SOURCES, secrets: store.secretStatus(), outputDir: outputDir(), platform: process.platform }));
+  handle('config:save', (cfg) => {
+    if (!cfg || !Array.isArray(cfg.agents) || cfg.agents.length === 0) throw new Error('Cấu hình không hợp lệ');
+    if (cfg.agents.filter((a) => a.isManager).length !== 1) throw new Error('Phải có đúng 1 Trưởng phòng');
+    store.saveConfig(cfg);
+    return { ok: true, outputDir: outputDir() };
+  });
+  handle('config:projects', (list) => {
+    const cfg = store.getConfig();
+    cfg.chatProjects = (Array.isArray(list) ? list : []).filter((x) => x && typeof x.dir === 'string' && fs.existsSync(x.dir)).slice(0, 40)
+      .map((x) => ({ name: String(x.name || path.basename(x.dir)).slice(0, 60), dir: x.dir }));
+    store.saveConfig(cfg);
+    return cfg.chatProjects;
+  });
+  handle('secret:set', (name, value) => {
+    if (!['anthropic', 'openai', 'gemini'].includes(name)) throw new Error('Tên khóa không hợp lệ');
+    store.setSecret(name, (value || '').trim());
+    for (const k of [...modelCache.keys()]) if (k.endsWith('-api')) modelCache.delete(k);
+    return store.secretStatus();
+  });
+
+  // việc của văn phòng
+  handle('task:add', (t) => {
+    const task = {
+      id: 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title: String(t.title || '').trim().slice(0, 120) || 'Việc mới',
+      text: String(t.text || '').trim(),
+      targetId: t.targetId,
+    };
+    if (!task.text) throw new Error('Nội dung việc đang trống');
+    queue.push(task);
+    emit({ type: 'task', id: task.id, status: 'queued' });
+    setImmediate(pump);
+    return task.id;
+  });
+  handle('task:cancel', (id) => {
+    if (running && running.task.id === id) { running.ac.abort(); return true; }
+    const i = queue.findIndex((t) => t.id === id);
+    if (i < 0) return false;
+    queue.splice(i, 1);
+    emit({ type: 'task', id, status: 'cancelled' });
+    return true;
+  });
+
+  // tài khoản + model
+  handle('accounts:check', () => accounts.checkAll(store.getConfig(), store.secretStatus()));
+  handle('models:list', async (source, refresh) => {
+    const hit = modelCache.get(source);
+    if (hit && !refresh && Date.now() - hit.t < MODEL_CACHE_MS) return hit.v;
+    let v;
+    try { v = await accounts.listModels(source, store.getConfig(), (n) => store.getSecret(n)); }
+    catch (e) { v = { models: [], live: false, error: e.message.split('\n')[0] }; }
+    if (v.models.length) modelCache.set(source, { t: Date.now(), v });
+    return v;
+  });
+  handle('terminal:open', (key) => accounts.openTerminal(key));
+  handle('agent:test', async (agent) => {
+    const t0 = Date.now();
+    try {
+      const text = await callAgent(agent, 'Bạn đang được kiểm tra kết nối.', 'Trả lời đúng một chữ: OK', {
+        config: store.getConfig(), signal: new AbortController().signal, getSecret: (n) => store.getSecret(n), workDir: workDir(),
+      }, { kind: 'ping' });
+      return { ok: true, text: text.slice(0, 200), ms: Date.now() - t0 };
+    } catch (e) { return { ok: false, text: e.message, ms: Date.now() - t0 }; }
+  });
+
+  // Sảnh online
+  handle('lobby:status', () => lobby.status());
+  handle('lobby:connect', (on) => { const cfg = store.getConfig(); cfg.lobbyEnabled = !!on; store.saveConfig(cfg); if (on) lobby.start(); else lobby.stop(); return lobby.status(); });
+  handle('lobby:kick', () => { if (store.getConfig().lobbyEnabled !== false) { lobby.start(); lobby.kick(); } return lobby.status(); });
+  handle('lobby:send', (payload) => lobby.send(payload));
+  handle('lobby:presence', (payload) => lobby.setPresence(payload));
+  handle('lobby:profile', (payload) => lobby.saveProfile(payload));
+  handle('lobby:history', (room, before) => lobby.history(room, before));
+  handle('lobby:members', () => lobby.members());
+  handle('lobby:cinema', (payload) => lobby.cinema(payload || {}));
+  handle('lobby:cinemaState', () => lobby.cinemaState());
+
+  // SIMI Gateway
+  handle('simi:status', () => simi.status(store.getConfig().cli.codex.cmd || 'codex'));
+  handle('simi:skills', () => simi.listSkills());
+  handle('simi:install', () => simi.openInstaller(store.getConfig().simiGateway));
+  // cập nhật skill, công cụ, plugin, danh sách model của SIMI – chạy ngầm, hiện tiến độ trong app
+  handle('simi:update', async () => {
+    if (simiUpdating) return simiUpdating;
+    emit({ type: 'simi-update', ev: 'start' });
+    simiUpdating = simi.runUpdate(store.getConfig().simiGateway, (line) => emit({ type: 'simi-update', ev: 'line', line })).then((r) => {
+      simiUpdating = null;
+      modelCache.delete('simi');
+      codexServer.stop(); // nạp lại cấu hình, skill, plugin mới
+      emit({ type: 'simi-update', ev: 'done', ok: r.ok, error: r.error || '' });
+      return r;
+    });
+    return simiUpdating;
+  });
+
+  // tự cập nhật app
+  handle('update:state', () => updater.state);
+  handle('update:check', () => updater.check());
+  handle('update:download', () => updater.download());
+  handle('update:cancel', () => updater.cancel());
+  handle('update:install', () => updater.install());
+  handle('update:now', () => updater.updateNow());
+
+  // chat
+  handle('chat:list', () => chat.store.list());
+  handle('chat:get', (id) => chat.store.get(id));
+  handle('chat:create', (o) => chat.create(o || {}));
+  handle('chat:update', (id, patch) => chat.update(id, patch || {}));
+  handle('chat:delete', (id, everywhere) => chat.remove(id, { everywhere: !!everywhere }));
+  handle('chat:archive', (id, on) => chat.archive(id, on !== false));
+  handle('chat:archiveExternal', (codexId, on) => chat.archiveExternal(String(codexId || ''), on !== false));
+  handle('chat:deleteExternal', (codexId) => chat.deleteExternal(String(codexId || '')));
+  handle('chat:archived', () => chat.listArchived());
+  handle('chat:external', async () => {
+    try { return { threads: await chat.listExternal() }; } catch (e) { return { threads: [], error: e.message.split('\n')[0] }; }
+  });
+  handle('chat:import', (codexId) => chat.importExternal(codexId));
+  handle('chat:sync', (id) => chat.sync(id));
+  handle('chat:send', (id, payload) => chat.send(id, payload || {}));
+  handle('chat:stop', (id) => chat.stop(id));
+  handle('chat:running', () => [...chat.running.keys()]);
+  handle('chat:answer', (id, rid, choice, values) => chat.answer(id, rid, choice, values));
+  handle('chat:asks', (id) => [...chat.asks.values()].filter((a) => a.run.threadId === id).map((a) => a.block));
+  // Computer Use, trình duyệt SIMI, plugin, MCP
+  handle('chat:setupComputerUse', () => { codexServer.restartIfChanged(); return chat.setupComputerUse(); });
+  handle('chat:checkComputerUse', () => { codexServer.restartIfChanged(); return chat.checkComputerUse(); });
+  handle('chat:tools', () => { codexServer.restartIfChanged(); return chat.tools(); });
+  handle('chat:installPlugin', (name, mk) => chat.installPlugin(String(name || ''), mk || null).then((r) => { codexServer.stop(); return r; }));
+  handle('chat:openBrowser', (url) => chat.openBrowser(typeof url === 'string' && /^https?:\/\//i.test(url) ? url : ''));
+  // danh sách cho menu @ trong ô chat: công cụ của app + plugin Codex đã cài
+  let mentionCache = null;
+  handle('chat:mentions', async () => {
+    if (mentionCache && Date.now() - mentionCache.t < 5 * 60 * 1000) return mentionCache.v;
+    const cfg = store.getConfig();
+    const tools = [
+      { id: 'vp_computer', name: 'Máy tính', icon: '🖱️', desc: 'Điều khiển chuột, bàn phím – mọi app trên máy, kể cả trình duyệt', enabled: cfg.computerControl !== false },
+      { id: 'simi_browser', name: 'Trình duyệt SIMI', icon: '🧭', desc: 'Đọc trang web cần đăng nhập (Shopee, Facebook…)', enabled: !!simi.readCodexConfig().browserMcp },
+    ];
+    let plugins = [];
+    try { plugins = (await codexServer.plugins()).plugins.filter((p) => p.installed && p.enabled).map((p) => ({ id: p.id, name: p.name, title: /computer-use/.test(p.name) ? 'Computer Use (ChatGPT)' : p.title, description: p.description })); } catch { /* Codex chưa sẵn sàng */ }
+    const seen = new Set();
+    plugins = plugins.filter((p) => !seen.has(p.id) && seen.add(p.id));
+    mentionCache = { t: Date.now(), v: { tools, plugins } };
+    return mentionCache.v;
+  });
+  handle('computer:check', () => computerCheck());
+  // macOS: hiện hộp xin quyền Accessibility / mở đúng trang Cài đặt
+  handle('computer:grant', () => {
+    if (process.platform !== 'darwin') return computerCheck();
+    systemPreferences.isTrustedAccessibilityClient(true);
+    const pane = systemPreferences.getMediaAccessStatus('screen') !== 'granted' && systemPreferences.isTrustedAccessibilityClient(false) ? 'Privacy_ScreenCapture' : 'Privacy_Accessibility';
+    shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${pane}`);
+    return computerCheck();
+  });
+  handle('chat:skills', async () => {
+    const local = simi.listSkills();
+    try {
+      const all = await codexServer.skills([chatDir()]);
+      const seen = new Set(local.map((s) => s.name));
+      return [...local, ...all.filter((s) => !seen.has(s.name)).map((s) => ({ name: s.name, description: s.description, simi: false, system: s.scope === 'system', origin: s.pluginId ? 'plugin' : s.scope, plugin: s.pluginId }))];
+    } catch { return local; }
+  });
+  handle('chat:upload', (threadId, name, bytes) => {
+    if (!bytes || bytes.byteLength > MAX_UPLOAD) throw new Error('File quá lớn (tối đa 30MB)');
+    return chat.saveUpload(threadId, name, bytes);
+  });
+  handle('chat:pickFiles', async () => {
+    const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'] });
+    return r.canceled ? [] : r.filePaths;
+  });
+  handle('chat:fileData', (p) => {
+    if (!canOpenChatFile(p)) throw new Error('Không được phép');
+    if (fs.statSync(p).size > MAX_PREVIEW) return null;
+    const ext = path.extname(p).slice(1).toLowerCase().replace('jpg', 'jpeg');
+    return `data:image/${ext === 'svg' ? 'svg+xml' : ext};base64,` + fs.readFileSync(p).toString('base64');
+  });
+  handle('chat:openFile', (p) => { if (!canOpenChatFile(p)) throw new Error('Không được phép'); return shell.openPath(p); });
+  handle('chat:showFile', (p) => { if (canOpenChatFile(p)) shell.showItemInFolder(p); });
+  // chỉ mở thư mục dự án đã lưu hoặc thư mục của một đoạn chat có trong app
+  handle('chat:openDir', (d) => {
+    const known = d && ((store.getConfig().chatProjects || []).some((pr) => pr.dir === d) || chat.store.list().some((t) => t.project === d));
+    return shell.openPath(known && fs.existsSync(d) ? d : chatDir());
+  });
+
+  // file kết quả của văn phòng
+  handle('results:list', () => {
+    const dir = outputDir();
+    return fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.md'))
+      .map((f) => ({ file: path.join(dir, f), name: f, mtime: fs.statSync(path.join(dir, f)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime).slice(0, 40);
+  });
+  handle('file:read', (p) => {
+    if (!insideOutput(p)) throw new Error('Không được phép đọc file ngoài thư mục kết quả');
+    return fs.readFileSync(p, 'utf8');
+  });
+
+  // mở thư mục / file / liên kết
+  handle('shell:openOutput', () => shell.openPath(outputDir()));
+  handle('shell:openFile', (p) => { if (!insideOutput(p)) throw new Error('Không được phép'); return shell.openPath(p); });
+  handle('shell:showFile', (p) => { if (insideOutput(p)) shell.showItemInFolder(p); });
+  handle('shell:openUrl', (url) => { if (/^https:\/\/[a-z0-9.-]+\//i.test(url)) shell.openExternal(url); });
+  handle('dialog:chooseDir', async () => {
+    const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
+    return r.canceled ? null : r.filePaths[0];
+  });
+}
+
+// ---------------- cửa sổ ----------------
+function createWindow() {
+  win = new BrowserWindow({
+    width: 1400, height: 880, minWidth: 1120, minHeight: 720,
+    backgroundColor: '#1d1b26', title: 'Văn Phòng AI', icon: ICON,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  if (process.platform === 'darwin') {
+    // macOS cần menu Edit để Cmd+C / Cmd+V hoạt động trong ô nhập
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { role: 'appMenu', label: 'Văn Phòng AI' }, { role: 'editMenu', label: 'Sửa' },
+      { role: 'viewMenu', label: 'Xem' }, { role: 'windowMenu', label: 'Cửa sổ' },
+    ]));
+  } else {
+    win.removeMenu();
+  }
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.on('focus', () => { if (updater) updater.checkSoon(20 * 60 * 1000); }); // quay lại app sau một lúc → xem có bản mới không
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  win.webContents.on('before-input-event', (_e, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12') win.webContents.toggleDevTools();
+  });
+}
+
+app.on('second-instance', focusWindow);
+// màn chiếu YouTube trong Sảnh: video tự phát (không cần bấm vào khung)
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
+// YouTube từ chối phát khung nhúng không có Referer (lỗi 153) – app chạy từ file:// nên tự gắn Referer cho khung nhúng
+function youtubeReferer() {
+  const { session } = require('electron');
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://www.youtube.com/embed/*', 'https://www.youtube-nocookie.com/embed/*'] }, (d, cb) => {
+    if (!d.requestHeaders.Referer && !d.requestHeaders.referer) d.requestHeaders.Referer = 'https://simi.vn/';
+    cb({ requestHeaders: d.requestHeaders });
+  });
+}
+
+app.whenReady().then(() => {
+  store = new Store(app.getPath('userData'), safeStorage);
+  refreshPath();
+  simi.refreshEnv();
+  codexServer = new CodexAppServer(() => simi.chatCodexCmd(store.getConfig().cli.codex.cmd || 'codex', store.getConfig().chatEngine || 'auto'));
+  updater = new Updater({
+    app, emit, dir: path.join(app.getPath('userData'), 'updates'),
+    getGateway: () => simi.gatewayOrigin(simi.readCodexConfig().baseUrl || store.getConfig().simiGateway || ''),
+    enabled: () => store.getConfig().autoUpdate !== false,
+    autoDownload: () => store.getConfig().autoUpdate !== false,
+  });
+  updater.start();
+  chat = new ChatEngine({ userData: app.getPath('userData'), getConfig: () => store.getConfig(), emit, defaultDir: chatDir, hiddenDirs: () => [workDir()], codex: codexServer, extraConfig: computerMcp });
+  lobby = new LobbyClient({
+    getAuth: () => simi.gatewayAuth(),
+    emit: (ev, data) => {
+      emit({ type: 'lobby', ev, data });
+      // admin vừa đăng bản app mới trên Gateway → kiểm tra & tải sẵn ngay, không đợi lượt kiểm tra định kỳ
+      if (ev === 'app-release' || (ev === 'hello' && data.app && newer(data.app.version, app.getVersion()))) updater.checkSoon(0);
+      // tin nhắn riêng khi đang ở cửa sổ khác → thông báo
+      if (ev === 'message' && data.room.startsWith('dm:') && lobby.me && data.from !== lobby.me.id) {
+        notify(`💬 ${data.name} nhắn bạn`, data.text.slice(0, 140), () => win.webContents.send('evt', { type: 'lobby-open', room: data.room }));
+      }
+    },
+  });
+  if (store.getConfig().lobbyEnabled !== false) lobby.start();
+  powerMonitor.on('resume', () => { lobby.kick(); updater.checkSoon(5 * 60 * 1000); });
+  registerIpc();
+  youtubeReferer();
+  createWindow();
+});
+
+app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0 && store) createWindow(); });
+
+app.on('window-all-closed', () => {
+  if (running) running.ac.abort();
+  if (chat) for (const id of [...chat.running.keys()]) chat.stop(id);
+  if (codexServer) codexServer.stop();
+  if (updater) updater.stop();
+  if (lobby) lobby.stop();
+  app.quit();
+});
