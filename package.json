@@ -1,16 +1,16 @@
 {
   "name": "vanphong-ai",
   "productName": "VanPhongAI",
-  "version": "0.9.13",
+  "version": "0.9.14",
   "description": "Văn phòng AI - giao việc cho các agent như một trò chơi",
   "main": "src/main.js",
-  "author": "LEGION",
+  "author": "LTN",
   "license": "UNLICENSED",
   "scripts": {
     "start": "npm run build:office && electron .",
     "build:office": "esbuild src/office3d/office3d.js --bundle --format=iife --minify --target=chrome120 --outfile=src/renderer/office3d.bundle.js",
     "lint": "eslint .",
-    "test": "node test/orch.test.js && node --test test/computer-use.test.js test/computer-use-setup.test.js test/computer.test.js test/updater.test.js test/simi-task.test.js",
+    "test": "node test/orch.test.js && node --test test/computer-use.test.js test/computer-use-setup.test.js test/computer.test.js test/updater.test.js test/simi-task.test.js test/pool-engine.test.js",
     "test:office": "node test/ui-office.test.js",
     "test:chat": "node test/ui-chat.test.js",
     "test:history": "node test/ui-history.test.js",
@@ -18,8 +18,9 @@
     "test:lobby-chat": "node test/ui-lobby-chat.test.js",
     "test:lobby-play": "node test/ui-lobby-play.test.js",
     "test:npc": "node test/ui-lobby-npc.test.js",
+    "test:pool": "node test/ui-lobby-pool.test.js",
     "dist": "npm run build:office && electron-builder --win nsis --x64",
-    "dist:mac": "npm run build:office && electron-builder --mac zip --arm64",
+    "dist:mac": "npm run build:office && electron-builder --mac zip --arm64 --x64",
     "dist:linux": "npm run build:office && electron-builder --linux AppImage deb --x64",
     "test:tools": "node test/ui-tools.test.js",
     "test:computer-setup": "node test/ui-computer-setup.test.js",
@@ -51,14 +52,15 @@
       "createDesktopShortcut": true,
       "shortcutName": "Văn Phòng AI"
     },
-    "copyright": "Dùng cá nhân",
+    "copyright": "© 2026 LTN",
     "publish": null,
     "mac": {
       "target": [
         {
           "target": "zip",
           "arch": [
-            "arm64"
+            "arm64",
+            "x64"
           ]
         }
       ],

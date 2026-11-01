@@ -36,6 +36,7 @@ let notifiedUpdate = '';  // phiên bản đã báo
 let simiUpdating = null;  // cập nhật SIMI đang chạy
 let lobby = null;         // Sảnh online trên SIMI Gateway
 let lobbyImages = null;   // bộ đệm ảnh chat Sảnh
+let lobbyDnd = false;     // trạng thái "Tập trung" trong Sảnh: không bật thông báo tin nhắn / nhắc tên
 const queue = [];          // các task chờ
 let running = null;        // { task, ac }
 const modelCache = new Map();
@@ -160,7 +161,7 @@ function registerIpc() {
   const handle = (ch, fn) => ipcMain.handle(ch, (_e, ...a) => fn(...a));
 
   // cấu hình + khóa API
-  handle('config:get', () => ({ config: store.getConfig(), sources: SOURCES, secrets: store.secretStatus(), outputDir: outputDir(), platform: process.platform }));
+  handle('config:get', () => ({ config: store.getConfig(), sources: SOURCES, secrets: store.secretStatus(), outputDir: outputDir(), platform: process.platform, version: app.getVersion() }));
   handle('config:save', (cfg) => {
     if (!cfg || !Array.isArray(cfg.agents) || cfg.agents.length === 0) throw new Error('Cấu hình không hợp lệ');
     if (cfg.agents.filter((a) => a.isManager).length !== 1) throw new Error('Phải có đúng 1 Trưởng phòng');
@@ -244,7 +245,11 @@ function registerIpc() {
   handle('lobby:cat', (payload) => lobby.call('cat', payload || {}));
   handle('lobby:interact', (payload) => lobby.call('interact', payload || {}));
   handle('lobby:npc', () => lobby.call('npc', undefined, 'GET'));
+  handle('lobby:game', (payload) => lobby.call('game', payload || {}));
+  handle('lobby:games', () => lobby.call('games', undefined, 'GET'));
   handle('lobby:npcAsk', (payload) => lobby.npcAsk(payload || {}));
+  handle('lobby:npcFeedback', (payload) => lobby.call('npc/feedback', payload || {}));
+  handle('lobby:dnd', (on) => { lobbyDnd = !!on; return true; });
   // lưu ảnh trong chat về máy (hộp chọn chỗ lưu)
   handle('lobby:saveImage', async (id) => {
     if (!IMG_ID.test(String(id))) throw new Error('Ảnh không hợp lệ');
@@ -426,6 +431,8 @@ function youtubeReferer() {
 }
 
 app.whenReady().then(() => {
+  // bảng "Giới thiệu" (menu app trên macOS, Linux): tác giả LTN
+  app.setAboutPanelOptions({ applicationName: 'Văn Phòng AI', applicationVersion: app.getVersion(), version: '', copyright: '© 2026 LTN', credits: 'Tạo bởi LTN', authors: ['LTN'] });
   store = new Store(app.getPath('userData'), safeStorage);
   refreshPath();
   simi.refreshEnv();
@@ -446,7 +453,7 @@ app.whenReady().then(() => {
       // admin vừa đăng bản app mới trên Gateway → kiểm tra & tải sẵn ngay, không đợi lượt kiểm tra định kỳ
       if (ev === 'app-release' || (ev === 'hello' && data.app && newer(data.app.version, app.getVersion()))) updater.checkSoon(0);
       // tin nhắn riêng khi đang ở cửa sổ khác → thông báo
-      if (ev === 'message' && lobby.me && data.from !== lobby.me.id) {
+      if (ev === 'message' && lobby.me && data.from !== lobby.me.id && !lobbyDnd) {
         const body = (data.text || (data.images && data.images.length ? '📷 Đã gửi ảnh' : '')).slice(0, 140);
         const open = () => win.webContents.send('evt', { type: 'lobby-open', room: data.room, msg: data.id });
         const tagged = (data.mentions || []).includes(lobby.me.id) || ((data.mentions || []).includes('all'));

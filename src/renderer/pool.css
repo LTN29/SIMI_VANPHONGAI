@@ -1,0 +1,88 @@
+/* Bida 8 bi: popup bàn chơi + nút nổi khi thu nhỏ + lời mời. Không làm mờ nền (nhẹ máy). */
+.pool-modal { position: fixed; inset: 0; z-index: 9000; display: grid; place-items: center; padding: 20px; background: rgba(8, 18, 38, .62); }
+.pool-modal.hidden { display: none; }
+.pool-card { width: min(1060px, 100%); max-height: calc(100vh - 40px); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 30px 80px -20px rgba(4, 16, 40, .55); overflow: hidden; animation: poolIn .22s cubic-bezier(.2, .8, .2, 1); }
+@keyframes poolIn { from { transform: translateY(10px) scale(.985); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.pool-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px 12px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.pool-title { display: flex; align-items: center; gap: 10px; margin-right: 6px; }
+.pool-title b { display: block; font-size: 16px; font-weight: 900; letter-spacing: -.01em; }
+.pool-title small { color: var(--muted); font-weight: 700; font-size: 12px; }
+.pool-pl { display: flex; align-items: center; gap: 9px; padding: 6px 12px 6px 6px; border-radius: 14px; border: 1.5px solid transparent; background: var(--panel2); min-width: 0; transition: border-color .2s, background .2s; }
+.pool-pl.on { border-color: var(--accent); background: var(--accentSoft); }
+.pool-pl .pn { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pool-pl .pn b { font-size: 13.5px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 18ch; }
+.pool-vs { color: var(--dim); font-weight: 900; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.pool-timer { font: 800 12px/1 ui-monospace, "Cascadia Mono", Consolas, monospace; padding: 4px 7px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line2); color: var(--muted); font-variant-numeric: tabular-nums; }
+.pool-timer.warn { color: #fff; background: var(--err); border-color: var(--err); }
+.pool-grp { display: flex; gap: 2px; align-items: center; font-size: 11px; font-weight: 700; }
+.pool-grp .pb { width: 11px; height: 11px; border-radius: 50%; background: var(--c); box-shadow: inset -1.5px -1.5px 0 rgba(0, 0, 0, .18); }
+.pool-grp .pb.st { background: linear-gradient(180deg, #fbfaf5 0 25%, var(--c) 25% 75%, #fbfaf5 75%); }
+.pool-grp .pb.eight { background: #141414; margin-left: 3px; }
+.pool-grp .pb.down { opacity: .18; }
+.pool-head .btn.danger { border-color: var(--err); color: var(--err); }
+.pool-head .lc-ic { width: 34px; height: 34px; border-radius: 10px; border: 1.5px solid var(--line2); background: var(--panel); font-size: 18px; font-weight: 900; color: var(--muted); cursor: pointer; }
+.pool-head .lc-ic:hover { background: var(--hover); color: var(--text); }
+
+.pool-msg { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 18px; font-size: 13.5px; font-weight: 700; color: var(--muted); background: var(--panel2); border-bottom: 1px solid var(--line); }
+.pool-msg b { color: var(--text); font-weight: 900; }
+.pool-msg .sep { color: var(--dim); }
+.pool-msg.turn { color: var(--text); background: linear-gradient(90deg, var(--accentSoft), transparent 75%), var(--panel2); }
+
+.pool-wrap { position: relative; padding: 16px 18px 6px; background: radial-gradient(120% 90% at 50% 0%, var(--panel2), var(--panel)); }
+.pool-wrap canvas { display: block; width: 100%; border-radius: 18px; cursor: crosshair; touch-action: none; outline: none; }
+.pool-wrap.grab canvas { cursor: grabbing; }
+.pool-over { position: absolute; inset: 16px 18px 6px; display: grid; place-items: center; background: rgba(6, 20, 14, .55); border-radius: 18px; }
+.pool-over.hidden { display: none; }
+.pool-res { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 24px 34px; background: var(--panel); border-radius: 20px; box-shadow: 0 20px 50px -18px rgba(0, 0, 0, .5); text-align: center; animation: poolIn .25s cubic-bezier(.2, .8, .2, 1); }
+.pool-res .big { font-size: 44px; line-height: 1; }
+.pool-res b { font-size: 20px; font-weight: 900; }
+.pool-res small { color: var(--muted); font-weight: 700; }
+.pool-res .row { display: flex; gap: 8px; margin-top: 10px; }
+
+.pool-foot { display: flex; align-items: center; gap: 16px; padding: 10px 18px 14px; flex-wrap: wrap; }
+.pool-foot > small { font-size: 12px; font-weight: 700; }
+.pool-power { display: flex; align-items: center; gap: 8px; }
+.pool-power small { font-weight: 900; font-size: 12px; color: var(--muted); }
+.pool-power .track { width: 180px; height: 10px; border-radius: 6px; background: var(--panel3); overflow: hidden; }
+.pool-power .track i { display: block; height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, #2fc17a, #f5c518 60%, #ef4444); }
+
+/* quả bi 8 nhỏ làm biểu tượng (không dùng emoji để giống nhau trên mọi máy) */
+.pool-ball8 { display: inline-block; flex: none; width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #5a5a5a, #121212 60%); position: relative; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); }
+.pool-ball8::after { content: '8'; position: absolute; inset: 6px; border-radius: 50%; background: #fff; color: #111; font: 900 10px/14px Nunito, "Segoe UI", sans-serif; text-align: center; }
+.pool-ball8.big { width: 40px; height: 40px; }
+.pool-ball8.big::after { inset: 10px; font-size: 13px; line-height: 20px; }
+
+/* nút nổi khi thu nhỏ bàn */
+.pool-chip { position: absolute; left: 16px; bottom: 82px; z-index: 30; display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 8px; border-radius: 16px; border: 1.5px solid var(--line2); background: var(--panel); color: var(--text); box-shadow: 0 10px 28px -12px rgba(10, 40, 90, .45); cursor: pointer; text-align: left; }
+.pool-chip.hidden { display: none; }
+.pool-chip b { display: block; font-size: 13px; font-weight: 900; }
+.pool-chip small { color: var(--muted); font-weight: 700; font-size: 12px; }
+.pool-chip.turn { border-color: var(--accent); animation: poolPulse 1.6s ease-in-out infinite; }
+.pool-chip.turn small { color: var(--accent); }
+@keyframes poolPulse { 50% { box-shadow: 0 0 0 6px var(--accentSoft), 0 10px 28px -12px rgba(10, 40, 90, .45); } }
+
+/* lời mời + chọn người */
+.lb-invite.pool-inv { top: 172px; }
+.pool-pick { width: 300px; }
+.pool-people { display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow: auto; margin-top: 8px; }
+.pool-people button { display: flex; align-items: center; gap: 10px; text-align: left; border: 1.5px solid var(--line); background: var(--panel); border-radius: 12px; padding: 6px 10px 6px 6px; cursor: pointer; color: var(--text); }
+.pool-people button:hover:not(:disabled) { border-color: var(--accent2); background: var(--hover); }
+.pool-people button:disabled { opacity: .5; cursor: default; }
+.pool-people b { display: block; font-size: 13px; font-weight: 900; }
+.pool-people small { color: var(--muted); font-size: 11.5px; font-weight: 700; }
+.pool-people .go { font-size: 12px; font-weight: 900; color: var(--accent); }
+.pool-pick p { margin: 8px 2px 2px; }
+
+@media (max-width: 760px) { .pool-vs { display: none; } .pool-foot > small { display: none; } }
+@media (prefers-reduced-motion: reduce) { .pool-card, .pool-res { animation: none; } .pool-chip.turn { animation: none; } }
+.pool-head .grow { flex: 1; }
+.pool-top { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.pool-top b { font-size: 12.5px; font-weight: 900; }
+.pool-top ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.pool-top li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 6px; border-radius: 8px; }
+.pool-top li.me { background: var(--accentSoft); }
+.pool-top .rk { width: 20px; text-align: center; font-weight: 900; }
+.pool-top .nm { flex: 1; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pool-top .wl { color: var(--muted); font-weight: 700; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.pool-res .pool-wl { font-style: normal; font-size: 12.5px; font-weight: 800; color: var(--accent); }

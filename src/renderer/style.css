@@ -108,6 +108,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .tbtn { position: relative; display: inline-flex; align-items: center; gap: 7px; background: transparent; border: 1.5px solid transparent; padding: 7px 12px; border-radius: 12px; cursor: pointer; color: var(--muted); font-weight: 800; transition: .15s var(--spring); }
 .tbtn:hover { background: var(--hover); color: var(--text); border-color: var(--line); transform: translateY(-1px); }
 .tbtn .ic { width: 18px; height: 18px; }
+.tbtn.help-btn { color: #6b4e00; background: #fff4c2; border-color: #f5c518; }
+.tbtn.help-btn:hover { background: #ffeb99; color: #4a3600; border-color: #e0b100; }
+[data-theme="dark"] .tbtn.help-btn { color: #ffe27a; background: rgba(245, 197, 24, .14); border-color: rgba(245, 197, 24, .55); }
 .tbtn.icon { padding: 7px 9px; }
 .badge { font-style: normal; font-size: 11px; font-weight: 900; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--ok); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
 .badge.zero { background: var(--err); }
@@ -491,7 +494,15 @@ code, .cmd { font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace
 .wbrands .uniq { background: #142c5a; } .wbrands .crenot { background: #fff; border: 1px solid #e3e0f0; } .wbrands .simi { background: linear-gradient(135deg, #1590ff, #0a6be0); }
 
 /* ---------- màn hình hẹp ---------- */
+/* thanh trên: chữ không bao giờ xuống dòng; hết chỗ thì ô trạng thái co lại (có …), nút phụ chỉ còn biểu tượng */
+.brand, .tbtn, .actions, .brands { white-space: nowrap; flex: none; }
+.topbar .status { flex: 0 1 auto; }
+@media (max-width: 1500px) { .tbtn:not(.help-btn) span { display: none; } .tbtn { padding: 7px 10px; } }
 @media (max-width: 1360px) { .brands .crenot { display: none; } }
 @media (max-width: 1280px) { .layout { grid-template-columns: 270px 1fr 300px; } .tbtn span { display: none; } .feats { grid-template-columns: 1fr; } }
 @media (max-width: 1250px) { .view-hint { display: none; } }
 @media (max-width: 1200px) { .brands { display: none; } }
+
+/* tác giả: chữ nhỏ, nhạt – có mặt nhưng không chiếm chỗ */
+.credit { display: block; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; color: var(--dim); opacity: .85; }
+.welcome .credit { margin-top: 14px; }

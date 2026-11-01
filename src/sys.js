@@ -135,6 +135,18 @@ function refreshPath() {
 }
 
 // ---------- HTTP JSON ----------
+// trang lỗi HTML (Cloudflare, proxy…) → một câu dễ hiểu thay vì cả đống thẻ HTML
+function htmlError(txt, status) {
+  if (!/^\s*</.test(txt || '')) return '';
+  const cf = /cloudflare|cf-error|cf-wrapper/i.test(txt);
+  if (cf && [502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 530].includes(status)) {
+    return status === 524 ? 'máy chủ xử lý quá lâu nên Cloudflare ngắt kết nối – thử lại với yêu cầu ngắn hơn'
+      : 'Cloudflare không nhận được phản hồi hợp lệ từ Gateway (Gateway đang khởi động lại, quá tải hoặc gặp lỗi) – thử lại sau ít phút, vẫn lỗi thì báo admin';
+  }
+  const title = /<title[^>]*>([^<]{1,160})<\/title>/i.exec(txt);
+  return title ? `máy chủ trả về trang lỗi "${title[1].trim()}"` : 'máy chủ trả về trang lỗi thay vì dữ liệu';
+}
+
 // fetchJson(url, { method, body, headers, timeoutMs, signal, name }) – thông báo lỗi tiếng Việt, có hẹn giờ và hủy.
 async function fetchJson(url, { method = 'GET', body, headers = {}, timeoutMs = 12000, signal, name = 'Dịch vụ' } = {}) {
   const ac = new AbortController();
@@ -150,7 +162,7 @@ async function fetchJson(url, { method = 'GET', body, headers = {}, timeoutMs = 
     const txt = await res.text();
     let data = null; try { data = JSON.parse(txt); } catch { /* không phải JSON */ }
     if (!res.ok) {
-      const m = (data && (data.error?.message || data.error || data.message)) || txt.slice(0, 300);
+      const m = (data && (data.error?.message || data.error || data.detail || data.message)) || htmlError(txt, res.status) || txt.slice(0, 300);
       throw new Error(`${name} báo lỗi ${res.status}: ${typeof m === 'string' ? m : JSON.stringify(m)}`);
     }
     if (data === null) throw new Error(`${name} trả về dữ liệu không đọc được`);
@@ -171,5 +183,5 @@ module.exports = {
   IS_WIN, IS_MAC, HOME,
   quoteArg, splitArgs, stripAnsi, firstLine,
   spawnCli, killTree, runProcess, openTerminal,
-  regValue, userEnv, refreshPath, fetchJson,
+  regValue, userEnv, refreshPath, fetchJson, htmlError,
 };

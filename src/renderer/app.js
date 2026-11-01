@@ -35,6 +35,26 @@
     stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
+    download: '<path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/>',
+    help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.1-2.4 3.6"/><path d="M12 17h.01"/>',
+    sideClose: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16M8 9.5 10.5 12 8 14.5"/>',
+    sideOpen: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16M10.5 9.5 8 12l2.5 2.5"/>',
+    shield: '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+    chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    lock: '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
+    film: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 9.5h4M17 9.5h4M3 14.5h4M17 14.5h4"/>',
+    megaphone: '<path d="M4 10v4a1 1 0 0 0 1 1h2l5 4V5L7 9H5a1 1 0 0 0-1 1zM16 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
+    bot: '<rect x="4.5" y="8" width="15" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.2h5"/><circle cx="12" cy="3.5" r="1"/>',
+    scroll: '<path d="M7 4h11a2 2 0 0 1 2 2v1h-4M7 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7M7 4a2 2 0 0 1 2 2v12M11 9h4M11 13h4"/>',
+    image: '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5-5-8 8"/>',
+    message: '<path d="M5 18.5 3.5 21V6.5A2.5 2.5 0 0 1 6 4h12a2.5 2.5 0 0 1 2.5 2.5v9A2.5 2.5 0 0 1 18 18H6z"/><path d="M8 9.5h8M8 13h5"/>',
+    up: '<path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/>',
+    pulse: '<path d="M3 12h4l2.5-6 5 12L17 12h4"/>',
+    monitor: '<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/>',
+    mute: '<path d="M4 10v4a1 1 0 0 0 1 1h2l5 4V5L7 9H5a1 1 0 0 0-1 1zM16 9.5l5 5M21 9.5l-5 5"/>',
+    door: '<path d="M14 4H6.5A1.5 1.5 0 0 0 5 5.5v15h9zM14 4l5 1.5v15H14M11 12.5h.01"/>',
+    link: '<path d="M14 4h6v6M20 4l-9 9M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/>',
+    game: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v5.3"/>',
   };
   const icon = (name, cls = '') => el('i', { class: 'ic ' + cls, html: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${P[name] || ''}</svg>` });
   function hydrateIcons(root = document) { root.querySelectorAll('i[data-ic]').forEach((n) => { n.replaceWith(icon(n.dataset.ic)); }); }
@@ -188,6 +208,9 @@
       else if (name === 'meow') { tone(720, 1100, 0, 0.14, 'triangle', 0.06); tone(1100, 640, 0.12, 0.28, 'triangle', 0.06); }
       else if (name === 'dance') { [523, 659, 784, 1047].forEach((f, i) => tone(f, f, i * 0.11, 0.12, 'square', 0.03)); }
       else if (name === 'chime') { tone(660, 660, 0, 0.45); tone(990, 990, 0.13, 0.5); }
+      else if (name === 'clack') tone(2100, 1500, 0, 0.035, 'triangle', 0.05);
+      else if (name === 'pocket') { tone(320, 140, 0, 0.16, 'sine', 0.08); tone(180, 90, 0.05, 0.16, 'sine', 0.05); }
+      else if (name === 'win') { [784, 988, 1175, 1568].forEach((f, i) => tone(f, f, i * 0.1, 0.22, 'triangle', 0.05)); }
     } catch { /* bỏ qua */ }
   }
 
@@ -944,7 +967,7 @@
       if (upd) upd.apply(c);
       if (await saveCfg()) { closeModal(); toast('Đã lưu cài đặt'); loadTray(); }
     });
-    openModal('Cài đặt', body, [ok]);
+    openModal('Cài đặt', body, [el('div', { class: 'left' }, credit()), ok]);
   }
 
   async function addDesk() {
@@ -959,6 +982,10 @@
     return (await saveCfg()) ? a.id : null;
   }
 
+  // dòng tác giả nhỏ, nhạt: "Văn Phòng AI 0.9.14 · Tạo bởi LTN · © 2026 LTN" (màn chào, Cài đặt; thanh trên khi rê chuột vào logo)
+  const CREDIT = 'Tạo bởi LTN · © 2026 LTN';
+  function credit() { return el('small', { class: 'credit', text: `Văn Phòng AI${S.version ? ' ' + S.version : ''} · ${CREDIT}` }); }
+
   // ---------------- chào mừng lần đầu ----------------
   function openWelcome() {
     const feat = (ic, t, d) => el('div', { class: 'feat' }, icon(ic), el('div', {}, el('b', { text: t }), el('small', { text: d })));
@@ -971,7 +998,8 @@
         feat('plug', '1. Kết nối', 'SIMI Gateway bằng key team, hoặc Claude / ChatGPT / Gemini bạn đã có.'),
         feat('users', '2. Gán model cho đội', 'Chọn từ danh sách model thật của tài khoản.'),
         feat('send', '3. Giao việc', 'Gõ việc, bấm Giao ngay và xem cả phòng làm.')),
-      el('div', { class: 'wbrands' }, ['uniq', 'crenot', 'simi'].map((k) => el('span', { class: 'bl ' + k }, el('img', { src: `brand/${k}.png`, alt: k })))));
+      el('div', { class: 'wbrands' }, ['uniq', 'crenot', 'simi'].map((k) => el('span', { class: 'bl ' + k }, el('img', { src: `brand/${k}.png`, alt: k })))),
+      credit());
     const close = () => { store.set('vp.welcomed', 1); closeModal(); };
     openModal('Bắt đầu', body, [
       el('div', { class: 'left' }, el('button', { class: 'linkbtn', text: 'Xem thử chế độ Giả lập trước', onclick: close })),
@@ -1092,8 +1120,9 @@
   async function init() {
     hydrateIcons();
     applyTheme();
+    { const b = document.querySelector('.topbar .brand'); if (b) b.title = 'Văn Phòng AI · Tạo bởi LTN · © 2026 LTN'; }
     const r = await window.vp.getConfig();
-    S.cfg = r.config; S.sources = r.sources; S.secrets = r.secrets; S.outputDir = r.outputDir; S.platform = r.platform;
+    S.cfg = r.config; S.sources = r.sources; S.secrets = r.secrets; S.outputDir = r.outputDir; S.platform = r.platform; S.version = r.version || '';
     renderAssignSelect(); renderTemplates(); renderRoster();
     createOffice(store.get('vp.view', '3d'));
     window.vp.onEvent(onEvent);
@@ -1105,6 +1134,8 @@
     $('#cardText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); goNow(); } });
     $('#btnTplToggle').addEventListener('click', () => { $('#tpls').classList.toggle('open'); $('#btnTplToggle').textContent = $('#tpls').classList.contains('open') ? 'Mẫu việc ▴' : 'Mẫu việc ▾'; });
     $('#btnSettings').addEventListener('click', openSettings);
+    $('#btnHelp').addEventListener('click', () => window.VPLobby && window.VPLobby.goNpc());
+    document.addEventListener('keydown', (e) => { if (e.key === 'F1' && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); if (window.VPLobby) window.VPLobby.goNpc(); } });
     $('#btnAccounts').addEventListener('click', openAccounts);
     $('#btnTeam').addEventListener('click', openTeam);
     $('#btnFolder').addEventListener('click', () => window.vp.openOutput());

@@ -2,12 +2,13 @@
 <html lang="vi" data-theme="pastel">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: vpimg: https://i.ytimg.com; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; media-src 'self' blob:; img-src 'self' data: blob: vpimg: https://i.ytimg.com; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com">
   <title>Văn Phòng AI</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="chat.css">
   <link rel="stylesheet" href="lobby.css">
   <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="pool.css">
 </head>
 <body>
   <header class="topbar">
@@ -23,6 +24,7 @@
       <span class="stages hidden" id="statusStages"></span>
     </div>
     <nav class="actions">
+      <button class="tbtn help-btn" id="btnHelp" title="Hỏi Trợ lý SIMI: hướng dẫn từng bước, mẹo dùng AI (phím F1)"><i data-ic="help"></i><span>Trợ lý</span></button>
       <button class="tbtn" id="btnAccounts" title="Kết nối tài khoản Claude / ChatGPT / Gemini / Ollama"><i data-ic="plug"></i><span>Kết nối</span><em class="badge" id="accBadge">…</em></button>
       <button class="tbtn" id="btnTeam" title="Gán model cho cả phòng"><i data-ic="users"></i><span>Đội ngũ</span></button>
       <button class="tbtn" id="btnFolder" title="Mở thư mục kết quả"><i data-ic="folder"></i><span>Kết quả</span></button>
@@ -93,6 +95,8 @@
   <script src="chat.js"></script>
   <script src="npc-guides.js"></script>
   <script src="npc.js"></script>
+  <script src="pool-engine.js"></script>
+  <script src="pool.js"></script>
   <script src="lobby.js"></script>
   <script src="admin.js"></script>
   <script src="update.js"></script>

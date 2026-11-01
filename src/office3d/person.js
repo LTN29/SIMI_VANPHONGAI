@@ -75,6 +75,9 @@ export class Person {
     // cốc nước (ẩn, dùng khi uống)
     this.cup = add(this.joint.armR, G('cup', () => new THREE.CylinderGeometry(0.05, 0.04, 0.11, 12)), std('#e9f3fb', 0.3), 0, -0.4, 0.05);
     this.cup.visible = false;
+    // gậy bida (ẩn, dùng khi đứng ở bàn bida)
+    this.stick = add(this.joint.armR, G('stick', () => { const g = new THREE.CylinderGeometry(0.012, 0.022, 1.35, 8); g.translate(0, 0.5, 0); return g; }), std('#c99a5b', 0.45), 0, -0.36, 0.02);
+    this.stick.rotation.x = 1.35; this.stick.visible = false;
     // xấp giấy (ẩn, dùng khi nộp kết quả)
     this.paper = add(this.joint.armL, G('paper', () => new THREE.BoxGeometry(0.2, 0.02, 0.26)), std('#fffdf5', 0.9), 0, -0.4, 0.08);
     this.paper.visible = false;
@@ -146,6 +149,22 @@ export class Person {
       add(head, G('bowK', () => new THREE.SphereGeometry(0.035, 8, 6)), accM, 0, 0.43, 0.06);
     } else if (acc === 'crown') {
       add(head, G('crown', () => new THREE.CylinderGeometry(0.14, 0.15, 0.1, 5, 1, true)), std('#f5c518', 0.3), 0, 0.5, -0.02).material.side = THREE.DoubleSide;
+    } else if (acc === 'headset') {
+      // tai nghe lễ tân: quai mảnh, một bên tai + cần mic tới miệng
+      const dark = std('#23262f', 0.4);
+      add(head, G('hsBand', () => new THREE.TorusGeometry(0.275, 0.014, 6, 24, Math.PI)), dark, 0, 0.2, 0);
+      add(head, G('hsCup', () => new THREE.CylinderGeometry(0.06, 0.06, 0.05, 14)), accM, -0.27, 0.18, 0).rotation.z = Math.PI / 2;
+      add(head, G('hsCup2', () => new THREE.CylinderGeometry(0.035, 0.035, 0.03, 10)), dark, 0.265, 0.18, 0).rotation.z = Math.PI / 2;
+      const boom = add(head, G('hsBoom', () => new THREE.CylinderGeometry(0.009, 0.009, 0.22, 6)), dark, -0.2, 0.12, 0.13);
+      boom.rotation.set(Math.PI / 2, 0, -0.95);
+      add(head, G('hsMic', () => new THREE.SphereGeometry(0.022, 8, 6)), dark, -0.1, 0.09, 0.225);
+    }
+    // đồng phục (NPC lễ tân): áo vest, sơ mi trắng cổ chữ V, cà vạt, bảng tên
+    if (a.outfit === 'blazer') {
+      add(this.body, G('vShirt', () => new THREE.BoxGeometry(0.13, 0.2, 0.02)), M.white, 0, 0.77, 0.148);
+      add(this.body, G('vTie', () => new THREE.BoxGeometry(0.04, 0.17, 0.012)), std(a.accent || '#f5c518', 0.5), 0, 0.76, 0.16);
+      for (const side of [-1, 1]) { const l = add(this.body, G('vLapel', () => new THREE.BoxGeometry(0.045, 0.24, 0.016)), std(a.lapel || '#0b3f86', 0.6), side * 0.075, 0.76, 0.155); l.rotation.z = side * 0.32; }
+      add(this.body, G('vBadge', () => new THREE.BoxGeometry(0.075, 0.032, 0.01)), std('#f5c518', 0.3), 0.12, 0.8, 0.14).rotation.y = 0.45;
     }
     if (acc === 'glasses' && !a.isReviewer) a = { ...a, isReviewer: true };
     if (acc === 'tie' && !a.isManager) a = { ...a, isManager: true };
@@ -225,6 +244,11 @@ export class Person {
     } else if (this.action === 'cheers') {
       const left = this.actionUntil - t;
       T.armRx = left < 1.3 && left > 0.9 ? -1.95 : -1.55; T.armRz = 0.05; T.headX = -0.05;
+    } else if (this.action === 'cue' || (this.holdCue && !moving && !this.action)) {
+      // cúi người ngắm cơ: tay trái tì bàn, tay phải kéo cơ (đang đánh thì đẩy tới)
+      const strike = this.action === 'cue' ? Math.max(0, Math.sin((this.actionUntil - t) * 9)) : 0;
+      T.lean = 0.42; T.headX = 0.34; T.armLx = -1.2; T.armLz = 0.32; T.armRx = -0.95 - strike * 0.35; T.armRz = -0.06;
+      if (!seated) { T.legL = 0.18; T.legR = -0.12; }
     } else if (this.action === 'give') {
       T.armRx = -1.35; T.armRz = 0.12; T.lean = 0.08; T.headX = 0.1;
     }
@@ -237,6 +261,7 @@ export class Person {
       T.headX += Math.sin(t * 4) * 0.06;
     }
     this.cup.visible = this.action === 'drink' || this.action === 'cheers' || this.action === 'give';
+    this.stick.visible = this.action === 'cue' || !!this.holdCue;
     this.paper.visible = this.action === 'place' || this.carrying === true;
     if (this.carrying && !moving && !this.action) { T.armLx = -0.9; }
     else if (this.carrying && moving) { T.armLx = -0.9; }

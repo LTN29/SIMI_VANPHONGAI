@@ -15,7 +15,7 @@ Bản cài cho 3 hệ điều hành do GitHub Actions tự build mỗi lần ph�
 | Gói | Bên trong |
 |---|---|
 | `VanPhongAI-<phiên bản>-Windows.zip` | `VanPhongAI-<phiên bản>-Setup.exe` + `HUONG-DAN.txt` |
-| `VanPhongAI-<phiên bản>-macOS.zip` | `VanPhongAI-<phiên bản>-mac-arm64.zip` + `CAI-DAT-TREN-MAC.command` + `HUONG-DAN.txt` |
+| `VanPhongAI-<phiên bản>-macOS.zip` | `VanPhongAI-<phiên bản>-mac-arm64.zip` (chip Apple) + `VanPhongAI-<phiên bản>-mac-x64.zip` (chip Intel) + `CAI-DAT-TREN-MAC.command` + `HUONG-DAN.txt` |
 | `VanPhongAI-<phiên bản>-Ubuntu.zip` | `.deb` + `.AppImage` + `HUONG-DAN.txt` |
 
 Mã nguồn để riêng trong `VanPhongAI-<phiên bản>-src.zip` (đúng bằng nhãn `v<phiên bản>` trên GitHub).
@@ -26,15 +26,16 @@ Bấm đúp **`VanPhongAI-<phiên bản>-Setup.exe`**: cài 1 lần, có lối t
 
 Lần đầu mở, Windows có thể hiện "Windows protected your PC" (file chưa có chữ ký số). Bấm **More info → Run anyway**.
 
-### macOS (máy Mac chip Apple M1–M4)
+### macOS (Mac chip Apple M1–M4 và Mac chip Intel)
 
-Yêu cầu: macOS 11 Big Sur trở lên.
+Yêu cầu: macOS 11 Big Sur trở lên. Có 2 bản: **`mac-arm64`** cho Mac chip Apple (M1–M4) và **`mac-x64`** cho Mac chip Intel (máy đời 2020 trở về trước). Không biết máy mình chip gì: bấm quả táo ở góc trên bên trái → **Giới thiệu về máy Mac này** – dòng **Chip: Apple M…** là chip Apple, dòng **Bộ xử lý: … Intel** là chip Intel. Script cài bên dưới tự nhận loại chip.
 
 **Bước 1 – Chép file sang Mac**
 
 Giải nén `VanPhongAI-<phiên bản>-macOS.zip` trên máy Mac (hoặc chép cả thư mục sang qua USB, AirDrop…), ví dụ để ở `Downloads/VanPhongAI-macOS`. Trong thư mục có:
-- `VanPhongAI-<phiên bản>-mac-arm64.zip` – app
-- `CAI-DAT-TREN-MAC.command` – script cài
+- `VanPhongAI-<phiên bản>-mac-arm64.zip` – app cho chip Apple
+- `VanPhongAI-<phiên bản>-mac-x64.zip` – app cho chip Intel
+- `CAI-DAT-TREN-MAC.command` – script cài (tự chọn đúng file theo chip)
 
 **Bước 2 – Chạy script cài**
 
@@ -49,7 +50,7 @@ Lần sau mở app từ **Launchpad** hoặc thư mục **Applications** như b�
 
 **Cài tay (nếu không dùng script)**
 
-1. Bấm đúp file `VanPhongAI-<phiên bản>-mac-arm64.zip` để giải nén, kéo **`VanPhongAI.app`** vào **Applications**.
+1. Bấm đúp file `VanPhongAI-<phiên bản>-mac-arm64.zip` (chip Intel: `-mac-x64.zip`) để giải nén, kéo **`VanPhongAI.app`** vào **Applications**.
 2. Mở Terminal, chạy lần lượt 2 lệnh:
 ```
 xattr -cr /Applications/VanPhongAI.app
@@ -203,12 +204,13 @@ Căn phòng 3D chung của cả công ty trên SIMI Gateway. App tự vào Sản
 
 - **Thấy ai đang online**, chia theo team, kèm việc họ đang làm với AI (💬 đang chat, 🎨 đang tạo ảnh, 🎬 làm video, 🔎 tìm web, 📄 đọc tài liệu, 🏢 cả phòng đang làm việc). Trạng thái của bạn tự cập nhật theo tab Chat và tab Văn phòng; **chỉ trạng thái được chia sẻ, nội dung bạn hỏi AI thì không bao giờ**.
 - **Nhân vật của bạn**: bấm **👕 Tủ đồ** (hoặc bấm vào chính nhân vật) để đổi kiểu tóc (8 kiểu), màu tóc, màu da, áo, quần, giày, phụ kiện (kính, mũ, tai nghe, nơ, cà vạt, vương miện) và màu phụ kiện; có ô chọn màu tự do và nút 🎲 Ngẫu nhiên. Mọi người thấy ngay.
-- **SIMI BAR chill**: Sảnh là một quán bar rộng (28 × 20 m), tông sáng (sàn gỗ sồi, tường kem, cửa sổ, đèn thả), đủ chỗ cho cả công ty: quầy bar 11 ghế cao với kệ rượu và biển neon, 6 bàn ăn 4 ghế, 3 góc sofa lounge, sàn nhảy đèn đổi màu chậm có quả cầu disco, quầy DJ, bàn bi-a, màn chiếu YouTube, màn hình lớn và biển UNIQ · Crénot · SIMI. Đèn dây, biển neon sáng đứng yên, không nhấp nháy gây mỏi mắt; không có mặt nào chồng trùng mặt phẳng (nguyên nhân chớp sọc khi xoay camera).
+- **SIMI BAR chill**: Sảnh rộng 40 × 28 m, tông sáng, đủ chỗ cho cả công ty. **Trong nhà**: quầy bar 11 ghế cao với kệ rượu và biển neon, 6 bàn ăn 4 ghế, 3 góc sofa lounge, sàn nhảy đèn đổi màu chậm có quả cầu disco, quầy DJ, màn chiếu YouTube, biển UNIQ · Crénot · SIMI. **Khu Game**: 2 bàn bida chơi được, 3 máy game thùng, phi tiêu, bi lắc, bóng bàn, góc console với sofa, máy gắp thú, máy bán nước. **Sân vườn**: cổng vào "Văn Phòng AI", quầy lễ tân của Trợ lý SIMI, 4 bàn dù, đài phun nước với ghế đá, cây xanh, đèn vườn. Đèn dây, biển neon sáng đứng yên, không nhấp nháy gây mỏi mắt; không có mặt nào chồng trùng mặt phẳng (nguyên nhân chớp sọc khi xoay camera).
 - **Đi lại**: bấm xuống sàn để đi tới đó, hoặc dùng **W A S D** / phím mũi tên. Camera luôn đi theo nhân vật của bạn. Kéo chuột xoay góc nhìn, lăn chuột phóng to (camera trượt mượt), bấm đúp để về góc nhìn mặc định. Máy yếu thì app tự giảm độ phân giải / bóng đổ để giữ mượt.
 - **Ngồi xuống**: bấm vào một ghế (ghế quầy bar, ghế bàn ăn, sofa) – nhân vật đi tới và ngồi; mọi người đều thấy bạn đang ngồi đó. Ghế có người rồi thì không ngồi được. Bấm phím di chuyển hoặc bấm xuống sàn để đứng dậy.
 - **🗺 Toàn cảnh** để nhìn cả quán xem ai đang ở đâu, **🎯 Về chỗ mình** để camera quay lại nhân vật của bạn. Khi nhìn xa, bảng tên thu nhỏ cho đỡ rối.
 - **Biểu cảm**: thanh 👋 ❤️ 😂 🎉 ☕ 👍 🙌 dưới màn hình – nhân vật vẫy tay, ăn mừng…
 - **💃 Nhảy**: bấm 🕺 cuối thanh biểu cảm → chọn 1 trong 6 điệu (Lắc lư, Disco, Robot, Shuffle, Xoay vòng, Giơ tay). Nhân vật nhảy liên tục tới khi bấm **⏹ Dừng** hoặc đi chỗ khác. Mọi người nhún **cùng một nhịp** (tính theo giờ Gateway) nên cả quán nhảy khớp nhau. Bước lên sàn nhảy là app tự gợi ý chọn điệu.
+- **🎱 Bida 2 người**: bấm vào bàn bida trống → chọn người để mời (hoặc bấm vào đồng nghiệp → **Mời chơi bida**). Người kia bấm **Vào bàn** là cả hai tự đi tới đầu bàn, cầm cơ, và bàn bida (nhìn từ trên) hiện lên: rê chuột để ngắm (có đường ngắm, bi ma, hướng bi đi), nhấn giữ rồi kéo ngược để lấy lực, thả tay để đánh; phím ← → chỉnh hướng nhỏ. Bấm vào bàn còn xem được **🏆 Bảng xếp hạng** (top 5 + thành tích của bạn); màn kết quả hiện số ván thắng / thua. Luật 8 bi rút gọn (chia nhóm trơn / sọc, phạm lỗi thì đối thủ được đặt bi trắng, vào bi 8 sau cùng để thắng), mỗi lượt 90 giây. Thu nhỏ bàn để đi dạo, ván vẫn tiếp tục; ai cũng bấm vào bàn đang chơi để xem. Bi trên bàn 3D lăn theo đúng từng cú.
 - **Tương tác với đồng nghiệp**: bấm vào một người → **✋ Đập tay, 🥂 Cụng ly, ☕ Mời cà phê** (diễn luôn), **🤗 Ôm, 💃 Mời nhảy** (người kia nhận thẻ mời, bấm Đồng ý mới diễn). Nhân vật của bạn đi tới trước mặt người đó, hai người quay vào nhau rồi cùng diễn; cả Sảnh đều thấy.
 - **🐱 Mít – mèo của quán**: cả công ty thấy cùng một con mèo (Gateway điều khiển). Bấm vào Mít → **Vuốt ve** (Mít nhảy cẫng, bay tim), **Cho ăn** (bát thức ăn hiện ra, Mít chạy tới ăn), **Chơi len** (Mít vồ cuộn len), **Gọi Mít theo** (Mít đi theo bạn 30 giây).
 - **Nhẹ cho mọi máy**: mọi chuyển động làm bằng code (không tải thêm mô hình), phần tính toán mỗi khung hình dưới 1 ms cho cả quán; rời tab Sảnh là dừng vẽ 3D; máy chậm thì tự giảm độ nét → tắt bóng đổ → vẽ 30 khung hình/giây. Bật hẳn **Chế độ nhẹ cho Sảnh 3D** trong **Cài đặt** cho máy yếu / chạy pin. Các nút nổi trên Sảnh không dùng hiệu ứng làm mờ nền (rất tốn GPU).
@@ -222,12 +224,22 @@ Căn phòng 3D chung của cả công ty trên SIMI Gateway. App tự vào Sản
   - **@ gọi tên**: gõ `@` rồi vài chữ của tên → chọn người (↑ ↓ Enter). Người được tag nhận thông báo kể cả khi đang ở tab khác, phòng có tin tag mình hiện dấu **@** vàng. Admin có thêm **@mọi người**.
   - **Trả lời**: rê chuột vào tin → **↩** → tin gửi đi kèm trích đoạn tin gốc và tự tag người được trả lời; bấm trích đoạn để nhảy tới tin gốc.
   - **Thu hồi**: rê chuột vào tin của mình → **🗑** bấm 2 lần. Admin xoá được tin trong phòng chung (không xem / xoá được tin nhắn riêng của người khác).
-- **🤖 Trợ lý SIMI (NPC)**: đứng ở quầy **❓ HỎI SIMI** giữa Sảnh, đi ngang qua là vẫy tay hỏi "Cần giúp gì không?". Bấm vào để mở:
-  - **📘 Hướng dẫn** – 8 bài từng bước (làm quen app, Chat, dự án, Computer Use, giao việc, Sảnh, màn chiếu / nhảy / mèo, cập nhật). Mỗi bước hiện thẻ hướng dẫn góc dưới trái và **vòng sáng chỉ đúng nút cần bấm**, tự chuyển sang tab Chat / Văn phòng khi cần.
+- **🤖 Trợ lý SIMI (NPC)**: mặc đồng phục lễ tân (vest, tai nghe có mic), đứng ở **quầy lễ tân ngay cổng vào** – ai vào Sảnh cũng thấy đầu tiên; đi ngang qua là vẫy tay hỏi "Cần giúp gì không?". Bấm vào để mở:
+- **Tìm tới Trợ lý dễ nhất**: nút vàng **Trợ lý** trên thanh trên cùng app (ở mọi tab) và nút **Trợ lý SIMI** trên thanh Sảnh,
+  hoặc phím **F1**: mở Sảnh, nhân vật tự đi tới quầy lễ tân, Trợ lý vẫy tay và mở bảng hướng dẫn. Trên sàn trước quầy có vòng vàng nhấp nháy;
+  khi quầy nằm ngoài khung nhìn, mép Sảnh hiện "Trợ lý SIMI" kèm mũi tên chỉ hướng (bấm là đi tới).
+- **Giọng đọc hướng dẫn**: mỗi bước hướng dẫn được Trợ lý đọc to (giọng nữ miền Bắc, gói chung 1 file `src/renderer/npc-voice.js`, ~1,6 MB cho 51 bước, chỉ tải khi cần đọc);
+  nút 🔊 trên thẻ để tắt / bật (nhớ cho lần sau), tắt âm thanh trong Cài đặt thì cũng im. Sửa câu hướng dẫn thì tạo lại giọng:
+  `python scripts/npc-voice.py` (cần `pip install vieneu` + ffmpeg; `--json` cho hướng dẫn IT sửa trong tab Quản trị, `--prune` bỏ giọng của câu không còn dùng).
+  Câu chưa có file thì đọc bằng giọng tiếng Việt của máy nếu có, không có thì chỉ hiện chữ.
+- **Khung chat Sảnh thu gọn được**: nút ở góc khung chat; thu gọn thì Sảnh rộng hết màn hình, nút **Chat** trên thanh Sảnh đếm tin mới (đỏ khi có tin riêng / gọi tên).
+  - **📘 Hướng dẫn** – 10 bài từng bước (làm quen app, Chat, dự án, Computer Use, giao việc, Sảnh, màn chiếu / nhảy / mèo, **đi một vòng Sảnh**, **chơi bida**, cập nhật). Mỗi bước làm tối màn hình và **khoét sáng đúng nút / đúng khu trong Sảnh** (camera bay tới), thẻ hướng dẫn đứng cạnh có mũi tên chỉ vào; **bấm đúng nút là tự sang bước sau**; phím → / Enter, ←, Esc. Tự chuyển sang tab Chat / Văn phòng khi cần.
   - **💡 Mẹo AI** – 8 mẹo viết yêu cầu cho AI, mỗi mẹo có ví dụ "chưa tốt" / "tốt hơn".
   - **💬 Hỏi đáp** – hỏi tự do; AI trả lời dựa trên hướng dẫn app + ghi chú của admin, chạy bằng **tài khoản admin chọn cho Trợ lý** (người hỏi không tốn lượt; mỗi người tối đa 30 câu / giờ).
+  - **💬 Hỏi đáp**: mỗi câu trả lời có nút **📋 Chép**, **👍 / 👎** (admin thấy câu nào chưa đúng ý để bổ sung hướng dẫn); cuộc hỏi đáp được nhớ trên máy.
   - Lần đầu vào Sảnh, Trợ lý chào và mời **đi tour 1 phút**.
-- **🛡️ Quản trị** (chỉ admin – tài khoản trong `LOBBY_ADMINS` của Gateway): ai đang online và mỗi máy chạy bản app nào; khoá chat (15 phút → 1 ngày), mời ra khỏi Sảnh; phân quyền gửi ảnh / @mọi người / thêm video / nhắn riêng theo mặc định → team → từng người; khoá màn chiếu, chuyển bài, xoá hàng chờ; thông báo ghim trên đầu Sảnh + thông báo nổi trên mọi máy; nhật ký mọi thao tác; mục **🤖 Trợ lý (NPC)**: chọn tài khoản chatbot làm Trợ lý, ghi chú riêng của công ty cho AI, sửa / thêm hướng dẫn từng bước (mọi máy nhận ngay, không cần phát hành app). Nút **🔑 Admin Console** mở trang web quản lý key / hạn mức AI.
+- **🛡️ Quản trị** (chỉ admin – tài khoản trong `LOBBY_ADMINS` của Gateway): ai đang online và mỗi máy chạy bản app nào; khoá chat (15 phút → 1 ngày), mời ra khỏi Sảnh; phân quyền gửi ảnh / @mọi người / thêm video / nhắn riêng theo mặc định → team → từng người; khoá màn chiếu, chuyển bài, xoá hàng chờ; thông báo ghim trên đầu Sảnh + thông báo nổi trên mọi máy; nhật ký mọi thao tác; mục **🤖 Trợ lý (NPC)**: chọn tài khoản chatbot làm Trợ lý, nút **🧪 Hỏi thử** (báo ngay trả lời được không, mất bao lâu, lỗi gì và cách sửa), **60 câu hỏi gần đây** (trả lời được / lỗi / bị chấm 👎), ghi chú riêng của công ty cho AI, sửa / thêm hướng dẫn từng bước (mọi máy nhận ngay, không cần phát hành app). Nút **🔑 Admin Console** mở trang web quản lý key / hạn mức AI.
+- **Trạng thái tự đặt** (nút cạnh tên bạn ở góc trên Sảnh): 🎯 Đang tập trung, 📞 Đang họp, ⛔ Bận, 🍜 Đi ăn, ☕ Nghỉ giải lao, 🏠 Làm việc từ xa, 🚗 Ra ngoài – trong 30 phút / 1 giờ / 2 giờ / hết hôm nay, tự hết hạn. Đồng nghiệp thấy trên bảng tên và danh sách online. **Tập trung / Đang họp / Bận = không làm phiền**: không kêu, không bật thông báo tin nhắn và nhắc tên (vẫn nhận tin, vẫn có số đếm). Ai nhắn riêng cho người đang tập trung / họp sẽ thấy nhắc nhẹ "tin vẫn gửi bình thường, người ấy sẽ xem sau".
 - **👁 Đang hiện / 🙈 Đang ẩn**: ẩn để đồng nghiệp không thấy bạn online (vẫn nhắn tin được). Khi đang ẩn, Sảnh hiện thanh nhắc **Bạn đang ẩn** và nút **Hiện lại**; trạng thái ẩn được Gateway nhớ cả khi tắt mở app.
 - **Danh sách online luôn khớp**: Gateway gửi danh sách ai đang online mỗi 30 giây, máy nào lỡ mất sự kiện vào / rời (mạng chập chờn) tự sửa lại. Một tài khoản mở app trên nhiều máy thì các máy đó là cùng một người nên không thấy nhau; app ghi "đang mở trên 2 máy" dưới tên bạn. Tắt hẳn Sảnh trong **Cài đặt**.
 - Tin nhắn được Gateway giữ 30 ngày (admin chỉnh được), không đi qua AI và không vào bộ nhớ team.
@@ -296,12 +308,14 @@ src/simi-task.js     Windows: cho tác vụ "SIMI Auto Update" chạy ẩn (gi�
 src/sim.js           chế độ Giả lập
 src/store.js         cấu hình + API key (mã hóa bằng DPAPI trên Windows, Keychain trên Mac, Secret Service trên Linux)
 src/office3d/        văn phòng 3D (Three.js): world.js (căn phòng), person.js (nhân vật), cat.js (mèo), nav.js (tìm đường), office3d.js (điều khiển),
-                     lobby3d.js (Sảnh online + xem trước nhân vật trong Tủ đồ), bar.js (SIMI BAR chill: quầy, ghế, bàn, sàn nhảy)
+                     lobby3d.js (Sảnh online + xem trước nhân vật trong Tủ đồ), bar.js (SIMI BAR chill: trong nhà, khu Game với 2 bàn bida, sân vườn)
 src/renderer/        giao diện: app.js (văn phòng, kết nối, đội ngũ, cài đặt), chat.js (tab Chat), lobby.js (tab Sảnh), update.js (cập nhật app), office.js (văn phòng pixel 2D),
                      admin.js + admin.css (tab Quản trị), npc.js + npc-guides.js (Trợ lý SIMI), img-worker.js (nén ảnh trong luồng riêng),
+                     pool-engine.js (bida: vật lý + luật, chạy cả trong Node để test), pool.js + pool.css (bàn bida, lời mời),
                      md.js (hiển thị Markdown, có bảng), style.css + chat.css + lobby.css, office3d.bundle.js (bản 3D đã đóng gói), fonts/ (Nunito, OFL)
 test/                orch.test.js (bộ điều phối), ui-office.test.js (giao diện văn phòng), ui-chat.test.js (tab Chat + SIMI),
-                     ui-history.test.js (liên thông lịch sử ChatGPT Work), ui-lobby.test.js (Sảnh online với Gateway thật),
+                     ui-history.test.js (liên thông lịch sử ChatGPT Work), ui-lobby.test.js (Sảnh online với Gateway thật), ui-lobby-pool.test.js (bida 2 người),
+                     pool-engine.test.js (vật lý + luật bida),
                      ui-lobby-chat / ui-lobby-play / ui-lobby-npc.test.js (ảnh + quản trị / nhảy, mèo, tương tác / Trợ lý),
                      ui-flicker.test.js (chống chớp), ui-tools.test.js (Computer Use, trình duyệt SIMI, hỏi quyền, tự cập nhật),
                      fixtures/fake-mcp.js (MCP giả), fixtures/mock-gateway.js (gateway giả lập + CODEX_HOME mẫu), fixtures/lobby-gateway.js (Gateway thật cho test Sảnh)
@@ -316,7 +330,7 @@ Phát hành bình thường **không cần build trên máy mình** – chạy `
 ```
 npm ci
 npm run dist        # Windows: ra dist/VanPhongAI-<phiên bản>-Setup.exe
-npm run dist:mac    # macOS: ra file .zip cho Mac chip Apple (M1–M4)
+npm run dist:mac    # macOS: ra 2 file .zip – mac-arm64 (chip Apple M1–M4) và mac-x64 (chip Intel); build được trên Ubuntu / GitHub Actions, không cần máy Mac (Windows không build được bản Mac)
 npm run dist:linux  # Ubuntu/Linux: ra file .deb + .AppImage (x64)
 ```
 
@@ -332,6 +346,7 @@ npm run test:lobby    # Sảnh online + màn chiếu YouTube + báo bản app m�
 npm run test:lobby-chat  # gửi ảnh, @gọi tên, trả lời, thu hồi, tab Quản trị
 npm run test:lobby-play  # nhảy cùng nhịp, tương tác giữa nhân vật, mèo chung, chế độ nhẹ
 npm run test:npc         # Trợ lý SIMI: tour, chỉ tay từng bước, hỏi đáp bằng tài khoản NPC, admin sửa hướng dẫn
+npm run test:pool        # bida 2 người: mời, vào bàn, ngắm + kéo lực + đánh, đối thủ đánh, thu nhỏ, thắng
 npm run test:flicker     # chống chớp: không có mặt trùng mặt phẳng, xoay camera không lấp lánh
 npm run test:tools    # điều khiển máy + Computer Use + trình duyệt SIMI + hỏi quyền + tự cập nhật – cần Codex CLI;
                       # trên Linux chạy: xvfb-run -a -s "-screen 0 1600x1000x24" npm run test:tools (cần xdotool, imagemagick, x11-xserver-utils)

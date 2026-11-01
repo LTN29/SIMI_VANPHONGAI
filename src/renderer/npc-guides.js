@@ -1,13 +1,13 @@
 /* Nội dung có sẵn của NPC "Trợ lý SIMI": hướng dẫn từng bước + mẹo dùng AI. Admin sửa / thêm được trong tab Quản trị
-   (Gateway lưu, app tải về – không cần phát hành app mới). target = nút được làm nổi bật khi bấm "👉 Chỉ cho tôi",
-   view = tab cần mở trước (office | chat | lobby). */
+   (Gateway lưu, app tải về – không cần phát hành app mới). target = nút được chỉ tới (làm tối phần còn lại của màn hình),
+   view = tab cần mở trước (office | chat | lobby), place = chỗ trong Sảnh 3D để camera bay tới (npc | bar | dance | cinema | game | garden). */
 (function () {
   const GUIDES = [
     { id: 'tour', icon: '🧭', title: 'Làm quen Văn Phòng AI (1 phút)', steps: [
       { text: 'Văn Phòng AI có 3 khu chính trên thanh trên cùng: 🏢 Văn phòng (giao việc cho đội AI), 💬 Chat (trò chuyện với AI như ChatGPT), 🌐 Sảnh (gặp đồng nghiệp).', target: '.viewtabs' },
       { text: '🏢 Văn phòng: gõ việc cần làm, chọn người nhận rồi bấm Giao ngay. Trưởng phòng ★ sẽ chia việc cho cả đội, có người kiểm tra lại trước khi nộp.', target: '.viewtabs button[data-v="office"]' },
       { text: '💬 Chat: hỏi AI bất cứ điều gì, gửi kèm ảnh / file, gọi skill bằng phím /. Đoạn chat được lưu lại ở cột trái.', target: '.viewtabs button[data-v="chat"]' },
-      { text: '🌐 Sảnh: thấy ai đang online, nhắn tin, gửi ảnh, xem video chung trên màn chiếu, nhảy và chơi với mèo Mít.', target: '.viewtabs button[data-v="lobby"]' },
+      { text: '🌐 Sảnh: thấy ai đang online, nhắn tin, gửi ảnh, xem video chung, nhảy, chơi bida và chơi với mèo Mít.', target: '.viewtabs button[data-v="lobby"]' },
       { text: '🔌 Kết nối: nơi cài SIMI Gateway bằng key của bạn – app tự dùng key này cho Chat và Sảnh.', target: '#btnAccounts' },
       { text: '⚙️ Cài đặt: bật / tắt âm thanh, thông báo, Sảnh, chế độ nhẹ cho máy yếu, tự cập nhật app.', target: '#btnSettings' },
     ] },
@@ -52,6 +52,22 @@
       { view: 'lobby', text: 'Bấm vào đồng nghiệp: ✋ Đập tay, 🥂 Cụng ly, ☕ Mời cà phê, 🤗 Ôm, 💃 Mời nhảy (ôm và nhảy cần người kia đồng ý).' },
       { view: 'lobby', text: 'Bấm vào mèo Mít: vuốt ve, cho ăn, chơi len, gọi Mít đi theo. Cả công ty đều thấy cùng một con mèo.' },
       { view: 'lobby', text: '👕 Tủ đồ: đổi kiểu tóc, màu áo, phụ kiện cho nhân vật của bạn.', target: '#lbMe' },
+    ] },
+    { id: 'lobby-map', icon: '🗺️', title: 'Đi một vòng Sảnh', steps: [
+      { view: 'lobby', place: 'npc', text: 'Đây là quầy lễ tân ngay cổng vào – mình đứng ở đây. Cần gì cứ bấm vào mình: hướng dẫn từng bước, mẹo dùng AI, hỏi đáp.' },
+      { view: 'lobby', place: 'bar', text: 'Quầy bar SIMI: bấm vào ghế cao để ngồi. Bấm sàn để đi, hoặc dùng phím W A S D.' },
+      { view: 'lobby', place: 'dance', text: 'Sàn nhảy: đứng lên sàn là hiện bảng chọn điệu, cả quán nhún cùng một nhịp.' },
+      { view: 'lobby', place: 'cinema', text: 'Màn chiếu: dán link YouTube để cả quán xem cùng lúc.', target: '#lbCineBtn' },
+      { view: 'lobby', place: 'game', text: 'Khu Game: 2 bàn bida chơi được. Bấm vào bàn → chọn người để mời; người kia đồng ý là bàn bida hiện lên.' },
+      { view: 'lobby', place: 'garden', text: 'Sân vườn: bàn dù, ghế đá quanh đài phun nước – ngồi nói chuyện với đồng nghiệp.' },
+      { view: 'lobby', text: 'Muốn nhìn cả quán: bấm 🗺 Toàn cảnh. Muốn quay về nhân vật của mình: 🎯 Về chỗ mình.', target: '.lb-top .btn[title="Nhìn toàn bộ quán"]' },
+    ] },
+    { id: 'pool', icon: '🎱', title: 'Chơi bida với đồng nghiệp', steps: [
+      { view: 'lobby', place: 'game', text: 'Bấm vào một bàn bida trống ở khu Game rồi chọn người để mời. Hoặc bấm vào đồng nghiệp → 🎱 Mời chơi bida.' },
+      { view: 'lobby', text: 'Người kia bấm "Vào bàn" là cả hai tự đi tới bàn, bàn bida hiện lên. Ai đánh trước do Gateway bốc thăm.' },
+      { view: 'lobby', text: 'Tới lượt mình: rê chuột để ngắm (có đường ngắm và hướng bi đi), nhấn giữ rồi kéo ngược để lấy lực, thả tay để đánh.' },
+      { view: 'lobby', text: 'Luật 8 bi: lần đầu vào bi hợp lệ thì nhận nhóm (trơn 1–7 hoặc sọc 9–15). Vào hết nhóm mình rồi mới đánh bi 8. Bi trắng rơi lỗ thì đối thủ được đặt bi trắng.' },
+      { view: 'lobby', text: 'Mỗi lượt có 90 giây. Bấm – để thu nhỏ bàn (ván vẫn tiếp tục), bấm nút "Bida với…" ở góc Sảnh để mở lại.' },
     ] },
     { id: 'update', icon: '⬆️', title: 'Cập nhật app', steps: [
       { text: 'Có bản mới, app tự tải sẵn rồi hiện thẻ "Văn Phòng AI x.y.z đã sẵn sàng" ở góc dưới bên phải.' },

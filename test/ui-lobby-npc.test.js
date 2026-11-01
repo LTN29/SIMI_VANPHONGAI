@@ -41,12 +41,12 @@ run(async () => {
     await win.click('.sheet footer .linkbtn');
     await win.click('.viewtabs button[data-v="lobby"]');
     await win.waitForSelector('#lbConn.online', { timeout: 30000 });
-    check(await win.evaluate(() => !!window.__lobby.npc && window.__lobby.npc.plate.textContent.includes('Trợ lý SIMI')), 'NPC Trợ lý SIMI đứng ở quầy ❓ HỎI SIMI giữa Sảnh');
+    check(await win.evaluate(() => !!window.__lobby.npc && window.__lobby.npc.plate.textContent.includes('Trợ lý SIMI')), 'NPC Trợ lý SIMI đứng ở quầy lễ tân cổng vào Sảnh');
 
     // lần đầu vào Sảnh: NPC chào, mở bảng, mời đi tour
     await win.waitForSelector('#lbNpc:not(.hidden) .np-welcome', { timeout: 10000 });
     check(/đi tour 1 phút/.test(await win.evaluate(() => window.__lobby.npc.lastSay || '')), 'lần đầu vào Sảnh: NPC vẫy tay chào và mời đi tour');
-    check(await win.locator('#lbNpc .np-guide').count() === 8, 'có sẵn 8 hướng dẫn');
+    check(await win.locator('#lbNpc .np-guide').count() === 10, 'có sẵn 10 hướng dẫn (thêm đi một vòng Sảnh, chơi bida)');
     await shot('01-welcome');
     await win.click('#lbNpc .np-welcome .btn.primary');
     await win.waitForSelector('#npcCoach');
@@ -54,6 +54,19 @@ run(async () => {
     await win.waitForSelector('.npc-spot');
     const ring = await win.evaluate(() => { const a = document.querySelector('.npc-spot').getBoundingClientRect(); const b = document.querySelector('.viewtabs').getBoundingClientRect(); return Math.abs(a.left - (b.left - 6)) < 2 && Math.abs(a.width - (b.width + 12)) < 2; });
     check(ring, 'vòng sáng chỉ đúng vào nút đang nói tới');
+    // giọng đọc: bước 1 phát đúng file giọng đọc của câu đó, có nút tắt / bật
+    await win.waitForFunction(() => window.VPNpc._state.audio && window.VPNpc._state.audio.readyState >= 1, null, { timeout: 10000 });
+    const au = await win.evaluate(() => { const a = window.VPNpc._state.audio; const c = window.VPNpc._state.coach; return { src: a.src, have: window.VPNpc._state.audioKey, key: window.VPNpc.voiceKey(c.g.steps[c.i].text), dur: a.duration, err: !!a.error }; });
+    check(au.src.startsWith('blob:') && au.have === au.key && !au.err && au.dur > 2, `Trợ lý đọc to bước đang hướng dẫn (${au.key}, ${au.dur.toFixed(1)} giây)`);
+    await win.click('#npcVoice');
+    check(await win.getAttribute('#npcVoice', 'aria-pressed') === 'false' && await win.evaluate(() => !window.VPNpc._state.audio && localStorage.getItem('vp.npcVoice') === 'false'), 'bấm 🔊 trên thẻ → tắt giọng đọc (nhớ cho lần sau)');
+    await win.click('#npcVoice');
+    check(await win.getAttribute('#npcVoice', 'aria-pressed') === 'true' && await win.evaluate(() => !!window.VPNpc._state.audio), 'bấm lại → đọc lại bước đang xem');
+    const { GUIDES } = (() => { global.window = global.window || {}; require('../src/renderer/npc-guides.js'); return global.window.VPNpcGuides; })();
+    const keyOf = (t) => { const b = Buffer.from(String(t).trim(), 'utf8'); let h = 0x811c9dc5; for (const x of b) { h ^= x; h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, '0') + '-' + b.length; };
+    const pack = (() => { const w = {}; new Function('window', fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'npc-voice.js'), 'utf8'))(w); return w.VPNpcVoice; })();
+    const missing = GUIDES.flatMap((g) => g.steps).filter((st) => !pack.clips[keyOf(st.text)]);
+    check(!missing.length, `cả ${GUIDES.flatMap((g) => g.steps).length} bước hướng dẫn có sẵn giọng đọc${missing.length ? ' – thiếu: ' + missing.map((x) => x.text.slice(0, 30)).join(' | ') : ''}`);
     await shot('02-coach');
     for (let i = 0; i < 5; i++) await win.click('#npcCoach .btn.primary');
     check((await win.textContent('#npcCoach .btn.primary')) === '✓ Xong', 'tới bước cuối');
@@ -101,6 +114,20 @@ run(async () => {
     check(call && call.auth === 'Bearer k-bot-secret', 'AI chạy bằng key của tài khoản ChatBot – người hỏi không tốn lượt');
     check(/Gửi ảnh: bấm 🖼️/.test(call.body.instructions), 'AI được nạp hướng dẫn app làm nguồn trả lời');
     await shot('05-ask');
+    // chấm 👎 câu trả lời → admin thấy trong nhật ký; lịch sử hỏi đáp còn sau khi mở lại
+    await win.click('#lbNpc .np-acts button[aria-label="Chưa đúng ý"]');
+    await win.waitForSelector('#lbNpc .np-acts button.on', { timeout: 10000 });
+    check(true, 'chấm 👎 câu trả lời của Trợ lý');
+    check(await win.evaluate(() => (JSON.parse(localStorage.getItem('vp.npcChat') || '[]')).length === 2), 'nhớ cuộc hỏi đáp trên máy (mở lại app vẫn còn)');
+    await win.click('.viewtabs button[data-v="admin"]');
+    await win.click('.ad-nb >> text=Trợ lý (NPC)');
+    await win.waitForSelector('.ad-table.npclog', { timeout: 10000 });
+    check((await win.textContent('.ad-table.npclog')).includes('Gửi ảnh trong Sảnh thế nào?') && (await win.textContent('.ad-table.npclog')).includes('Chưa đúng ý'), 'admin thấy câu hỏi gần đây + câu bị chấm 👎');
+    await win.click('#adNpcTest');
+    await win.waitForSelector('.ad-test.ok', { timeout: 30000 });
+    check((await win.textContent('.ad-test.ok')).includes('Trợ lý trả lời được'), 'admin bấm 🧪 Hỏi thử → biết ngay Trợ lý trả lời được');
+    await shot('05b-admin-test');
+    await win.click('.viewtabs button[data-v="lobby"]');
 
     // admin sửa hướng dẫn → máy mình nhận ngay
     await win.click('.viewtabs button[data-v="admin"]');
@@ -124,6 +151,36 @@ run(async () => {
     await win.waitForFunction(() => /Cần giúp gì không/.test(window.__lobby.npc.lastSay || ''), null, { timeout: 15000 });
     check(true, 'đi ngang qua quầy → NPC vẫy tay hỏi "Cần giúp gì không?"');
     await win.waitForTimeout(600); await shot('06-npc');
+
+    // tìm tới Trợ lý dễ nhất: mũi tên ở mép Sảnh khi Trợ lý ngoài khung nhìn, nút vàng trên thanh Sảnh, nút Trợ lý trên cùng app, phím F1
+    await win.evaluate(() => { window.VPNpc.close(); window.__lobby.lookAt('game'); });
+    await win.waitForSelector('#lbNpcArrow:not(.hidden)', { timeout: 8000 });
+    const arr = await win.evaluate(() => { const a = document.querySelector('#lbNpcArrow').getBoundingClientRect(), s = document.querySelector('.lb-stage').getBoundingClientRect(); return { a, s }; });
+    check(arr.a.left >= arr.s.left && arr.a.right <= arr.s.right && arr.a.bottom <= arr.s.bottom, 'Trợ lý ngoài khung nhìn → mép Sảnh hiện "Trợ lý SIMI" kèm mũi tên chỉ hướng');
+    await shot('07-arrow');
+    await win.click('#lbNpcArrow');
+    await win.waitForSelector('#lbNpc:not(.hidden)', { timeout: 5000 });
+    await win.waitForFunction(() => window.__lobby.nearNpc(), null, { timeout: 20000 });
+    check(await win.isHidden('#lbNpcArrow'), 'bấm mũi tên → nhân vật tự đi tới quầy lễ tân, bảng Trợ lý mở ra');
+    await shot('08-at-npc');
+    await win.evaluate(() => window.VPNpc.close());
+    check(await win.isVisible('#lbNpcBtn') && (await win.textContent('#lbNpcBtn')).includes('Trợ lý SIMI'), 'thanh trên Sảnh có nút vàng "Trợ lý SIMI"');
+    await win.click('#lbNpcBtn');
+    await win.waitForSelector('#lbNpc:not(.hidden)', { timeout: 5000 });
+    await win.waitForFunction(() => /Mình đây/.test(window.__lobby.npc.lastSay || ''), null, { timeout: 5000 });
+    check(true, 'đang đứng ở quầy mà bấm nút → Trợ lý vẫy tay "Mình đây!" và mở bảng hướng dẫn');
+    await win.evaluate(() => window.VPNpc.close());
+    await win.click('.viewtabs button[data-v="chat"]');
+    await win.keyboard.press('F1');
+    await win.waitForSelector('#lbNpc:not(.hidden)', { timeout: 5000 });
+    check(await win.isVisible('#lobbyView'), 'đang ở tab Chat bấm F1 → mở Sảnh và bảng Trợ lý');
+    await win.evaluate(() => window.VPNpc.close());
+    await win.click('.viewtabs button[data-v="office"]');
+    check(await win.isVisible('#btnHelp'), 'thanh trên cùng app luôn có nút "Trợ lý" (ở mọi tab)');
+    await win.click('#btnHelp');
+    await win.waitForSelector('#lbNpc:not(.hidden)', { timeout: 5000 });
+    check(await win.isVisible('#lobbyView'), 'bấm "Trợ lý" ở tab Văn phòng → sang Sảnh, mở bảng Trợ lý');
+    await shot('09-help-btn');
   } finally {
     bao.close(); gw.child.kill(); up.close();
     await finish(app, errors);

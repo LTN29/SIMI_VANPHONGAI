@@ -38,7 +38,11 @@ contextBridge.exposeInMainWorld('vp', {
     cat: (payload) => ipcRenderer.invoke('lobby:cat', payload),
     interact: (payload) => ipcRenderer.invoke('lobby:interact', payload),
     npc: () => ipcRenderer.invoke('lobby:npc'),
+    game: (payload) => ipcRenderer.invoke('lobby:game', payload),
+    games: () => ipcRenderer.invoke('lobby:games'),
     npcAsk: (payload) => ipcRenderer.invoke('lobby:npcAsk', payload),
+    npcFeedback: (payload) => ipcRenderer.invoke('lobby:npcFeedback', payload),
+    dnd: (on) => ipcRenderer.invoke('lobby:dnd', on),
   },
   simi: {
     status: () => ipcRenderer.invoke('simi:status'),

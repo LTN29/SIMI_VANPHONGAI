@@ -70,7 +70,7 @@ run(async () => {
     // ---- tương tác ----
     await win.click('.lb-person >> text=Bảo');
     await win.waitForSelector('.lb-pop.interact .igrid button >> text=Đập tay');
-    check(await win.locator('.lb-pop.interact .igrid button').count() === 8, 'bấm vào đồng nghiệp: nhắn riêng, vẫy, đi tới + đập tay, cụng ly, mời cà phê, ôm, mời nhảy');
+    check(await win.locator('.lb-pop.interact .igrid button').count() === 9, 'bấm vào đồng nghiệp: nhắn riêng, vẫy, đi tới + đập tay, cụng ly, mời cà phê, ôm, mời nhảy, mời chơi bida');
     await win.click('.lb-pop.interact .igrid button >> text=Đập tay');
     const hf = await bao.waitFor('interact', (d) => d.kind === 'highfive');
     check(hf.a === 'u:sales-ngoc' && hf.b === 'u:it-bao', 'đập tay → Bảo thấy ngay, không cần đồng ý');
@@ -115,6 +115,29 @@ run(async () => {
     const fps = await win.evaluate(() => new Promise((r) => { let n = 0; const L = window.__lobby; const f0 = L.frame.bind(L); L.frame = () => { n++; f0(); }; setTimeout(() => { L.frame = f0; r(n); }, 2000); }));
     check(fps <= 66, `chế độ nhẹ giới hạn số khung hình (${fps} khung / 2 giây)`);
     await win.evaluate(() => window.VPLobby.setLight(false));
+
+    // ---- trạng thái tự đặt + không làm phiền ----
+    await win.click('#lbStatusBtn');
+    await win.waitForSelector('.lb-stpop');
+    await win.click('.lb-stpop .stp-it >> text=Đang tập trung');
+    await win.click('.lb-stpop .stp-dur .chip >> text=1 giờ');
+    const st = await bao.waitFor('member', (d) => d.id === 'u:sales-ngoc' && d.status && /^🎯 Đang tập trung tới \d\d:\d\d/.test(d.status.text));
+    check(!!st, 'đặt "🎯 Đang tập trung" 1 giờ → đồng nghiệp thấy ngay trên bảng tên');
+    check((await win.textContent('#lbStatusBtn')).includes('Đang tập trung') && await win.evaluate(() => document.querySelector('#lbStatusBtn').classList.contains('dnd')), 'nút trạng thái hiện "Đang tập trung" (không làm phiền)');
+    await win.waitForFunction(() => window.__lobby.self().plate.textContent.includes('Đang tập trung'), null, { timeout: 10000 });
+    // Bảo đang họp → mình mở nhắn riêng thì thấy nhắc nhẹ
+    await bao.post('state', { status: { activity: 'away', text: '📞 Đang họp tới 16:00' } });
+    await win.waitForFunction(() => { const m = window.VPLobby._state.members.get('u:it-bao'); return m && m.status && m.status.text.startsWith('📞'); }, null, { timeout: 10000 });
+    await win.evaluate(() => window.VPLobby.openDm('u:it-bao'));
+    await win.waitForSelector('#lbPeerSt:not(.hidden)', { timeout: 10000 });
+    check((await win.textContent('#lbPeerSt')).includes('Bảo sẽ xem sau'), 'nhắn riêng cho người đang họp → nhắc "tin vẫn gửi, người ấy xem sau"');
+    await shot('07-status');
+    await win.click('#lbStatusBtn');
+    await win.click('.lb-stpop .stp-clear');
+    const n0 = bao.events.length;
+    await win.waitForFunction(() => document.querySelector('#lbStatusBtn').textContent.includes('Sẵn sàng'), null, { timeout: 10000 });
+    await bao.waitFor('member', (d) => d.id === 'u:sales-ngoc' && d.status && !d.status.text.startsWith('🎯') && bao.events.indexOf(bao.events.find((e) => e.data === d)) >= n0);
+    check(true, 'về "Sẵn sàng" → trạng thái tự động như cũ, đồng nghiệp thấy ngay');
   } finally {
     bao.close(); crowd.forEach((c) => c.close()); gw.child.kill();
     await finish(app, errors);

@@ -5,7 +5,8 @@ import * as THREE from 'three';
 const std = (c, r = 0.85) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
 const SPOTS = [
   { x: 0.4, z: 0.4 }, { x: -1.6, z: 0.6 }, { x: 1.9, z: 0.0 }, { x: -5.0, z: 2.6 }, { x: 5.4, z: -3.3 },
-  { x: -2.4, z: 3.9 }, { x: 2.6, z: 3.8 }, { x: -5.6, z: -2.8 }, { x: 0.2, z: -3.6 }, { x: 3.2, z: -3.7 },
+  { x: -2.4, z: 3.9 }, { x: 2.6, z: 3.8 }, { x: -5.6, z: -2.8 }, { x: 0.2, z: -2.2 }, { x: 4.4, z: -3.7 },
+  { x: 6.0, z: 12.6 }, { x: 16.4, z: 12.0 }, { x: 22.0, z: 6.2 },
 ];
 
 export class Cat {

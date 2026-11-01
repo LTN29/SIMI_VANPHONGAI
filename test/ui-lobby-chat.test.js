@@ -102,6 +102,27 @@ run(async () => {
     await win.waitForFunction((id) => !document.querySelector(`#lbMsgs .lb-msg[data-id="${id}"]`), rep.id, { timeout: 5000 });
     check(true, 'thu hồi tin (bấm 🗑 hai lần) – mọi người đều mất tin đó');
 
+    // ---- Sảnh không còn bản đồ nhỏ; thu gọn / mở khung chat bên phải ----
+    check(await win.locator('#lbMap, .lb-map').count() === 0, 'Sảnh không còn bản đồ nhỏ góc dưới trái');
+    const cvW = () => win.evaluate(() => document.querySelector('#lobby3d canvas').getBoundingClientRect().width);
+    const w0 = await cvW();
+    await win.click('#lbFold');
+    await win.waitForFunction((w) => { const c = document.querySelector('#lobby3d canvas'); return c && c.getBoundingClientRect().width > w + 200; }, w0, { timeout: 5000 });
+    check(!(await win.isVisible('.lb-side')) && await win.isVisible('#lbUnfold'), 'bấm thu gọn → khung chat ẩn, còn nút "Chat" trên thanh công cụ');
+    check((await cvW()) > w0 + 200, `Sảnh 3D rộng ra hết màn hình (${Math.round(w0)} → ${Math.round(await cvW())} px)`);
+    await bao.post('messages', { room: 'all', text: 'Chiều nay ai rảnh đánh bida không' });
+    await win.waitForSelector('#lbUnfoldN:not(.hidden) >> text=1', { timeout: 10000 });
+    await an.post('messages', { to: 'u:sales-ngoc', text: 'Chị ơi xem tin riêng nha' });
+    await win.waitForSelector('#lbUnfold.tag #lbUnfoldN >> text=2', { timeout: 10000 });
+    check(true, 'đang thu gọn mà có tin mới → nút Chat đếm số tin, tin riêng làm nút đỏ');
+    await shot('04b-folded');
+    await win.click('#lbUnfold');
+    check(await win.isVisible('.lb-side') && !(await win.isVisible('#lbUnfold')), 'bấm "Chat" → mở lại khung chat, hết đếm');
+    await win.click('#lbFold');
+    await win.evaluate(() => window.VPLobby.openDm([...window.VPLobby._state.members.keys()].find((k) => k.includes('bao'))));
+    check(await win.isVisible('.lb-side'), 'đang thu gọn mà mở tin nhắn riêng (bấm vào đồng nghiệp) → khung chat tự mở');
+    await win.click('.lb-room >> text=Cả công ty');
+
     // ---- tab Quản trị ----
     await win.click('.viewtabs button[data-v="admin"]');
     await win.waitForSelector('.ad-stat', { timeout: 10000 });
@@ -125,14 +146,33 @@ run(async () => {
     await win.fill('.ad-ta', '15h họp toàn công ty nhé 📣');
     await win.click('.ad-body .btn.primary >> text=Gửi');
     check((await bao.waitFor('announce')).text === '15h họp toàn công ty nhé 📣', 'gửi thông báo toàn công ty');
+    // ---- trang tải app: danh sách email được vào (Gateway giữ, app bật / tắt) ----
+    const dlBase = gw.url.replace(/\/v1$/, '') + '/install/vanphong';
+    const dlLogin = (email) => fetch(dlBase + '/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
+    check((await dlLogin('an.tran@simigo.vn')).status === 403, 'trang tải: chưa có trong danh sách thì không tải được');
+    await win.click('.ad-nb >> text=Trang tải app');
+    await win.waitForSelector('.ad-body >> text=Danh sách đang trống');
+    await win.fill('.ad-body [data-keep="dlAdd"]', 'An.Tran@simigo.vn\nbao.le@simigo.vn, khach_gmail.com#EXT#@simigo.onmicrosoft.com\nkhong-phai-email');
+    await win.click('.ad-body .btn.primary >> text=Thêm vào danh sách');
+    await win.waitForSelector('.ad-table.dl tr >> nth=2', { timeout: 10000 });
+    check(await win.locator('.ad-table.dl tr').count() === 3, 'dán cả loạt email → 3 email vào danh sách, dòng sai bị bỏ qua');
+    check((await dlLogin('an.tran@simigo.vn')).status === 200, 'email vừa thêm tải được app');
+    await shot('06-download');
+    await win.locator('.ad-table.dl tr', { hasText: 'an.tran@simigo.vn' }).locator('.ad-sw span').click();
+    await win.waitForSelector('.ad-table.dl tr.off >> text=an.tran@simigo.vn', { timeout: 10000 });
+    check((await dlLogin('an.tran@simigo.vn')).status === 403, 'tắt công tắc → bị chặn tải ngay');
+    await win.fill('.ad-body [data-keep="dlQ"]', 'khach');
+    await win.waitForFunction(() => document.querySelectorAll('.ad-table.dl tr').length === 1);
+    check(true, 'tìm email trong danh sách');
     await win.click('.ad-nb >> text=Nhật ký');
     await win.waitForSelector('.ad-table td >> text=Khoá chat');
     check(await win.locator('.ad-table td >> text=Thông báo').count() >= 1, 'nhật ký ghi lại các thao tác của admin');
-    await shot('06-audit');
+    check(await win.locator('.ad-table td >> text=Tắt email trang tải').count() >= 1, 'nhật ký ghi cả việc bật / tắt email trang tải');
+    await shot('07-audit');
     await win.click('.viewtabs button[data-v="lobby"]');
     await win.waitForSelector('#lbPin:not(.hidden) >> text=15h họp', { timeout: 5000 });
     check(true, 'thông báo ghim hiện trên đầu Sảnh');
-    await shot('07-pinned');
+    await shot('08-pinned');
   } finally {
     bao.close(); an.close(); gw.child.kill();
     await finish(app, errors);

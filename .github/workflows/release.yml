@@ -1,4 +1,4 @@
-# Phát hành Văn Phòng AI: đẩy nhãn v<phiên bản> (vd v0.9.12) → test → build Windows / macOS / Ubuntu → tạo GitHub Release
+# Phát hành Văn Phòng AI: đẩy nhãn v<phiên bản> (vd v0.9.12) → test → build Windows / macOS (chip Apple + Intel) / Ubuntu → tạo GitHub Release
 # kèm file cài. Gateway (VANPHONG_GITHUB_REPO) tự lấy Release mới và đăng → máy nhân viên hiện "Cập nhật ngay".
 # Ghi chú bản mới = nội dung của nhãn (git tag -a v0.9.12 -m "- Có gì mới").
 name: Phát hành
@@ -63,6 +63,7 @@ jobs:
           if-no-files-found: error
           path: |
             dist/VanPhongAI-*-mac-arm64.zip
+            dist/VanPhongAI-*-mac-x64.zip
             dist/VanPhongAI-*-linux-amd64.deb
             dist/VanPhongAI-*-linux-x86_64.AppImage
 

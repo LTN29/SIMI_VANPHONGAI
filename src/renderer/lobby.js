@@ -31,6 +31,10 @@
   };
   const EMOTES = ['👋', '❤️', '😂', '🎉', '☕', '👍', '🙌'];
   const DANCES = [['groove', '🕺', 'Lắc lư'], ['disco', '🪩', 'Disco'], ['robot', '🤖', 'Robot'], ['shuffle', '👟', 'Shuffle'], ['spin', '🌀', 'Xoay vòng'], ['hands', '🙌', 'Giơ tay']];
+  // trạng thái tự đặt: [mã, biểu tượng, tên, không làm phiền?]
+  const MY_STATUS = [['focus', '🎯', 'Đang tập trung', true], ['meeting', '📞', 'Đang họp', true], ['busy', '⛔', 'Bận, nhắn sau', true],
+    ['lunch', '🍜', 'Đi ăn', false], ['break', '☕', 'Nghỉ giải lao', false], ['remote', '🏠', 'Làm việc từ xa', false], ['out', '🚗', 'Ra ngoài', false]];
+  const DND_ICONS = MY_STATUS.filter((s) => s[3]).map((s) => s[1]);
   const KIND_TEXT = { highfive: 'đập tay', cheers: 'cụng ly', coffee: 'mời cà phê', hug: 'ôm', dance: 'nhảy cùng' };
   const ACT_TEXT = { idle: '☕ Đang rảnh', chat: '💬 Đang chat với AI', work: '🏢 Cả phòng đang làm việc', image: '🎨 Đang tạo ảnh', video: '🎬 Đang làm video', web: '🔎 Đang tìm trên web', doc: '📄 Đang đọc tài liệu', away: '🌙 Vắng mặt' };
 
@@ -50,17 +54,23 @@
         el('div', { class: 'lb-3d', id: 'lobby3d' }),
         el('div', { class: 'lb-top' },
           el('button', { class: 'lb-me', id: 'lbMe', title: 'Tủ đồ – đổi nhân vật của bạn', onclick: openWardrobe }),
+          el('button', { class: 'btn small lb-stbtn', id: 'lbStatusBtn', title: 'Đặt trạng thái: tập trung, đang họp, đi ăn…', onclick: (e) => openStatusMenu(e) }),
           el('button', { class: 'btn small', onclick: openWardrobe }, '👕 Tủ đồ'),
           el('button', { class: 'btn small', id: 'lbHide', onclick: toggleHidden }),
           el('button', { class: 'btn small lb-cine-btn', id: 'lbCineBtn', title: 'Chiếu video YouTube cho cả quán cùng xem', onclick: toggleCinema }, '🎬 Màn chiếu'),
           el('span', { class: 'grow' }),
+          el('button', { class: 'btn small lb-npcbtn', id: 'lbNpcBtn', title: 'Đi tới quầy lễ tân hỏi Trợ lý SIMI: hướng dẫn từng bước, mẹo dùng AI (phím F1)', onclick: () => goNpc() }, el('span', { class: 'q', 'aria-hidden': 'true', text: '?' }), 'Trợ lý SIMI'),
           el('button', { class: 'btn small', title: 'Nhìn toàn bộ quán', onclick: () => L.scene && L.scene.overview() }, '🗺 Toàn cảnh'),
           el('button', { class: 'btn small', title: 'Camera đi theo nhân vật của bạn', onclick: () => L.scene && L.scene.focusSelf() }, '🎯 Về chỗ mình'),
-          el('span', { class: 'lb-conn', id: 'lbConn' })),
+          el('span', { class: 'lb-conn', id: 'lbConn' }),
+          el('button', { class: 'lb-unfold', id: 'lbUnfold', title: 'Mở khung chat', 'aria-label': 'Mở khung chat', onclick: () => showSide(true) },
+            icon('sideOpen'), el('span', { text: 'Chat' }), el('em', { class: 'badge hidden', id: 'lbUnfoldN' }))),
         el('div', { class: 'lb-emotes' }, EMOTES.map((e) => el('button', { title: 'Biểu cảm', onclick: () => sendEmote(e) }, e)),
           el('span', { class: 'sep' }), el('button', { class: 'lb-dancebtn', id: 'lbDanceBtn', title: 'Nhảy (nhảy liên tục tới khi bấm Dừng hoặc đi chỗ khác)', onclick: () => toggleDancePick() }, '🕺')),
         el('div', { class: 'lb-dancepick hidden', id: 'lbDancePick', role: 'menu' }),
         el('div', { class: 'lb-invite hidden', id: 'lbInvite', role: 'alertdialog' }),
+        el('button', { class: 'lb-npcarrow hidden', id: 'lbNpcArrow', title: 'Trợ lý SIMI ở đằng này – bấm để đi tới', onclick: () => goNpc() },
+          el('i', { class: 'ar', 'aria-hidden': 'true' }), el('span', { class: 'q', 'aria-hidden': 'true', text: '?' }), el('span', { text: 'Trợ lý SIMI' })),
         el('div', { class: 'lb-hint', text: 'Bấm sàn để đi · W A S D · Bấm ghế để ngồi · Bấm vào ai đó để nhắn riêng · Lăn chuột: phóng to' }),
         el('div', { class: 'lb-toast', id: 'lbToast' }),
         el('div', { class: 'lb-pin hidden', id: 'lbPin', role: 'status' }),
@@ -70,13 +80,16 @@
           el('button', { class: 'btn mini primary', onclick: () => toggleHidden() }, 'Hiện lại')),
         el('div', { class: 'lb-overlay hidden', id: 'lbOverlay' })),
       el('aside', { class: 'lb-side' },
-        el('div', { class: 'lb-online' }, el('h3', {}, 'Đang online ', el('span', { class: 'count', id: 'lbOnlineN', text: '0' })), el('div', { class: 'lb-people', id: 'lbPeople' })),
+        el('div', { class: 'lb-online' }, el('h3', {}, 'Đang online ', el('span', { class: 'count', id: 'lbOnlineN', text: '0' }),
+          el('button', { class: 'lb-fold', id: 'lbFold', title: 'Thu gọn khung chat – Sảnh rộng hơn', 'aria-label': 'Thu gọn khung chat', onclick: () => showSide(false) }, icon('sideClose'))),
+          el('div', { class: 'lb-people', id: 'lbPeople' })),
         el('div', { class: 'lb-chat' },
           el('div', { class: 'lb-rooms', id: 'lbRooms' }),
           el('div', { class: 'lb-msgs', id: 'lbMsgs' }),
           el('button', { class: 'lb-newmsg hidden', id: 'lbNewMsg', onclick: () => { scrollBottom(); } }),
           el('div', { class: 'lb-compose', id: 'lbCompose' },
             el('div', { class: 'lb-muted hidden', id: 'lbMuted' }),
+            el('div', { class: 'lb-peerst hidden', id: 'lbPeerSt', role: 'status' }),
             el('div', { class: 'lb-replybar hidden', id: 'lbReply' }),
             el('div', { class: 'lb-tray hidden', id: 'lbTray' }),
             el('div', { class: 'lb-mpop hidden', id: 'lbMention', role: 'listbox' }),
@@ -86,6 +99,7 @@
               el('button', { class: 'ch-send', id: 'lbSend', title: 'Gửi', onclick: sendMsg }, icon('send'))),
             el('input', { type: 'file', id: 'lbFile', class: 'hidden', multiple: true, accept: 'image/png,image/jpeg,image/webp,image/gif', onchange: (e) => { addFiles([...e.target.files]); e.target.value = ''; } })))));
     $('#chatView').after(view);
+    showSide(ls.get('vp.lbSide', true) !== false, true);
     // kéo thả ảnh vào khung chat
     const chatBox = $('.lb-chat', view);
     chatBox.addEventListener('dragover', (e) => { if (canImage() && [...(e.dataTransfer.items || [])].some((i) => i.kind === 'file')) { e.preventDefault(); chatBox.classList.add('drop'); } });
@@ -142,12 +156,68 @@
     const sub = me.teamName ? `Team ${me.teamName}${devices > 1 ? ` · đang mở trên ${devices} máy` : ''}` : 'Chưa vào Sảnh';
     $('#lbMe').replaceChildren(face({ ...me, avatar: myAvatar() }, 34), el('div', {}, el('b', { text: me.name }), el('small', { text: sub })));
     $('#lbMe').title = devices > 1 ? `Tài khoản này đang mở app trên ${devices} máy. Các máy đó là cùng một người nên không thấy nhau trong Sảnh.` : 'Tủ đồ – đổi nhân vật của bạn';
+    const st = myStatus();
+    const sb = $('#lbStatusBtn');
+    sb.textContent = st ? statusText(st) : '🟢 Sẵn sàng';
+    sb.classList.toggle('set', !!st); sb.classList.toggle('dnd', isDnd());
     const hidden = !!(L.me && L.me.hidden);
     $('#lbHiddenBar').classList.toggle('hidden', !hidden);
     const hb = $('#lbHide');
     hb.textContent = hidden ? '🙈 Đang ẩn' : '👁 Đang hiện';
     hb.title = hidden ? 'Người khác không thấy bạn online. Bấm để hiện.' : 'Mọi người thấy bạn online và đang làm gì. Bấm để ẩn.';
     hb.classList.toggle('armed', hidden);
+  }
+
+  // ================= trạng thái tự đặt (tập trung, họp, đi ăn…) =================
+  // Lưu trên máy (vp.myStatus), tự hết hạn. Đồng nghiệp thấy trên bảng tên + danh sách online.
+  // Tập trung / Đang họp / Bận = không làm phiền: không kêu, không bật thông báo tin nhắn (vẫn nhận tin, vẫn có số đếm).
+  function myStatus() {
+    const s = ls.get('vp.myStatus', null);
+    if (!s || !MY_STATUS.some((x) => x[0] === s.key)) return null;
+    if (s.until && s.until < Date.now()) { ls.set('vp.myStatus', null); return null; }
+    return s;
+  }
+  function statusText(s) {
+    const d = MY_STATUS.find((x) => x[0] === s.key);
+    return `${d[1]} ${d[2]}${s.until ? ' tới ' + nowHM(s.until) : ''}`;
+  }
+  function isDnd() { const s = myStatus(); return !!s && !!(MY_STATUS.find((x) => x[0] === s.key) || [])[3]; }
+  function setMyStatus(key, mins) {
+    let until = null;
+    if (mins === 'day') { const d = new Date(); d.setHours(23, 59, 0, 0); until = d.getTime(); }
+    else if (mins) until = Date.now() + mins * 60_000;
+    ls.set('vp.myStatus', key ? { key, until } : null);
+    applyMyStatus();
+    const s = myStatus();
+    U.toast(s ? `${statusText(s)}${isDnd() ? ' · không kêu, không bật thông báo' : ''}` : '🟢 Đã về trạng thái Sẵn sàng');
+  }
+  function applyMyStatus() {
+    window.vp.lobby.dnd && window.vp.lobby.dnd(isDnd()).catch(() => {});
+    renderMe(); updatePresence();
+    clearTimeout(L.stT);
+    const s = ls.get('vp.myStatus', null);
+    if (s && s.until) L.stT = setTimeout(() => { myStatus(); applyMyStatus(); }, Math.min(Math.max(1000, s.until - Date.now() + 500), 2 ** 31 - 1));
+  }
+  function openStatusMenu(e) {
+    const { el } = U;
+    document.querySelectorAll('.lb-pop').forEach((n) => n.remove());
+    const cur = myStatus();
+    let pick = cur ? cur.key : 'focus';
+    const durs = [[30, '30 phút'], [60, '1 giờ'], [120, '2 giờ'], ['day', 'Hết hôm nay']];
+    const pop = el('div', { class: 'lb-pop lb-stpop', role: 'menu' });
+    const draw = () => pop.replaceChildren(
+      el('div', { class: 'stp-h' }, el('b', { text: 'Trạng thái của bạn' }), el('small', { text: 'Đồng nghiệp thấy trên bảng tên và danh sách online' })),
+      el('div', { class: 'stp-list' }, MY_STATUS.map(([k, ic, name, dnd]) => el('button', { class: 'stp-it' + (pick === k ? ' on' : ''), role: 'menuitemradio', 'aria-checked': pick === k ? 'true' : 'false', onclick: () => { pick = k; draw(); } },
+        el('span', { class: 'ic', text: ic }), el('span', { class: 'grow' }, el('b', { text: name }), dnd ? el('small', { text: 'Không làm phiền' }) : ''), pick === k ? el('span', { class: 'ck', text: '✓' }) : ''))),
+      el('div', { class: 'stp-dur' }, el('small', { text: 'Trong' }), ...durs.map(([m, label]) => el('button', { class: 'chip', onclick: () => { pop.remove(); setMyStatus(pick, m); } }, label))),
+      cur ? el('button', { class: 'btn small stp-clear', onclick: () => { pop.remove(); setMyStatus(null); } }, '🟢 Về Sẵn sàng') : '');
+    draw();
+    document.body.append(pop);
+    const r = e.currentTarget.getBoundingClientRect();
+    pop.style.left = Math.max(10, Math.min(window.innerWidth - pop.offsetWidth - 10, r.left)) + 'px';
+    pop.style.top = r.bottom + 8 + 'px';
+    const off = (ev) => { if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('mousedown', off, true); } };
+    setTimeout(() => document.addEventListener('mousedown', off, true), 0);
   }
 
   async function toggleHidden() {
@@ -222,6 +292,7 @@
         onToast: (text) => toast(text),
         onCatClick: (x, y) => openCat(x, y),
         onNpcClick: () => window.VPNpc && window.VPNpc.open(),
+        onTableClick: (t, x, y) => window.VPPoolUI && window.VPPoolUI.tableMenu(t, x, y),
         npcGreeting: () => `Chào ${L.me ? L.me.name : 'bạn'}! Cần giúp gì không? Bấm vào mình nhé 👋`,
         onDance: (style, byMove) => { L.myDance = style; renderDancePick(); if (!byMove && L.status.state === 'online' && L.features.has('dance')) window.vp.lobby.presence({ dance: style }); },
         onFloor: (on) => { L.onFloor = on; renderDancePick(); },
@@ -233,6 +304,7 @@
       L.scene.setNpc(L.npc || null);
       window.__lobby = L.scene;
       syncScene();
+      if (window.VPPoolUI) window.VPPoolUI.syncScene();
     } catch (e) { $('#lobby3d').replaceChildren(U.el('div', { class: 'lb-no3d', text: 'Máy không chạy được 3D – vẫn chat được ở cột bên phải.' })); }
   }
 
@@ -241,6 +313,52 @@
     const list = others().map((m) => ({ ...m }));
     if (L.me) list.unshift({ ...L.me, avatar: myAvatar(), me: true, status: L.presence });
     L.scene.setMembers(list);
+  }
+
+  // ================= tới quầy Trợ lý SIMI =================
+  // Nút "Trợ lý SIMI" (thanh trên Sảnh, nút Trợ lý ở thanh trên cùng app, phím F1): mở tab Sảnh, nhân vật đi tới quầy lễ tân,
+  // camera đi theo, Trợ lý vẫy tay và mở bảng hướng dẫn. Trợ lý nằm ngoài khung nhìn thì mép Sảnh có mũi tên chỉ đường.
+  function goNpc(tab) {
+    if (window.VPChat && !L.shown) window.VPChat.setView('lobby');
+    const npc = window.VPNpc;
+    if (L.scene) {
+      const there = L.scene.goNpc();
+      L.scene.npcWave();
+      L.scene.npcSay(there ? 'Mình đây! Cần gì cứ hỏi nhé 👋' : 'Mình ở quầy lễ tân nè, lại đây nhé 👋', 3500);
+    }
+    if (npc) npc.open(tab || 'guides');
+  }
+  function paintNpcArrow() {
+    const a = $('#lbNpcArrow'); if (!a) return;
+    const p = L.shown && L.scene && L.scene.npcScreen && L.scene.npcScreen();
+    const npcOpen = window.VPNpc && window.VPNpc._state.open;
+    if (!p || npcOpen) { a.classList.add('hidden'); return; }
+    const m = 70, inside = p.x > m && p.x < p.w - m && p.y > m + 30 && p.y < p.h - m;
+    a.classList.toggle('hidden', inside); if (inside) return;
+    const cx = p.w / 2, cy = p.h / 2, dx = p.x - cx, dy = p.y - cy;
+    // kẹp vào mép khung (chừa thanh trên và thanh biểu cảm ở đáy)
+    const hw = cx - 110, hh = cy - 90, k = Math.min(hw / Math.max(1, Math.abs(dx)), hh / Math.max(1, Math.abs(dy)));
+    a.style.left = cx + dx * k + 'px'; a.style.top = cy + dy * k + 'px';
+    const ang = Math.atan2(dy, dx);
+    a.style.setProperty('--ang', ang + 'rad');
+    a.style.setProperty('--ar-r', Math.abs(Math.cos(ang)) * (a.offsetWidth / 2 + 4) + Math.abs(Math.sin(ang)) * (a.offsetHeight / 2 + 4) + 'px'); // mũi tên nằm ngay ngoài viền nút
+  }
+  setInterval(paintNpcArrow, 300);
+
+  // ================= thu gọn / mở khung chat bên phải =================
+  // Thu gọn: Sảnh 3D chiếm hết chiều ngang, còn nút "Chat" ở mép phải đếm tin mới. Mở lại khi bấm nút, khi mở tin nhắn riêng
+  // hoặc khi bài hướng dẫn cần chỉ vào khung chat.
+  function showSide(on, quiet) {
+    const v = $('#lobbyView'); if (!v) return;
+    L.sideOff = !on; v.classList.toggle('side-off', !on);
+    if (!quiet) ls.set('vp.lbSide', !!on);
+    if (on) { L.foldNew = 0; L.foldTag = false; if (L.room) { L.unread.delete(L.room); renderRooms(); renderPeople(); } if (!quiet) { scrollBottom(); setTimeout(() => $('#lbInput') && $('#lbInput').focus(), 30); } }
+    paintFold();
+  }
+  function paintFold() {
+    const n = $('#lbUnfoldN'); if (!n) return;
+    n.textContent = L.foldNew > 99 ? '99+' : String(L.foldNew || 0);
+    n.classList.toggle('hidden', !L.foldNew); $('#lbUnfold').classList.toggle('tag', !!L.foldTag);
   }
 
   // ================= người online =================
@@ -275,7 +393,8 @@
         el('button', { onclick: () => { pop.remove(); if (L.scene && m.pos) L.scene.walkSelf(m.pos.x + 0.8, m.pos.z + 0.4, true); } }, el('span', { text: '🚶' }), 'Đi tới'),
         ...(L.features.has('interact') ? [
           ['highfive', '✋', 'Đập tay'], ['cheers', '🥂', 'Cụng ly'], ['coffee', '☕', 'Mời cà phê'], ['hug', '🤗', 'Ôm'], ['dance', '💃', 'Mời nhảy'],
-        ].map(([k, ic, t]) => el('button', { onclick: () => { pop.remove(); interact(id, k); } }, el('span', { text: ic }), t)) : [])));
+        ].map(([k, ic, t]) => el('button', { onclick: () => { pop.remove(); interact(id, k); } }, el('span', { text: ic }), t)) : []),
+        ...(L.features.has('games') && window.VPPoolUI ? [el('button', { class: 'pool-btn', onclick: () => { pop.remove(); window.VPPoolUI.invite(id); } }, el('span', { class: 'pool-ball8', 'aria-hidden': 'true' }), 'Mời chơi bida')] : [])));
     document.body.append(pop);
     pop.style.left = Math.max(10, Math.min(window.innerWidth - pop.offsetWidth - 10, x + 12)) + 'px';
     pop.style.top = Math.max(66, Math.min(window.innerHeight - pop.offsetHeight - 10, y - pop.offsetHeight / 2)) + 'px';
@@ -306,6 +425,13 @@
     inp.placeholder = muted ? 'Đang bị tạm khoá chat' : !r ? 'Nhắn…' : r.kind === 'all' ? 'Nhắn cho cả công ty…  (@ để gọi tên)' : `Nhắn riêng cho ${r.name}…`;
     inp.disabled = !!muted;
     $('#lbAttach').classList.toggle('hidden', !canImage());
+    // nhắn riêng cho người đang tập trung / họp / bận → nhắc nhẹ (tin vẫn gửi, người ấy không bị kêu)
+    const peer = r && r.kind === 'dm' && L.members.get(r.with);
+    const pst = peer && peer.online && peer.status && peer.status.text;
+    const dnd = pst && DND_ICONS.some((ic) => pst.startsWith(ic));
+    const pb = $('#lbPeerSt');
+    pb.classList.toggle('hidden', !dnd);
+    if (dnd) pb.textContent = `${pst} – tin vẫn gửi bình thường, ${peer.name} sẽ xem sau.`;
     const mb = $('#lbMuted');
     mb.classList.toggle('hidden', !muted);
     if (muted) {
@@ -316,6 +442,7 @@
   const canImage = () => L.features.has('images') && can('image') && !(L.mutedUntil && L.mutedUntil > Date.now());
 
   async function openRoom(id) {
+    if (L.sideOff) showSide(true, true);
     L.room = id; L.unread.delete(id); L.tagged.delete(id);
     if (L.compose.reply && L.compose.reply.room !== id) setReply(null);
     renderRooms(); renderPeople();
@@ -890,7 +1017,9 @@
   function updatePresence() {
     let p;
     const running = [...L.chats.values()];
-    if (running.length) { const c = running[running.length - 1]; p = { activity: c.activity, text: ACT_TEXT[c.activity], model: c.model || '' }; }
+    const mine = myStatus();
+    if (mine) p = { activity: 'away', text: statusText(mine), model: '' };
+    else if (running.length) { const c = running[running.length - 1]; p = { activity: c.activity, text: ACT_TEXT[c.activity], model: c.model || '' }; }
     else if (L.working) p = { activity: 'work', text: ACT_TEXT.work, model: '' };
     else p = { activity: 'idle', text: ACT_TEXT.idle, model: '' };
     if (JSON.stringify(p) === JSON.stringify(L.presence)) return;
@@ -938,6 +1067,7 @@
       if (d.cinema && d.cinema.now) { L.skew = d.cinema.now - Date.now(); if (L.scene) L.scene.setSkew(L.skew); }
       if (d.cat) { L.catState = d.cat; if (L.scene) L.scene.setCat(d.cat); }
       if ('npc' in d) { L.npc = d.npc; if (window.VPNpc) window.VPNpc.setInfo(d.npc); }
+      if (window.VPPoolUI) window.VPPoolUI.onHello(d.games || []);
       if (window.VPNpc && L.shown) window.VPNpc.maybeTour(d.me && d.me.name);
       // nhân vật đã chọn trên máy này nhưng chưa lưu lên Gateway (lần đầu vào Sảnh)
       const local = ls.get('vp.myAvatar', null);
@@ -958,12 +1088,15 @@
     if (ev === 'cat') { L.catState = d; if (L.scene) L.scene.setCat(d); return; }
     if (ev === 'dance') { const m = L.members.get(d.id); if (m) m.dance = d.style || null; if (L.scene) L.scene.setDance(d.id, d.style || null); return; }
     if (ev === 'interact') { onInteract(d); return; }
+    if (ev === 'game') { if (window.VPPoolUI) window.VPPoolUI.onEvent(d); return; }
     if (ev === 'kicked') { toast('🚪 Admin đã mời bạn ra khỏi Sảnh một lúc'); return; }
     if (ev === 'member') {
       const isNew = !L.members.get(d.id) || !L.members.get(d.id).online;
       upsert(d);
       if (isNew && d.online) { toast(`👋 ${d.name} vừa vào Sảnh`); }
-      renderPeople(); syncScene(); return;
+      renderPeople(); syncScene();
+      const r = roomOf(L.room); if (r && r.with === d.id) renderComposer();
+      return;
     }
     if (ev === 'leave') {
       const m = L.members.get(d.id); if (m) { m.online = false; toast(`${m.name} đã rời Sảnh`); }
@@ -985,8 +1118,10 @@
       if (L.scene && !d.room.startsWith('dm:') && d.text) L.scene.say(d.from, d.text);
       const tagged = !mine && L.me && (d.mentions || []).some((id) => id === L.me.id || id === 'all');
       if (list.length > 300) list.splice(0, list.length - 300);
-      if (L.shown && d.room === L.room) { if (L.loaded.has(d.room)) appendMsg(d); else renderMsgs(); if (tagged) U.sfx && U.sfx('pop'); }
-      else if (!mine) { L.unread.set(d.room, (L.unread.get(d.room) || 0) + 1); if (tagged) L.tagged.add(d.room); if (d.room.startsWith('dm:') || L.shown || tagged) U.sfx && U.sfx('pop'); }
+      const quiet = isDnd();
+      if (L.shown && d.room === L.room) { if (L.loaded.has(d.room)) appendMsg(d); else renderMsgs(); if (tagged && !quiet) U.sfx && U.sfx('pop'); }
+      else if (!mine) { L.unread.set(d.room, (L.unread.get(d.room) || 0) + 1); if (tagged) L.tagged.add(d.room); if ((d.room.startsWith('dm:') || L.shown || tagged) && !quiet) U.sfx && U.sfx('pop'); }
+      if (!mine && L.sideOff) { L.foldNew = (L.foldNew || 0) + 1; if (tagged || d.room.startsWith('dm:')) L.foldTag = true; paintFold(); }
       renderRooms(); renderPeople();
     }
   }
@@ -1006,7 +1141,8 @@
   // ================= API cho chat.js / app.js =================
   function visible(on) {
     L.shown = on;
-    if (L.scene) L.scene.paused = !on;
+    const poolOpen = window.VPPoolUI && window.VPPoolUI._state.view && !window.VPPoolUI._state.minimized;
+    if (L.scene) L.scene.paused = !on || !!poolOpen;
     syncCinemaFrame(); // rời tab Sảnh → tắt video (không phát tiếng khi đang làm việc khác)
     if (on) {
       ensureScene();
@@ -1021,13 +1157,14 @@
     U = api;
     build();
     if (window.VPNpc) window.VPNpc.init(api);
+    if (window.VPPoolUI) window.VPPoolUI.init(api, { me: () => L.me, members: () => L.members, scene: () => L.scene, toast, online: () => L.status.state === 'online', features: () => L.features, shown: () => L.shown });
     window.vp.onEvent(onEvent);
     setStatus(await window.vp.lobby.status());
-    renderRooms(); renderPeople(); renderMe();
+    renderRooms(); renderPeople(); renderMe(); applyMyStatus();
     if (ls.get('vp.mainView', 'office') === 'lobby') window.VPChat.setView('lobby');
   }
 
   function setLight(on) { if (L.scene) L.scene.setLight(!!on); }
 
-  window.VPLobby = { init, visible, openDm, toggleCinema, openRoom, setLight, _state: L };
+  window.VPLobby = { init, visible, openDm, toggleCinema, openRoom, setLight, showSide, goNpc, _state: L };
 })();
