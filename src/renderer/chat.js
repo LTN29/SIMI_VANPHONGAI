@@ -345,7 +345,9 @@
     if (t.codexThread && !C.running.has(id)) {
       window.vp.chat.sync(id).then((nt) => {
         if (nt && C.cur && C.cur.id === id && nt.updatedAt !== t.updatedAt) { C.cur = nt; renderMain(); loadThreads(); }
-      }).catch(() => { /* Codex chưa sẵn sàng – giữ bản đang có */ });
+      }).catch((e) => { // Codex chưa sẵn sàng – giữ bản đang có; đoạn chat còn rỗng thì báo lý do
+        if (!(t.messages || []).some((m) => m.role === 'user') && C.cur && C.cur.id === id) U.toast('Chưa đọc được lịch sử từ ChatGPT Work: ' + U.cleanErr(e), true);
+      });
     }
   }
 

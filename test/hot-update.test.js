@@ -173,3 +173,43 @@ test('Updater: khác Electron / vỏ cũ / bản từng lỗi → dùng bộ cà
     assert.notEqual((await u.check()).kind, 'app', 'bản 0.9.17 từng mở lỗi → không cập nhật nhanh lại');
   } finally { gw2.close(); }
 });
+
+test('Tự cập nhật không cần bấm: tải → cài sẵn → chờ máy rảnh + không có việc → tự mở lại', async () => {
+  const pkg = await makePkg('0.9.17');
+  const gw = await gateway(pkg);
+  const ud = tmp(); const root = path.join(ud, 'app');
+  const calls = []; const states = [];
+  const env = { busy: true, idle: false };
+  const app = { getVersion: () => '0.9.16', relaunch: () => calls.push('relaunch'), exit: () => calls.push('exit') };
+  try {
+    const u = new Updater({
+      app, emit: (e) => states.push(e.state.status), getGateway: () => '', dir: path.join(ud, 'updates'), shell: SHELL, hotRoot: root,
+      autoApply: () => true, isBusy: () => env.busy, idle: () => env.idle, restartEveryMs: 30,
+    });
+    await u.check(); // autoDownload mặc định bật → tự tải, tự cài sẵn
+    const end = Date.now() + 5000;
+    while (u.state.status !== 'staged' && Date.now() < end) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(u.state.status, 'staged');
+    assert.equal(hot.readCurrent(root).version, '0.9.17', 'đã cài sẵn – lần mở app sau dùng bản mới');
+    assert.equal(hot.pickHot(root, SHELL).cur.version, '0.9.17');
+    assert.deepEqual(calls, [], 'chưa tự mở lại khi đang có việc / người dùng đang dùng máy');
+    env.idle = true; await new Promise((r) => setTimeout(r, 120));
+    assert.deepEqual(calls, [], 'máy rảnh nhưng còn việc đang chạy → chờ');
+    env.busy = false; await new Promise((r) => setTimeout(r, 600));
+    assert.deepEqual(calls, ['relaunch', 'exit']);
+    assert.ok(!states.includes('ready') || states.indexOf('staged') > states.indexOf('ready'));
+    u.stop();
+  } finally { gw.close(); }
+});
+
+test('Tắt tự cập nhật (autoApply false) → tải sẵn rồi chờ bấm như trước', async () => {
+  const pkg = await makePkg('0.9.17');
+  const gw = await gateway(pkg);
+  const ud = tmp();
+  try {
+    const u = new Updater({ app: { getVersion: () => '0.9.16' }, emit: () => {}, getGateway: () => '', dir: path.join(ud, 'updates'), shell: SHELL, hotRoot: path.join(ud, 'app'), autoApply: () => false });
+    await u.check(); await u.download(); await new Promise((r) => setTimeout(r, 100));
+    assert.equal(u.state.status, 'ready');
+    assert.equal(hot.readCurrent(path.join(ud, 'app')), null);
+  } finally { gw.close(); }
+});

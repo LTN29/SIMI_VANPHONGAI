@@ -131,12 +131,20 @@ class CodexAppServer extends EventEmitter {
     const meta = (await this.request('thread/read', { threadId: id, includeTurns: false }, 60000)).thread;
     if (!withTurns) return meta;
     if (meta && meta.historyMode === 'paginated') return { ...meta, turns: await this.listTurns(id) };
+    let full;
     try {
-      return (await this.request('thread/read', { threadId: id, includeTurns: true }, 60000)).thread;
+      full = (await this.request('thread/read', { threadId: id, includeTurns: true }, 60000)).thread;
     } catch (e) {
       if (!/paginated|includeTurns|turns\/list/i.test(e.message)) throw e;
       return { ...meta, turns: await this.listTurns(id) };
     }
+    // một số bản Codex trả khung lượt mà không kèm nội dung (hoặc không có lượt nào) → đọc lại đủ nội dung bằng thread/turns/list
+    const turns = (full && full.turns) || [];
+    if (!turns.some((t) => (t.items || []).length)) {
+      const paged = await this.listTurns(id).catch(() => null);
+      if (paged && paged.some((t) => (t.items || []).length)) return { ...(full || meta), turns: paged };
+    }
+    return full;
   }
 
   // tất cả các lượt của 1 đoạn chat, cũ → mới, đủ nội dung từng lượt

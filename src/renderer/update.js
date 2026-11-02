@@ -19,15 +19,15 @@
 
   function pill() {
     let b = $('#btnUpdate');
-    const show = ['available', 'downloading', 'ready', 'manual', 'installing'].includes(st.status);
+    const show = ['available', 'downloading', 'ready', 'manual', 'installing', 'staged'].includes(st.status);
     if (!show) { if (b) b.remove(); return; }
     if (!b) {
       b = U.el('button', { class: 'tbtn upd', id: 'btnUpdate', onclick: open });
       $('.topbar .actions').prepend(b);
     }
-    const txt = st.status === 'downloading' ? `Đang tải bản mới ${pct()}%` : st.status === 'ready' ? `Cập nhật ${st.version}` : st.status === 'installing' ? 'Đang cài…' : `Bản mới ${st.version}`;
+    const txt = st.status === 'staged' ? `Mở lại để dùng ${st.version}` : st.status === 'downloading' ? `Đang tải bản mới ${pct()}%` : st.status === 'ready' ? `Cập nhật ${st.version}` : st.status === 'installing' ? 'Đang cài…' : `Bản mới ${st.version}`;
     b.replaceChildren(U.el('span', { text: '⬆️' }), U.el('span', { text: txt }));
-    b.title = st.status === 'ready' ? `Văn Phòng AI ${st.version} đã tải xong – bấm để cập nhật` : `Văn Phòng AI ${st.version || ''} đã có`;
+    b.title = st.status === 'staged' ? `Bản ${st.version} đã cài sẵn – app tự mở lại khi bạn không dùng máy vài phút, hoặc bấm để mở lại ngay` : st.status === 'ready' ? `Văn Phòng AI ${st.version} đã tải xong – bấm để cập nhật` : `Văn Phòng AI ${st.version || ''} đã có`;
   }
 
   // thẻ thông báo nổi góc dưới bên phải
@@ -69,6 +69,7 @@
     if (st.error) box.append(el('div', { class: 'su-bad', text: '⚠️ ' + st.error }));
     if (st.status === 'manual') box.append(el('p', {}, 'Bản cho máy này chưa có trên Gateway. Tải tại: ', el('button', { class: 'linkbtn', text: st.page, onclick: () => window.vp.openUrl(st.page + '/') })));
     if (['ready', 'available'].includes(st.status)) box.append(el('p', { class: 'dim', text: afterText() }));
+    if (st.status === 'staged') box.append(el('p', { class: 'dim', text: 'Bản mới đã cài sẵn. App tự mở lại để dùng bản mới khi bạn không dùng máy vài phút (không có việc đang chạy), hoặc lần mở app sau. Đoạn chat và cài đặt được giữ nguyên.' }));
     return box;
   }
 
@@ -76,6 +77,7 @@
     const { el } = U;
     const now = el('button', { class: 'btn primary', text: 'Cập nhật ngay', onclick: updateNow });
     if (st.status === 'downloading') return [el('button', { class: 'btn', text: 'Hủy tải', onclick: () => window.vp.update.cancel() }), st.autoInstall ? null : now].filter(Boolean);
+    if (st.status === 'staged') return [el('button', { class: 'btn', text: 'Để sau', onclick: U.closeModal }), el('button', { class: 'btn primary', text: 'Mở lại ngay', onclick: updateNow })];
     if (st.status === 'ready' || st.status === 'available') return [el('button', { class: 'btn', text: 'Để sau', onclick: () => { U.closeModal(); snooze(); } }), now];
     return [el('button', { class: 'btn primary', text: 'Đóng', onclick: U.closeModal })];
   }
@@ -109,7 +111,7 @@
     show();
     const btn = el('button', { class: 'btn small', onclick: async () => { btn.disabled = true; line.textContent = 'Đang kiểm tra…'; onState(await window.vp.update.check()); btn.disabled = false; show(); if (['available', 'manual', 'ready'].includes(st.status)) open(); } }, '🔄 Kiểm tra bản mới');
     return {
-      node: el('div', {}, el('div', { class: 'field row' }, auto, el('label', { for: 'chkAutoUpd', text: 'Tự kiểm tra và tải sẵn bản mới (chỉ cài khi bạn bấm "Cập nhật ngay")' })), el('div', { class: 'field row upd-row' }, btn, line)),
+      node: el('div', {}, el('div', { class: 'field row' }, auto, el('label', { for: 'chkAutoUpd', text: 'Tự cập nhật: tải và cài bản mới, app tự mở lại khi bạn không dùng máy (bản cần cài lại cả bộ cài vẫn chờ bạn bấm "Cập nhật ngay")' })), el('div', { class: 'field row upd-row' }, btn, line)),
       apply: (c) => { c.autoUpdate = auto.checked; },
     };
   }

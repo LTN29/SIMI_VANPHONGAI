@@ -418,10 +418,12 @@ class ChatEngine {
   async sync(id) {
     const t = this.store.get(id);
     if (!t || !t.codexThread || this.running.has(id)) return t;
-    const meta = await this.codex.readThread(t.codexThread, false).catch(() => null);
-    if (!meta || meta.updatedAt === t.codexUpdatedAt) return t; // Codex chưa đổi gì kể từ lần đọc trước
-    const th = await this.codex.readThread(t.codexThread);
     const userTurns = t.messages.filter((m) => m.role === 'user').length;
+    // đang có nội dung thì lỗi đọc Codex bỏ qua (giữ bản đang có); đang rỗng thì báo lỗi để người dùng biết
+    const meta = await this.codex.readThread(t.codexThread, false).catch((e) => { if (userTurns > 0) return null; throw e; });
+    // Codex chưa đổi gì kể từ lần đọc trước – trừ khi lần trước đọc ra rỗng (bản Codex khác / lỗi đọc) thì đọc lại
+    if (!meta || (meta.updatedAt === t.codexUpdatedAt && userTurns > 0)) return t;
+    const th = await this.codex.readThread(t.codexThread);
     t.codexUpdatedAt = th.updatedAt;
     if ((th.turns || []).length !== userTurns) {
       t.messages = messagesFromThread(th, (u) => this._saveDataImage(t.id, u));

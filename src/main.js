@@ -74,7 +74,8 @@ function emit(e) {
   if (e.type === 'result') notify('Văn Phòng AI – Đã xong việc', e.title);
   if (e.type === 'chat-computer') onComputer(e);
   // bản mới đã tải sẵn → báo 1 lần cho mỗi phiên bản (đang ở cửa sổ khác thì hiện thông báo của hệ điều hành)
-  if (e.type === 'update' && e.state.status === 'ready' && e.state.version && notifiedUpdate !== e.state.version) {
+  // (cập nhật nhanh tự cài thì không báo – app tự dùng bản mới khi mở lại)
+  if (e.type === 'update' && e.state.status === 'ready' && e.state.version && notifiedUpdate !== e.state.version && !(e.state.kind === 'app' && store && store.getConfig().autoUpdate !== false)) {
     notifiedUpdate = e.state.version;
     notify(`⬆️ Văn Phòng AI ${e.state.version} đã sẵn sàng`, 'Bấm để cập nhật – app tự cài và mở lại sau khoảng 20 giây.', () => win.webContents.send('evt', { type: 'update-open' }));
   }
@@ -459,6 +460,10 @@ app.whenReady().then(() => {
     getGateway: () => simi.gatewayOrigin(simi.readCodexConfig().baseUrl || store.getConfig().simiGateway || ''),
     enabled: () => store.getConfig().autoUpdate !== false,
     autoDownload: () => store.getConfig().autoUpdate !== false,
+    // tự cập nhật không cần bấm (chỉ bản cập nhật nhanh): mở lại app khi máy rảnh ≥ 3 phút và không có việc đang chạy
+    autoApply: () => store.getConfig().autoUpdate !== false,
+    isBusy: () => !!running || queue.length > 0 || (chat && chat.running.size > 0) || !!simiUpdating,
+    idle: () => powerMonitor.getSystemIdleTime() >= 180,
   });
   updater.start();
   chat = new ChatEngine({ userData: app.getPath('userData'), getConfig: () => store.getConfig(), emit, defaultDir: chatDir, hiddenDirs: () => [workDir()], codex: codexServer, extraConfig: computerMcp });

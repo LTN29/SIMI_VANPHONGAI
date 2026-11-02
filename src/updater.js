@@ -56,7 +56,8 @@ function debError(code, out, file) {
 }
 
 class Updater {
-  constructor({ app, getGateway, emit, dir, enabled = () => true, autoDownload = () => true, current = '', shell = global.vpShell, hotRoot = '' }) {
+  constructor({ app, getGateway, emit, dir, enabled = () => true, autoDownload = () => true, current = '', shell = global.vpShell, hotRoot = '',
+    autoApply = () => false, isBusy = () => false, idle = () => false, restartEveryMs = 60 * 1000 }) {
     this.app = app;
     this.getGateway = getGateway;
     this.emitFn = emit;
@@ -66,6 +67,12 @@ class Updater {
     this.lastCheck = 0;
     this.shell = shell;     // vỏ app (src/boot.js): Electron + giao kèo BOOT; thiếu thì chỉ cài lại cả bộ cài
     this.hotRoot = hotRoot; // <userData>/app
+    // tự cập nhật không cần bấm: bản cập nhật nhanh tải xong là cài sẵn ('staged'), dùng khi mở lại app;
+    // app tự mở lại lúc người dùng không dùng máy (idle) và không có việc đang chạy (isBusy)
+    this.autoApply = autoApply;
+    this.isBusy = isBusy;
+    this.idle = idle;
+    this.restartEveryMs = restartEveryMs;
     this.state = { status: 'idle', current: current || app.getVersion(), kind: assetKey() };
   }
 
@@ -90,7 +97,7 @@ class Updater {
     this.timer = setTimeout(() => { tick(); this.every = setInterval(tick, CHECK_EVERY_MS); }, 15000);
   }
 
-  stop() { clearTimeout(this.timer); clearInterval(this.every); if (this.ac) this.ac.abort(); }
+  stop() { clearTimeout(this.timer); clearInterval(this.every); clearInterval(this.restartTimer); if (this.ac) this.ac.abort(); }
 
   // kiểm tra lại nếu lần trước đã lâu (quay lại app, máy ngủ dậy) hoặc ngay lập tức (Sảnh báo có bản mới)
   checkSoon(minGapMs = 0) {
@@ -100,6 +107,7 @@ class Updater {
 
   // bấm "Cập nhật ngay": đã tải xong thì cài luôn; chưa xong thì tải nốt rồi tự cài
   async updateNow() {
+    if (this.state.status === 'staged') { this._relaunch(); return { ...this.state }; } // đã cài sẵn → mở lại ngay
     if (this.state.status === 'ready') return this.install();
     this.installWhenReady = true;
     this._set({ autoInstall: true });
@@ -111,7 +119,7 @@ class Updater {
   async check() {
     if (['checking', 'downloading', 'installing'].includes(this.state.status)) return { ...this.state };
     // đang có bản chờ cài / chờ tải: kiểm tra lặng lẽ, không làm nhấp nháy nút, rớt mạng thì giữ nguyên
-    const keep = ['ready', 'available'].includes(this.state.status);
+    const keep = ['ready', 'available', 'staged'].includes(this.state.status);
     this.lastCheck = Date.now();
     if (!keep) this._set({ status: 'checking', error: '' });
     try {
@@ -191,7 +199,40 @@ class Updater {
     if (process.platform !== 'win32') fs.chmodSync(dest, 0o755);
     const st = this._set({ status: 'ready', progress: 1, path: dest, version, error: '' });
     if (this.installWhenReady) { this.installWhenReady = false; setImmediate(() => this.install().catch((e) => this._set({ status: 'ready', autoInstall: false, error: e.message }))); }
+    else if (this.state.kind === 'app' && this.autoApply()) setImmediate(() => this.stage());
     return st;
+  }
+
+  // cập nhật nhanh, không cần bấm: giải nén bản mới sẵn sàng (chưa mở lại) – lần mở app sau tự dùng bản mới
+  stage() {
+    if (this.state.status !== 'ready' || this.state.kind !== 'app') return { ...this.state };
+    const file = this.state.path;
+    try {
+      hot.installHot(this.hotRoot, file, hot.parseName(path.basename(file)), this.state.file.sha256, this.shell && this.shell.hot ? [this.shell.hot] : []);
+      try { fs.rmSync(file, { force: true }); } catch { /* bỏ qua */ }
+    } catch (e) {
+      return this._set({ error: 'Không cài được bản cập nhật nhanh: ' + e.message }); // giữ 'ready' – người dùng bấm Cập nhật ngay để thử lại
+    }
+    const st = this._set({ status: 'staged', path: '', progress: 1, error: '' });
+    clearInterval(this.restartTimer);
+    this.restartTimer = setInterval(() => this.maybeRestart(), this.restartEveryMs);
+    if (this.restartTimer.unref) this.restartTimer.unref();
+    return st;
+  }
+
+  // đã cài sẵn + người dùng đang không dùng máy + không có việc đang chạy → tự mở lại để dùng bản mới
+  maybeRestart() {
+    if (this.state.status !== 'staged') { clearInterval(this.restartTimer); return false; }
+    let ok = false;
+    try { ok = !this.isBusy() && this.idle(); } catch { ok = false; }
+    if (ok) { clearInterval(this.restartTimer); this._relaunch(); }
+    return ok;
+  }
+
+  _relaunch() {
+    this._set({ status: 'installing' });
+    this.app.relaunch(process.env.APPIMAGE ? { execPath: process.env.APPIMAGE, args: process.argv.slice(1) } : undefined);
+    setTimeout(() => this.app.exit(0), 400);
   }
 
   cancel() { if (this.ac) this.ac.abort(); }

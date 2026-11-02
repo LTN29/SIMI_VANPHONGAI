@@ -497,9 +497,9 @@ code, .cmd { font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace
 /* thanh trên: chữ không bao giờ xuống dòng; hết chỗ thì ô trạng thái co lại (có …), nút phụ chỉ còn biểu tượng */
 .brand, .tbtn, .actions, .brands { white-space: nowrap; flex: none; }
 .topbar .status { flex: 0 1 auto; }
-@media (max-width: 1500px) { .tbtn:not(.help-btn) span { display: none; } .tbtn { padding: 7px 10px; } }
+@media (max-width: 1500px) { .tbtn:not(.help-btn):not(.upd) span { display: none; } .tbtn { padding: 7px 10px; } }
 @media (max-width: 1360px) { .brands .crenot { display: none; } }
-@media (max-width: 1280px) { .layout { grid-template-columns: 270px 1fr 300px; } .tbtn span { display: none; } .feats { grid-template-columns: 1fr; } }
+@media (max-width: 1280px) { .layout { grid-template-columns: 270px 1fr 300px; } .tbtn:not(.upd) span, .tbtn.upd span + span { display: none; } .feats { grid-template-columns: 1fr; } }
 @media (max-width: 1250px) { .view-hint { display: none; } }
 @media (max-width: 1200px) { .brands { display: none; } }
 
