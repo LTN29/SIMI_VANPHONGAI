@@ -98,8 +98,11 @@ run(async () => {
     await win.click('.viewtabs button[data-v="lobby"]');
     await win.waitForSelector('#lbConn.online', { timeout: 30000 });
     check(true, 'tự vào Sảnh bằng key đã cài, không cần đăng nhập');
+    await win.waitForSelector('.lb-chip', { timeout: 10000 });
+    check(await win.locator('.lb-chip', { hasText: 'Bảo' }).count() === 1 && (await win.locator('.lb-chip', { hasText: 'Bảo' }).getAttribute('title') || '').includes('Đang tạo ảnh'), 'danh sách online gọn 1 hàng: thấy đồng nghiệp đang online');
+    await win.click('#lbPMode');
     await win.waitForSelector('.lb-person', { timeout: 10000 });
-    check(await win.locator('.lb-person', { hasText: 'Bảo' }).count() === 1, 'thấy đồng nghiệp đang online');
+    check(await win.locator('.lb-person', { hasText: 'Bảo' }).count() === 1, 'bấm "Theo team" → xem đủ danh sách theo team');
     check((await win.locator('.lb-person', { hasText: 'Bảo' }).textContent()).includes('Đang tạo ảnh'), 'thấy đồng nghiệp đang làm gì với AI');
     check((await win.locator('#lbMe').textContent()).includes('Ngọc'), 'tên mình lấy từ Gateway (users.json)');
     check(await win.evaluate(() => window.__lobby.people.size) === 30, 'quán có đủ 30 nhân vật');

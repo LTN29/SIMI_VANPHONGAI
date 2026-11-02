@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const simi = require('./simi');
-const { IS_WIN, HOME, runProcess, openTerminal: openWindow, refreshPath, fetchJson, firstLine } = require('./sys');
+const { IS_WIN, HOME, runProcess, openTerminal: openWindow, refreshPath, fetchJson, firstLine, GEMINI_PERSONAL_MSG } = require('./sys');
 
 // ---------- lệnh đăng nhập / cài đặt (danh sách cố định, không nhận lệnh tùy ý) ----------
 const COMMANDS = {
@@ -70,10 +70,32 @@ async function checkCodex(cfg) {
   } catch (e) { return { ...v, loggedIn: null, note: firstLine(e.message) }; }
 }
 
+// agy không có lệnh "đã đăng nhập chưa": coi là đã kết nối khi lần Thử gần nhất chạy được (cfg.verified.antigravity),
+// hoặc `agy models` liệt kê được model của tài khoản (chỉ chạy được khi đã đăng nhập).
+const AGY_AUTH = /log ?in|sign ?in|authenticat|unauthori[sz]ed|not logged/i;
+function parseAgyModels(out) {
+  const seen = new Set(); const models = [];
+  for (const line of String(out || '').split(/\r?\n/)) {
+    const tok = line.replace(/[│|*•►>]/g, ' ').trim().split(/\s+/)[0] || '';
+    if (/^[a-z][a-z0-9.\-_:]*\d[a-z0-9.\-_:]*$/i.test(tok) && tok.includes('-') && !seen.has(tok)) {
+      seen.add(tok);
+      const rest = line.slice(line.indexOf(tok) + tok.length).replace(/[│|]/g, ' ').trim();
+      models.push({ id: tok, label: tok, note: rest.slice(0, 70) });
+    }
+  }
+  return models;
+}
 async function checkAntigravity(cfg) {
-  const v = await version((cfg.cli.antigravity || {}).cmd || 'agy', { shell: false });
-  // agy chưa có lệnh kiểm tra đăng nhập riêng → đăng nhập xác nhận qua nút "Thử kết nối"
-  return { ...v, loggedIn: v.installed ? null : false };
+  const cmd = (cfg.cli.antigravity || {}).cmd || 'agy';
+  const v = await version(cmd, { shell: false });
+  if (!v.installed) return { ...v, loggedIn: false };
+  if (cfg.verified && cfg.verified.antigravity) return { ...v, loggedIn: true, account: 'tài khoản Google' };
+  try {
+    const r = await runProcess(cmd, ['models'], '', { timeoutMs: 15000, shell: false, allowFail: true });
+    if (r.code === 0 && parseAgyModels(r.out).length) return { ...v, loggedIn: true, account: 'tài khoản Google', verify: true };
+    if (AGY_AUTH.test(r.out + r.err)) return { ...v, loggedIn: false };
+  } catch { /* chậm / lỗi khác: để người dùng bấm Thử */ }
+  return { ...v, loggedIn: null };
 }
 
 async function checkGemini(cfg) {
@@ -81,6 +103,15 @@ async function checkGemini(cfg) {
   if (!v.installed) return { ...v, loggedIn: false };
   const oauth = fs.existsSync(path.join(HOME, '.gemini', 'oauth_creds.json'));
   const key = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+  // tài khoản Google cá nhân (oauth-personal, không có dự án Google Cloud) bị Google ngừng hỗ trợ từ 18/6/2026
+  let personal = false;
+  try {
+    const st = JSON.parse(fs.readFileSync(path.join(HOME, '.gemini', 'settings.json'), 'utf8'));
+    const t = (st.security && st.security.auth && st.security.auth.selectedType) || st.selectedAuthType || '';
+    personal = t === 'oauth-personal' && !process.env.GOOGLE_CLOUD_PROJECT && !process.env.GOOGLE_CLOUD_PROJECT_ID;
+  } catch { /* chưa có settings */ }
+  const blocked = !key && oauth && (personal || !!(cfg.verified && cfg.verified.geminiPersonal));
+  if (blocked) return { ...v, loggedIn: false, ineligible: true, account: 'tài khoản Google cá nhân', note: GEMINI_PERSONAL_MSG };
   return { ...v, loggedIn: oauth || key, account: key ? 'API key (biến môi trường)' : oauth ? 'tài khoản Google' : '' };
 }
 
@@ -139,15 +170,7 @@ async function listModels(source, cfg, getSecret) {
   if (source === 'antigravity-cli') {
     try {
       const { out } = await runProcess((cfg.cli.antigravity || {}).cmd || 'agy', ['models'], '', { timeoutMs: 30000, shell: false });
-      const seen = new Set(); const models = [];
-      for (const line of out.split(/\r?\n/)) {
-        const tok = line.replace(/[│|*•►>]/g, ' ').trim().split(/\s+/)[0] || '';
-        if (/^[a-z][a-z0-9.\-_:]*\d[a-z0-9.\-_:]*$/i.test(tok) && tok.includes('-') && !seen.has(tok)) {
-          seen.add(tok);
-          const rest = line.slice(line.indexOf(tok) + tok.length).replace(/[│|]/g, ' ').trim();
-          models.push({ id: tok, label: tok, note: rest.slice(0, 70) });
-        }
-      }
+      const models = parseAgyModels(out);
       return { models: [{ id: '', label: 'Mặc định của tài khoản', note: 'Antigravity tự chọn' }, ...models], live: models.length > 0 };
     } catch (e) { return { models: [{ id: '', label: 'Mặc định của tài khoản', note: '' }], live: false, error: 'Không lấy được danh sách từ agy: ' + firstLine(e.message) }; }
   }

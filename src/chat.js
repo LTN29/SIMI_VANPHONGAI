@@ -83,7 +83,7 @@ function stepFromItem(it) {
   const status = STATUS[it.status] || 'completed';
   switch (snake(it.type)) {
     case 'command_execution':
-      return { sk: 'cmd', title: it.command || 'Chạy lệnh', output: String(it.aggregated_output ?? it.aggregatedOutput ?? '').slice(-4000), exit: it.exit_code ?? it.exitCode, status };
+      return { sk: 'cmd', title: shownCmd(it.command) || 'Chạy lệnh', output: String(it.aggregated_output ?? it.aggregatedOutput ?? '').slice(-4000), exit: it.exit_code ?? it.exitCode, status };
     case 'mcp_tool_call':
     case 'dynamic_tool_call':
       return { sk: 'tool', server: it.server || it.namespace || '', title: [TOOL_SHORT[it.server] || it.server || it.namespace, it.server === VPC ? vpcLabel(it.tool, it.arguments) : it.tool].filter(Boolean).join(' · ') || 'Công cụ', output: it.error ? String(it.error.message || JSON.stringify(it.error)).slice(0, 800) : '', status: it.error ? 'failed' : status };
@@ -107,6 +107,14 @@ function stepFromItem(it) {
     default:
       return null;
   }
+}
+
+// lệnh hiện cho người dùng: bỏ lớp vỏ shell Codex bọc ngoài (/bin/bash -lc '…', powershell -Command "…") cho dễ đọc
+function shownCmd(c) {
+  const s = String(c || '').trim();
+  const m = s.match(/^(?:\/(?:usr\/)?bin\/)?(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1$/) ||
+    s.match(/^"?[^"]*?(?:powershell|pwsh)(?:\.exe)?"?\s+(?:-\w+\s+)*?-(?:Command|c)\s+(['"])([\s\S]*)\1$/i);
+  return m ? m[2] : s;
 }
 
 // mô tả ngắn 1 thao tác điều khiển máy: "Bấm (640, 400)", "Gõ: xin chào"…

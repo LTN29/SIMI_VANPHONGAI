@@ -80,7 +80,8 @@
           el('button', { class: 'btn mini primary', onclick: () => toggleHidden() }, 'Hiện lại')),
         el('div', { class: 'lb-overlay hidden', id: 'lbOverlay' })),
       el('aside', { class: 'lb-side' },
-        el('div', { class: 'lb-online' }, el('h3', {}, 'Đang online ', el('span', { class: 'count', id: 'lbOnlineN', text: '0' }),
+        el('div', { class: 'lb-online', id: 'lbOnline' }, el('h3', {}, 'Đang online ', el('span', { class: 'count', id: 'lbOnlineN', text: '0' }),
+          el('button', { class: 'lb-pmode', id: 'lbPMode', onclick: () => { ls.set('vp.lbPeopleFull', !peopleFull()); renderPeople(); } }),
           el('button', { class: 'lb-fold', id: 'lbFold', title: 'Thu gọn khung chat – Sảnh rộng hơn', 'aria-label': 'Thu gọn khung chat', onclick: () => showSide(false) }, icon('sideClose'))),
           el('div', { class: 'lb-people', id: 'lbPeople' })),
         el('div', { class: 'lb-chat' },
@@ -99,6 +100,8 @@
               el('button', { class: 'ch-send', id: 'lbSend', title: 'Gửi', onclick: sendMsg }, icon('send'))),
             el('input', { type: 'file', id: 'lbFile', class: 'hidden', multiple: true, accept: 'image/png,image/jpeg,image/webp,image/gif', onchange: (e) => { addFiles([...e.target.files]); e.target.value = ''; } })))));
     $('#chatView').after(view);
+    $('#lbPeople').addEventListener('scroll', moreFade, { passive: true });
+    $('#lbPeople').addEventListener('wheel', (e) => { const b = e.currentTarget; if (b.classList.contains('strip') && Math.abs(e.deltaY) > Math.abs(e.deltaX)) { b.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
     showSide(ls.get('vp.lbSide', true) !== false, true);
     // kéo thả ảnh vào khung chat
     const chatBox = $('.lb-chat', view);
@@ -370,8 +373,25 @@
     cnt.textContent = unread ? `${unread}` : String(list.length); cnt.classList.toggle('hidden', !list.length && !unread); cnt.classList.toggle('unread', !!unread);
     const box = $('#lbPeople');
     if (!list.length) { box.replaceChildren(L.status.state === 'online' ? el('div', { class: 'lb-empty small' }, el('div', { class: 'lb-empty-ic', text: '🛋️' }), el('b', { text: 'Quán đang vắng' }), el('small', { text: 'Chưa có ai khác online. Rủ đồng nghiệp mở app nhé!' })) : ''); return; }
+    const full = peopleFull();
+    $('#lbOnline').classList.toggle('compact', !full); box.classList.toggle('strip', !full);
+    const pm = $('#lbPMode'); pm.textContent = full ? 'Thu gọn ▴' : 'Theo team ▾'; pm.title = full ? 'Thu gọn thành 1 hàng ảnh – khung chat dài hơn' : 'Xem đủ danh sách theo team, kèm trạng thái';
     const teams = new Map();
     for (const m of list) { if (!teams.has(m.teamName)) teams.set(m.teamName, []); teams.get(m.teamName).push(m); }
+    const dmN = (m) => (L.me ? L.unread.get(dmRoom(L.me.id, m.id)) : 0) || 0;
+    // gọn (mặc định): 1 hàng ảnh + tên ngắn, cuộn ngang – nhường chỗ cho khung chat
+    if (!full) {
+      const order = [...teams.entries()].sort((a, b) => (a[0] === (L.me && L.me.teamName) ? -1 : 0) - (b[0] === (L.me && L.me.teamName) ? -1 : 0)).flatMap(([, ms]) => ms);
+      box.replaceChildren(...order.map((m) => {
+        const st = (m.status && m.status.text) || ACT_TEXT[(m.status && m.status.activity) || 'idle'];
+        const busy = !!m.status && (m.status.activity === 'away' || DND_ICONS.some((ic) => String(m.status.text || '').startsWith(ic)));
+        return el('button', { class: 'lb-chip' + (busy ? ' busy' : ''), title: `${m.name} · Team ${m.teamName || '?'}\n${st}`, onclick: (e) => openPerson(m.id, e.clientX, e.clientY) },
+          face(m, 34), el('span', { text: shortName(m.name) }), dmN(m) ? el('em', { class: 'badge', text: String(dmN(m)) }) : null);
+      }));
+      requestAnimationFrame(moreFade);
+      return;
+    }
+    box.classList.remove('more');
     box.replaceChildren(...[...teams.entries()].sort((a, b) => (a[0] === (L.me && L.me.teamName) ? -1 : 0) - (b[0] === (L.me && L.me.teamName) ? -1 : 0)).flatMap(([team, ms]) => [
       el('div', { class: 'lb-team', text: `Team ${team || '?'}` }),
       ...ms.map((m) => el('button', { class: 'lb-person', title: m.role || '', onclick: (e) => openPerson(m.id, e.clientX, e.clientY) },
@@ -379,6 +399,12 @@
         L.unread.get(dmRoom(L.me ? L.me.id : '', m.id)) ? el('em', { class: 'badge', text: String(L.unread.get(dmRoom(L.me.id, m.id))) }) : null)),
     ]));
   }
+
+  const peopleFull = () => ls.get('vp.lbPeopleFull', false) === true;
+  // còn người phía bên phải (cuộn ngang) → mờ dần mép phải cho biết kéo / lăn chuột được
+  const moreFade = () => { const b = $('#lbPeople'); if (b) b.classList.toggle('more', b.classList.contains('strip') && b.scrollLeft + b.clientWidth < b.scrollWidth - 4); };
+  // tên gọi ngắn: "Vũ Thị Chung Anh" → "Chung Anh", "Hoàng Việt Phú" → "Việt Phú", "ChatBot" → "ChatBot"
+  const shortName = (n) => { const w = String(n || '').trim().split(/\s+/); return w.length >= 3 ? w.slice(-2).join(' ') : w.join(' '); };
 
   function openPerson(id, x, y) {
     const { el } = U;
@@ -481,8 +507,10 @@
         el('b', { text: r && r.kind === 'dm' ? `Bắt đầu trò chuyện với ${r.name}` : 'Chưa có tin nhắn nào' }),
         el('small', { text: r && r.kind === 'dm' ? 'Tin nhắn riêng chỉ hai người thấy.' : 'Bấm một câu bên dưới để chào mọi người.' }),
         el('div', { class: 'lb-ideas' }, ideas.map((t) => el('button', { class: 'lb-idea', onclick: () => { $('#lbInput').value = t; sendMsg(); } }, t)))));
+      requestAnimationFrame(moreFade);
       return;
     }
+    box.classList.remove('more');
     box.replaceChildren(...list.map((msg, i) => msgNode(msg, list[i - 1])));
     scrollBottom();
   }

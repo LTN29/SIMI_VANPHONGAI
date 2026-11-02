@@ -31,6 +31,14 @@ function splitArgs(s) {
 const stripAnsi = (s) => String(s).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
 const firstLine = (s) => String(s || '').trim().split(/\r?\n/)[0];
 
+// lỗi quen thuộc của CLI → câu dễ hiểu (thay cho stack trace tiếng Anh)
+const GEMINI_PERSONAL = /IneligibleTierError|no longer supported for Gemini Code Assist for individuals/i;
+const GEMINI_PERSONAL_MSG = 'Google đã ngừng cho tài khoản Google cá nhân dùng Gemini CLI (chuyển sang Antigravity từ 18/6/2026). Hãy dùng thẻ Gemini (Antigravity) ở trên – đăng nhập cùng tài khoản Google – hoặc dùng API key Gemini trả phí / tài khoản doanh nghiệp.';
+function friendlyCliError(cmd, code, msg) {
+  if (GEMINI_PERSONAL.test(msg)) return GEMINI_PERSONAL_MSG;
+  return `Lệnh "${cmd}" báo lỗi (mã ${code}):\n${msg || '(không có thông báo)'}`;
+}
+
 // ---------- tiến trình ----------
 function spawnCli(cmd, args, { cwd, shell } = {}) {
   // Windows: lệnh trong PATH (codex.cmd, npm…) cần cmd.exe; file .exe có đường dẫn đầy đủ thì chạy thẳng
@@ -71,7 +79,7 @@ function runProcess(cmd, args, input, { cwd, timeoutMs = 60000, signal, shell, a
       const notFound = NOT_FOUND.test(err + out);
       if (code === 0 || (allowFail && !notFound)) return finish(resolve, { out, err, code });
       const msg = (err || out || '').trim().split('\n').slice(-6).join('\n');
-      finish(reject, new Error(notFound ? `Không tìm thấy lệnh "${cmd}". Đã cài CLI này chưa?` : `Lệnh "${cmd}" báo lỗi (mã ${code}):\n${msg || '(không có thông báo)'}`));
+      finish(reject, new Error(notFound ? `Không tìm thấy lệnh "${cmd}". Đã cài CLI này chưa?` : friendlyCliError(cmd, code, (err + '\n' + out).match(GEMINI_PERSONAL) ? (err + out) : msg)));
     });
     child.stdin.on('error', () => { /* tiến trình đóng sớm */ });
     child.stdin.end(input || '', 'utf8');
@@ -180,6 +188,7 @@ async function fetchJson(url, { method = 'GET', body, headers = {}, timeoutMs = 
 }
 
 module.exports = {
+  GEMINI_PERSONAL, GEMINI_PERSONAL_MSG,
   IS_WIN, IS_MAC, HOME,
   quoteArg, splitArgs, stripAnsi, firstLine,
   spawnCli, killTree, runProcess, openTerminal,

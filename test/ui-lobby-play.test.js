@@ -68,7 +68,7 @@ run(async () => {
     check(await win.evaluate(() => window.__lobby.cat.yarn.visible), 'mèo vồ cuộn len');
 
     // ---- tương tác ----
-    await win.click('.lb-person >> text=Bảo');
+    await win.click('.lb-chip >> text=Bảo');
     await win.waitForSelector('.lb-pop.interact .igrid button >> text=Đập tay');
     check(await win.locator('.lb-pop.interact .igrid button').count() === 9, 'bấm vào đồng nghiệp: nhắn riêng, vẫy, đi tới + đập tay, cụng ly, mời cà phê, ôm, mời nhảy, mời chơi bida');
     await win.click('.lb-pop.interact .igrid button >> text=Đập tay');

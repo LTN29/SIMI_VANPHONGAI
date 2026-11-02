@@ -165,6 +165,7 @@ function registerIpc() {
   handle('config:save', (cfg) => {
     if (!cfg || !Array.isArray(cfg.agents) || cfg.agents.length === 0) throw new Error('Cấu hình không hợp lệ');
     if (cfg.agents.filter((a) => a.isManager).length !== 1) throw new Error('Phải có đúng 1 Trưởng phòng');
+    const prev = store.getConfig().verified; if (prev) cfg.verified = prev; else delete cfg.verified; // kết quả Thử kết nối do app (main) giữ
     store.saveConfig(cfg);
     return { ok: true, outputDir: outputDir() };
   });
@@ -206,7 +207,11 @@ function registerIpc() {
   });
 
   // tài khoản + model
-  handle('accounts:check', () => accounts.checkAll(store.getConfig(), store.secretStatus()));
+  handle('accounts:check', async () => {
+    const r = await accounts.checkAll(store.getConfig(), store.secretStatus());
+    if (r.antigravity && r.antigravity.verify) { remember('antigravity-cli', true); delete r.antigravity.verify; } // agy liệt kê được model = đã đăng nhập
+    return r;
+  });
   handle('models:list', async (source, refresh) => {
     const hit = modelCache.get(source);
     if (hit && !refresh && Date.now() - hit.t < MODEL_CACHE_MS) return hit.v;
@@ -223,9 +228,17 @@ function registerIpc() {
       const text = await callAgent(agent, 'Bạn đang được kiểm tra kết nối.', 'Trả lời đúng một chữ: OK', {
         config: store.getConfig(), signal: new AbortController().signal, getSecret: (n) => store.getSecret(n), workDir: workDir(),
       }, { kind: 'ping' });
+      remember(agent.source, true);
       return { ok: true, text: text.slice(0, 200), ms: Date.now() - t0 };
-    } catch (e) { return { ok: false, text: e.message, ms: Date.now() - t0 }; }
+    } catch (e) { remember(agent.source, false, e.message); return { ok: false, text: e.message, ms: Date.now() - t0 }; }
   });
+  // nhớ kết quả Thử: Antigravity chạy được = đã đăng nhập; Gemini CLI báo "tài khoản cá nhân không còn hỗ trợ" thì thôi hiện "Đã kết nối"
+  function remember(source, ok, msg = '') {
+    const cfg = store.getConfig(); const v = { ...(cfg.verified || {}) }; const before = JSON.stringify(v);
+    if (source === 'antigravity-cli') { if (ok) v.antigravity = Date.now(); else if (/đăng nhập|log ?in|sign ?in|authenticat|unauthori/i.test(msg)) delete v.antigravity; }
+    if (source === 'gemini-cli') { if (ok) delete v.geminiPersonal; else if (/Antigravity từ 18\/6\/2026/.test(msg)) v.geminiPersonal = Date.now(); }
+    if (JSON.stringify(v) !== before) { cfg.verified = v; store.saveConfig(cfg); }
+  }
 
   // Sảnh online
   handle('lobby:status', () => lobby.status());

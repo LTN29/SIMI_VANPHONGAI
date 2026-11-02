@@ -506,3 +506,4 @@ code, .cmd { font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace
 /* tác giả: chữ nhỏ, nhạt – có mặt nhưng không chiếm chỗ */
 .credit { display: block; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; color: var(--dim); opacity: .85; }
 .welcome .credit { margin-top: 14px; }
+.acc-info.warn { color: var(--err); opacity: 1; font-weight: 700; line-height: 1.45; }

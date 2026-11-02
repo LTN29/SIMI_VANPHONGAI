@@ -737,6 +737,7 @@
     let status, cls;
     if (!st) { status = 'Đang kiểm tra…'; cls = 'wait'; }
     else if (!st.installed) { status = 'Chưa cài'; cls = 'off'; }
+    else if (st.ineligible) { status = 'Google ngừng hỗ trợ tài khoản cá nhân'; cls = 'off'; }
     else if (st.loggedIn === true) { status = 'Đã kết nối'; cls = 'on'; }
     else if (st.loggedIn === null) { status = p.key === 'antigravity' ? 'Đã cài – bấm Thử để xác nhận đăng nhập' : 'Đã cài'; cls = 'mid'; }
     else { status = 'Chưa đăng nhập'; cls = 'mid'; }
@@ -750,12 +751,19 @@
       } catch (e) { toast(cleanErr(e), true); }
     };
     const btns = el('div', { class: 'acc-btns' });
+    let loginBtn = null;
+    const pill = el('span', { class: 'pill ' + cls, text: status });
+    // Thử xong: cập nhật ngay thẻ (chữ trạng thái, nút Đăng nhập → Đăng nhập lại) – app cũng nhớ kết quả cho lần mở sau
+    const markOn = () => {
+      pill.className = 'pill on'; pill.textContent = 'Đã kết nối'; card.classList.remove('mid', 'off'); card.classList.add('on');
+      if (loginBtn) { loginBtn.classList.remove('primary'); const t = [...loginBtn.childNodes].find((n) => n.nodeType === 3); if (t) t.textContent = 'Đăng nhập lại'; }
+    };
     if (st && !st.installed) {
       if (p.url) btns.append(el('button', { class: 'btn primary small', text: 'Tải Ollama', onclick: () => window.vp.openUrl(p.url) }));
       else btns.append(el('button', { class: 'btn primary small', onclick: () => run(p.install, 'Chờ cài xong rồi bấm Đăng nhập.') }, icon('term'), 'Cài đặt'));
       if (p.needNode) btns.append(el('button', { class: 'linkbtn small', text: 'Cần Node.js trước', onclick: () => window.vp.openUrl('https://nodejs.org/') }));
     } else if (st) {
-      if (p.login) btns.append(el('button', { class: 'btn small' + (st.loggedIn === true ? '' : ' primary'), onclick: () => run(p.login, 'Làm theo hướng dẫn trong cửa sổ đó (thường mở trình duyệt để đăng nhập).') }, icon('key'), st.loggedIn === true ? 'Đăng nhập lại' : 'Đăng nhập'));
+      if (p.login) btns.append(loginBtn = el('button', { class: 'btn small' + (st.loggedIn === true || st.ineligible ? '' : ' primary'), onclick: () => run(p.login, 'Làm theo hướng dẫn trong cửa sổ đó (thường mở trình duyệt để đăng nhập).') }, icon('key'), st.loggedIn === true ? 'Đăng nhập lại' : 'Đăng nhập'));
       if (p.pull) btns.append(el('button', { class: 'btn small', onclick: () => run(p.pull, 'Tải xong bấm Kiểm tra lại.') }, icon('term'), 'Tải model qwen2.5'));
       const test = el('button', { class: 'btn small' }, icon('bolt'), 'Thử');
       test.addEventListener('click', async () => {
@@ -764,7 +772,8 @@
         test.disabled = false;
         msg.replaceChildren(r.ok ? icon('check', 'ok') : el('span', { text: '✕ ' }), el('span', { text: r.ok ? `Hoạt động tốt (${(r.ms / 1000).toFixed(1)} giây).` : r.text }));
         msg.className = 'acc-msg show ' + (r.ok ? 'ok' : 'bad');
-        if (r.ok && p.key === 'antigravity' && S.acc?.antigravity) { S.acc.antigravity.loggedIn = true; updateBanner(); renderRoster(); }
+        if (r.ok && p.key === 'antigravity' && S.acc?.antigravity) { S.acc.antigravity.loggedIn = true; markOn(); updateBanner(); renderRoster(); }
+        if (!r.ok && p.key === 'gemini' && /Antigravity từ 18\/6\/2026/.test(r.text)) { pill.className = 'pill off'; pill.textContent = 'Google ngừng hỗ trợ tài khoản cá nhân'; if (S.acc?.gemini) { S.acc.gemini.loggedIn = false; S.acc.gemini.ineligible = true; } updateBanner(); renderRoster(); }
       });
       btns.append(test);
       if (connected(p.src)) btns.append(el('button', { class: 'linkbtn small', text: 'Dùng cho cả phòng', onclick: () => applyPreset(p.src) }));
@@ -777,14 +786,15 @@
         else if (r.error) models.replaceChildren(el('small', { class: 'bad', text: r.error }));
       });
     }
-    return el('div', { class: 'acc-card ' + cls, style: `--b:${color}` },
+    const card = el('div', { class: 'acc-card ' + cls, style: `--b:${color}` },
       el('div', { class: 'acc-top' },
         el('span', { class: 'logo', text: p.name.charAt(0) }),
         el('div', { class: 'acc-name' }, el('b', { text: p.name }), el('small', { text: p.sub })),
-        el('span', { class: 'pill ' + cls, text: status })),
+        pill),
       st && (st.account || st.version) ? el('div', { class: 'acc-info' }, st.account ? el('span', { text: st.account }) : null, st.version ? el('span', { class: 'dim', text: st.version }) : null) : null,
-      st && st.note ? el('div', { class: 'acc-info dim', text: st.note }) : null,
+      st && st.note ? el('div', { class: 'acc-info dim' + (st.ineligible ? ' warn' : ''), text: st.note }) : null,
       models, btns, msg);
+    return card;
   }
 
   function simiCard(st) {
