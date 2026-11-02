@@ -238,6 +238,7 @@
     const stop = () => { clearInterval(timer); clearInterval(poll); };
     // điện thoại đã đăng nhập: tự cập nhật khi vừa quét mã xong; bấm Đăng xuất là điện thoại đó ra ngay
     const devs = el('div', { class: 'ph-devs' });
+    const code = el('div', { class: 'ph-codeline' });
     const when = (ts) => new Date(ts).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
     const loadDevs = async () => {
       let r; try { r = await window.vp.lobby.mobileSessions(); } catch { return; } // Gateway cũ: bỏ qua
@@ -257,6 +258,7 @@
       const img = el('div', { class: 'ph-code', role: 'img', 'aria-label': 'Mã QR đăng nhập Sảnh trên điện thoại' });
       img.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 3, scalable: true }); // SVG chỉ gồm ô vuông do thư viện vẽ
       box.replaceChildren(img);
+      code.replaceChildren(...(r.short ? [el('span', { class: 'dim', text: 'Hoặc gõ mã trong app trên điện thoại:' }), el('b', { class: 'ph-short', text: r.short })] : []));
       const tick = () => {
         const s = Math.max(0, Math.round((r.expiresAt - Date.now()) / 1000));
         if (!s) { clearInterval(timer); box.replaceChildren(el('div', { class: 'ph-exp' }, el('p', { text: 'Mã đã hết hạn.' }), el('button', { class: 'btn primary', onclick: make, text: '🔄 Tạo mã mới' }))); left.textContent = ''; return; }
@@ -264,11 +266,11 @@
       };
       tick(); timer = setInterval(tick, 1000);
     };
-    const body = el('div', { class: 'ph-box' }, box,
+    const body = el('div', { class: 'ph-box' }, box, code,
       el('ol', { class: 'ph-steps' },
         el('li', { text: 'Mở Camera trên điện thoại (iPhone, Android) và quét mã này.' }),
         el('li', { text: 'Bấm vào đường link hiện ra – điện thoại vào Sảnh ngay dưới tên bạn: đi lại bằng cần điều khiển, nhắn tin, đổi đồ, xem màn chiếu.' }),
-        el('li', {}, 'Muốn dùng như app: ', el('b', { text: 'iPhone' }), ' bấm Chia sẻ → Thêm vào MH chính; ', el('b', { text: 'Android' }), ' bấm ⋮ → Thêm vào màn hình chính.')),
+        el('li', {}, 'Muốn có icon như app: ', el('b', { text: 'iPhone' }), ' mở ai.simi.vn/m bằng Safari → Chia sẻ → Thêm vào MH chính, mở icon rồi gõ mã ở trên; ', el('b', { text: 'Android' }), ' bấm ⋮ → Thêm vào màn hình chính.')),
       devs,
       el('p', { class: 'dim ph-note', text: '🔒 Chỉ quét bằng điện thoại của bạn – ai quét được mã sẽ vào Sảnh dưới tên bạn. Điện thoại chỉ dùng được Sảnh (xem ai online, nhắn tin), không dùng được AI của bạn.' }));
     U.openModal('📱 Sảnh trên điện thoại', body, [el('div', { class: 'left' }, left), el('button', { class: 'btn', onclick: make, text: '🔄 Mã mới' }), el('button', { class: 'btn primary', onclick: () => { stop(); U.closeModal(); }, text: 'Xong' })]);

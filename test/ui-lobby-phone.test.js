@@ -67,10 +67,25 @@ run(async () => {
     // mã đã dùng không dùng lại được
     const p2 = await phone.newPage();
     await p2.goto(url); await p2.waitForSelector('.login .err', { timeout: 10000 });
-    check(/hết hạn hoặc đã dùng/.test(await p2.locator('.login .err').innerText()), 'mã QR chỉ dùng 1 lần');
+    check(/hết hạn, đã dùng/.test(await p2.locator('.login .err').innerText()), 'mã QR chỉ dùng 1 lần');
     check(perr.length === 0, 'điện thoại không có lỗi JavaScript' + (perr.length ? ': ' + perr.join(' | ') : ''));
+    // app trên màn hình chính (iPhone: bộ nhớ riêng) → đăng nhập bằng mã 8 ký tự gõ tay
+    await win.click('#modal button:has-text("Mã mới")');
+    await win.waitForFunction(() => /^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test((document.querySelector('#modal .ph-short') || {}).textContent || ''), null, { timeout: 10000 });
+    const short = await win.textContent('#modal .ph-short');
+    check(true, `máy tính hiện mã gõ tay ${short}`);
+    const home = await browser.newContext({ ...devices['iPhone 13'] });
+    const hp = await home.newPage();
+    await hp.goto(url.split('#')[0]);
+    await hp.fill('.codebox input', short.toLowerCase().replace('-', ''));
+    check((await hp.inputValue('.codebox input')) === short, 'ô nhập tự viết hoa, tự thêm gạch');
+    await hp.click('.codebox button');
+    await hp.waitForSelector('.tabs', { timeout: 15000 });
+    check(true, 'điện thoại đăng nhập bằng mã gõ tay');
+    await win.waitForFunction(() => document.querySelectorAll('#modal .ph-dev').length === 2, null, { timeout: 10000 });
+    check(true, 'máy tính thấy 2 điện thoại đã đăng nhập');
     // đăng xuất từ xa trên máy tính → điện thoại về màn đăng nhập
-    await win.click('#modal .ph-dev .btn');
+    for (let i = 0; i < 2; i++) { await win.click('#modal .ph-dev .btn >> nth=0'); await win.waitForFunction((n) => document.querySelectorAll('#modal .ph-dev').length === n, 1 - i, { timeout: 10000 }); }
     await pg.reload(); await pg.waitForSelector('.login', { timeout: 10000 });
     check(/hết|Quét|QR/i.test(await pg.locator('.login').innerText()), 'máy tính đăng xuất điện thoại từ xa');
   } finally {
