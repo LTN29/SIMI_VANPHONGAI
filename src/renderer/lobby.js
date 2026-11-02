@@ -60,6 +60,7 @@
           el('button', { class: 'btn small lb-cine-btn', id: 'lbCineBtn', title: 'Chiếu video YouTube cho cả quán cùng xem', onclick: toggleCinema }, '🎬 Màn chiếu'),
           el('span', { class: 'grow' }),
           el('button', { class: 'btn small lb-npcbtn', id: 'lbNpcBtn', title: 'Đi tới quầy lễ tân hỏi Trợ lý SIMI: hướng dẫn từng bước, mẹo dùng AI (phím F1)', onclick: () => goNpc() }, el('span', { class: 'q', 'aria-hidden': 'true', text: '?' }), 'Trợ lý SIMI'),
+          el('button', { class: 'btn small lb-phone', id: 'lbPhone', title: 'Dùng Sảnh trên điện thoại: quét mã QR để đăng nhập', onclick: openPhone }, el('span', { 'aria-hidden': 'true', text: '📱' }), el('span', { class: 'lb-phone-t', text: ' Điện thoại' })),
           el('button', { class: 'btn small', title: 'Nhìn toàn bộ quán', onclick: () => L.scene && L.scene.overview() }, '🗺 Toàn cảnh'),
           el('button', { class: 'btn small', title: 'Camera đi theo nhân vật của bạn', onclick: () => L.scene && L.scene.focusSelf() }, '🎯 Về chỗ mình'),
           el('span', { class: 'lb-conn', id: 'lbConn' }),
@@ -226,6 +227,54 @@
   async function toggleHidden() {
     if (!L.me) return;
     try { const r = await window.vp.lobby.profile({ hidden: !L.me.hidden }); L.me = { ...L.me, ...r.me }; renderMe(); U.toast(L.me.hidden ? '🙈 Đã ẩn – đồng nghiệp không thấy bạn online' : '👁 Mọi người đã thấy bạn trong Sảnh'); } catch (e) { U.toast(U.cleanErr(e), true); }
+  }
+
+  // ---------- Sảnh trên điện thoại: mã QR dùng 1 lần (Gateway /v1/mobile/pair) ----------
+  async function openPhone() {
+    const { el } = U;
+    const box = el('div', { class: 'ph-qr', 'aria-live': 'polite' }, el('div', { class: 'dim', text: 'Đang tạo mã…' }));
+    const left = el('small', { class: 'dim' });
+    let timer = null; let poll = null; let known = null;
+    const stop = () => { clearInterval(timer); clearInterval(poll); };
+    // điện thoại đã đăng nhập: tự cập nhật khi vừa quét mã xong; bấm Đăng xuất là điện thoại đó ra ngay
+    const devs = el('div', { class: 'ph-devs' });
+    const when = (ts) => new Date(ts).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+    const loadDevs = async () => {
+      let r; try { r = await window.vp.lobby.mobileSessions(); } catch { return; } // Gateway cũ: bỏ qua
+      const list = r.data || [];
+      if (known && list.some((d) => !known.has(d.id))) { U.toast('📱 Điện thoại đã đăng nhập Sảnh'); U.sfx && U.sfx('pop'); }
+      known = new Set(list.map((d) => d.id));
+      const sig = JSON.stringify(list); if (sig === devs.dataset.sig) return; devs.dataset.sig = sig; // không đổi thì không vẽ lại
+      devs.replaceChildren(...(list.length ? [el('b', { text: `Điện thoại đã đăng nhập (${list.length})` }),
+        ...list.map((d) => el('div', { class: 'ph-dev' }, el('span', { text: `📱 ${d.device}` }), el('small', { class: 'dim', text: `dùng lần cuối ${when(d.lastUsedAt)}` }),
+          el('button', { class: 'btn mini', onclick: async () => { try { await window.vp.lobby.revokeMobile(d.id); U.toast(`Đã đăng xuất ${d.device}`); loadDevs(); } catch (e) { U.toast(U.cleanErr(e), true); } } }, 'Đăng xuất')))] : []));
+    };
+    const make = async () => {
+      clearInterval(timer); box.replaceChildren(el('div', { class: 'dim', text: 'Đang tạo mã…' })); left.textContent = '';
+      let r;
+      try { r = await window.vp.lobby.pairMobile(); } catch (e) { box.replaceChildren(el('div', { class: 'su-bad', text: '⚠️ ' + U.cleanErr(e) })); return; }
+      const qr = window.qrcode(0, 'M'); qr.addData(r.url); qr.make();
+      const img = el('div', { class: 'ph-code', role: 'img', 'aria-label': 'Mã QR đăng nhập Sảnh trên điện thoại' });
+      img.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 3, scalable: true }); // SVG chỉ gồm ô vuông do thư viện vẽ
+      box.replaceChildren(img);
+      const tick = () => {
+        const s = Math.max(0, Math.round((r.expiresAt - Date.now()) / 1000));
+        if (!s) { clearInterval(timer); box.replaceChildren(el('div', { class: 'ph-exp' }, el('p', { text: 'Mã đã hết hạn.' }), el('button', { class: 'btn primary', onclick: make, text: '🔄 Tạo mã mới' }))); left.textContent = ''; return; }
+        left.textContent = `Mã dùng 1 lần, hết hạn sau ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+      };
+      tick(); timer = setInterval(tick, 1000);
+    };
+    const body = el('div', { class: 'ph-box' }, box,
+      el('ol', { class: 'ph-steps' },
+        el('li', { text: 'Mở Camera trên điện thoại (iPhone, Android) và quét mã này.' }),
+        el('li', { text: 'Bấm vào đường link hiện ra – điện thoại vào Sảnh ngay dưới tên bạn: đi lại bằng cần điều khiển, nhắn tin, đổi đồ, xem màn chiếu.' }),
+        el('li', {}, 'Muốn dùng như app: ', el('b', { text: 'iPhone' }), ' bấm Chia sẻ → Thêm vào MH chính; ', el('b', { text: 'Android' }), ' bấm ⋮ → Thêm vào màn hình chính.')),
+      devs,
+      el('p', { class: 'dim ph-note', text: '🔒 Chỉ quét bằng điện thoại của bạn – ai quét được mã sẽ vào Sảnh dưới tên bạn. Điện thoại chỉ dùng được Sảnh (xem ai online, nhắn tin), không dùng được AI của bạn.' }));
+    U.openModal('📱 Sảnh trên điện thoại', body, [el('div', { class: 'left' }, left), el('button', { class: 'btn', onclick: make, text: '🔄 Mã mới' }), el('button', { class: 'btn primary', onclick: () => { stop(); U.closeModal(); }, text: 'Xong' })]);
+    const mo = new MutationObserver(() => { if ($('#modal').classList.contains('hidden')) { stop(); mo.disconnect(); } });
+    mo.observe($('#modal'), { attributes: true, attributeFilter: ['class'] });
+    make(); loadDevs(); poll = setInterval(loadDevs, 3000);
   }
 
   function openWardrobe() {

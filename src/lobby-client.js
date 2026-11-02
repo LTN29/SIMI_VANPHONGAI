@@ -120,6 +120,11 @@ class LobbyClient {
   async saveProfile(payload) { const r = await this.call('profile', payload); this.me = r.me; this.emit('me', r.me); return r; }
   history(room, before) { return this.call(`messages?room=${encodeURIComponent(room)}&limit=80${before ? `&before=${before}` : ''}`, undefined, 'GET'); }
   members() { return this.call('members', undefined, 'GET'); }
+  // mã QR đăng nhập Sảnh trên điện thoại (Gateway /v1/mobile/pair): link dùng 1 lần, hết hạn sau vài phút
+  pairMobile() { const { base, h } = this.headers(true); return fetchJson(base.replace(/\/lobby$/, '/mobile/pair'), { method: 'POST', body: {}, headers: h, name: 'Sảnh', timeoutMs: 15000 }); }
+  // điện thoại đã đăng nhập bằng mã QR của máy này + đăng xuất từ xa
+  mobileSessions() { const { base, h } = this.headers(); return fetchJson(base.replace(/\/lobby$/, '/mobile/sessions'), { method: 'GET', headers: h, name: 'Sảnh', timeoutMs: 15000 }); }
+  revokeMobile(id) { const { base, h } = this.headers(true); return fetchJson(base.replace(/\/lobby$/, '/mobile/revoke'), { method: 'POST', body: { id }, headers: h, name: 'Sảnh', timeoutMs: 15000 }); }
   // màn chiếu YouTube: { action: add|skip|remove|duration, ... }
   cinema(payload) { return this.call('cinema', payload); }
   cinemaState() { return this.call('cinema', undefined, 'GET'); }

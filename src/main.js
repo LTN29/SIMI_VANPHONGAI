@@ -252,6 +252,9 @@ function registerIpc() {
   handle('lobby:profile', (payload) => lobby.saveProfile(payload));
   handle('lobby:history', (room, before) => lobby.history(room, before));
   handle('lobby:members', () => lobby.members());
+  handle('lobby:pairMobile', () => lobby.pairMobile());
+  handle('lobby:mobileSessions', () => lobby.mobileSessions());
+  handle('lobby:revokeMobile', (id) => lobby.revokeMobile(id));
   handle('lobby:cinema', (payload) => lobby.cinema(payload || {}));
   handle('lobby:cinemaState', () => lobby.cinemaState());
   handle('lobby:upload', (payload) => lobby.upload(payload || {}));

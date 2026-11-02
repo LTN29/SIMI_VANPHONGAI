@@ -146,7 +146,8 @@ function lightPool(scene, x, z, r, color, opacity = 0.35) {
   return m;
 }
 
-function loadTex(url, cb) { new THREE.TextureLoader().load(url, (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; cb(t); }, undefined, () => {}); }
+// trang web điện thoại đặt window.VP_ASSET_BASE (ảnh nằm ở /m/sanh3d/brand/…); app máy tính để trống
+function loadTex(url, cb) { new THREE.TextureLoader().load((globalThis.VP_ASSET_BASE || '') + url, (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; cb(t); }, undefined, () => {}); }
 
 export function buildBar(scene) {
   const out = { animated: [], seats: [], obstacles: [], seatMeshes: [] };

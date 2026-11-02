@@ -142,7 +142,14 @@ class Lobby3D {
       ring.rotation.x = -Math.PI / 2; ring.userData.o = o; this.npcRing.add(ring);
     }
     this.scene.add(this.npcRing);
+    this.stick = { x: 0, y: 0 }; // joystick ảo trên điện thoại (-1…1)
     this.bindInput();
+    if (opts.mobile) {
+      // điện thoại: không bóng đổ (vệt bóng mềm dưới chân vẫn còn), độ nét tối đa 1.5x, 30 khung hình/giây → mát máy, đỡ pin
+      this.renderer.shadowMap.enabled = false; this.perf.noShadow = true; this.capFps = true;
+      this.perf.dpr = Math.min(window.devicePixelRatio || 1, 1.5); this.renderer.setPixelRatio(this.perf.dpr);
+      this.goal.zoom = this.view.zoom = 0.7;
+    }
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(root); this.resize();
     this.clock = new THREE.Clock();
     // tab Sảnh đang ẩn → không vẽ; chế độ nhẹ → tối đa ~30 khung hình mỗi giây
@@ -254,9 +261,20 @@ class Lobby3D {
     const c = this.canvas;
     let down = null;
     c.addEventListener('contextmenu', (e) => e.preventDefault());
-    c.addEventListener('pointerdown', (e) => { c.focus(); down = { x: e.clientX, y: e.clientY, az: this.goal.az, el: this.goal.el, moved: false }; c.setPointerCapture(e.pointerId); });
+    const touches = new Map(); let pinch = null;
+    const gap = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
+    c.addEventListener('pointerdown', (e) => {
+      c.focus(); c.setPointerCapture(e.pointerId);
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size === 2) { pinch = { d: gap(), zoom: this.goal.zoom }; if (down) down.moved = true; return; } // 2 ngón: không tính là chạm
+      down = { x: e.clientX, y: e.clientY, az: this.goal.az, el: this.goal.el, moved: false };
+    });
+    const lift = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; };
+    c.addEventListener('pointercancel', (e) => { lift(e); down = null; });
     let hoverAt = 0; let hoverTimer = 0;
     c.addEventListener('pointermove', (e) => {
+      if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && touches.size >= 2) { this.goal.zoom = Math.max(0.28, Math.min(2.6, pinch.zoom * gap() / pinch.d)); return; }
       if (down) {
         const dx = e.clientX - down.x, dy = e.clientY - down.y;
         if (Math.hypot(dx, dy) > 5) down.moved = true;
@@ -275,6 +293,7 @@ class Lobby3D {
       if (performance.now() - hoverAt > 80) pick(); else hoverTimer = setTimeout(pick, 90);
     });
     c.addEventListener('pointerup', (e) => {
+      lift(e);
       if (down && !down.moved) {
         const p = this.pickPerson(e.clientX, e.clientY);
         const npc = !p && this.pickNpc(e.clientX, e.clientY);
@@ -753,9 +772,11 @@ class Lobby3D {
 
   // WASD / phím mũi tên: đi theo hướng nhìn của camera
   keyboardMove(dt) {
-    if (!this.keys.size) return;
+    const sm = Math.hypot(this.stick.x, this.stick.y);
+    if (!this.keys.size && sm < 0.15) return;
     const p = [...this.people.values()].find((q) => q.me); if (!p) return;
-    let fx = 0, fz = 0;
+    let fx = 0, fz = 0, power = 1;
+    if (sm >= 0.15) { fx = this.stick.x; fz = this.stick.y; power = Math.min(1, sm); } // joystick: đẩy nhẹ đi chậm, đẩy hết cỡ đi nhanh
     if (this.keys.has('w') || this.keys.has('arrowup')) fz -= 1;
     if (this.keys.has('s') || this.keys.has('arrowdown')) fz += 1;
     if (this.keys.has('a') || this.keys.has('arrowleft')) fx -= 1;
@@ -763,15 +784,23 @@ class Lobby3D {
     if (!fx && !fz) return;
     const az = this.view.az; const len = Math.hypot(fx, fz);
     const wx = (fx * Math.cos(az) + fz * Math.sin(az)) / len, wz = (-fx * Math.sin(az) + fz * Math.cos(az)) / len;
-    const nx = p.pos.x + wx * 2.4 * dt, nz = p.pos.z + wz * 2.4 * dt;
+    const nx = p.pos.x + wx * 2.4 * power * dt, nz = p.pos.z + wz * 2.4 * power * dt;
     p.path = []; if (p.sitting || p.pendingSeat) this.standUp(p);
     if (p.dance || p.meet) this.stopMoves(p);
     this.follow = true;
-    if (this.nav.isFree(nx, nz)) { p.pos.x = nx; p.pos.z = nz; }
+    if (this.nav.isFree(nx, nz)) { p.pos.x = nx; p.pos.z = nz; } else if (this.nav.isFree(nx, p.pos.z)) p.pos.x = nx; else if (this.nav.isFree(p.pos.x, nz)) p.pos.z = nz;
     p.facing = angLerp(p.facing, Math.atan2(wx, wz), 1 - Math.exp(-dt * 14));
     p.keyMove = true;
     const tnow = performance.now();
     if (!this.lastKeySend || tnow - this.lastKeySend > 350) { this.lastKeySend = tnow; this.opts.onMove && this.opts.onMove({ x: p.pos.x, z: p.pos.z, seat: null }); }
+  }
+
+  // joystick ảo: x sang phải, y xuống dưới (theo màn hình), độ dài 0…1
+  setStick(x, y) {
+    const was = Math.hypot(this.stick.x, this.stick.y) >= 0.15;
+    this.stick.x = Number(x) || 0; this.stick.y = Number(y) || 0;
+    // thả cần → báo chỗ đứng cuối cùng để người khác thấy mình dừng đúng chỗ
+    if (was && Math.hypot(this.stick.x, this.stick.y) < 0.15) { const p = this.self(); if (p && this.opts.onMove) this.opts.onMove({ x: p.pos.x, z: p.pos.z, seat: null }); }
   }
 
   project(v) { const p = v.project(this.cam); return { x: (p.x + 1) / 2 * this.cssW, y: (1 - p.y) / 2 * this.cssH }; }

@@ -15,7 +15,7 @@ const rules = {
 };
 
 module.exports = [
-  { ignores: ['dist/**', 'node_modules/**', 'src/renderer/office3d.bundle.js'] },
+  { ignores: ['dist/**', 'node_modules/**', 'src/renderer/office3d.bundle.js', 'src/renderer/vendor/**'] },
   { files: ['src/*.js', 'test/**/*.js', 'eslint.config.js'], languageOptions: { ecmaVersion: 2023, sourceType: 'commonjs', globals: { ...globals.node } }, rules },
   { files: ['src/office3d/**/*.js'], languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: { ...globals.browser } }, rules },
   {
