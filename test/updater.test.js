@@ -119,3 +119,22 @@ test('bản portable cũ (Windows) → cập nhật bằng bản cài Setup khi 
     srv.close(); delete process.env.PORTABLE_EXECUTABLE_FILE; Object.defineProperty(process, 'platform', plat);
   }
 });
+
+// lỗi cài .deb → câu dễ hiểu
+test('debError: đọc đúng lý do apt', () => {
+  const { debError } = require('../src/updater');
+  const f = '/home/u/.config/VanPhongAI/updates/VanPhongAI-1.0.0-linux-amd64.deb';
+  assert.match(debError(126, '', f), /hủy nhập mật khẩu/);
+  assert.match(debError(127, 'Error executing command as another user: Not authorized', f), /hộp nhập mật khẩu.*sudo apt install/);
+  assert.match(debError(100, 'E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 1234 (unattended-upgr)', f), /tự cài bản vá/);
+  assert.match(debError(100, "E: dpkg was interrupted, you must manually run 'sudo dpkg --configure -a' to correct the problem.", f), /dpkg --configure -a/);
+  assert.match(debError(100, 'E: Unable to correct problems, you have held broken packages.\nThe following packages have unmet dependencies:', f), /apt update/);
+  assert.match(debError(100, 'E: Sub-process /usr/bin/dpkg returned an error code (1)', f), /\(E: Sub-process.*sudo apt install/);
+});
+
+test('winBlocked: Windows chặn bộ cài → báo rõ, giữ app', () => {
+  const { winBlocked } = require('../src/updater');
+  assert.match(winBlocked(Object.assign(new Error('spawn UNKNOWN'), { code: 'UNKNOWN' })), /Smart App Control/);
+  assert.match(winBlocked(Object.assign(new Error('spawn EPERM'), { code: 'EPERM' })), /Smart App Control/);
+  assert.match(winBlocked(new Error('spawn ENOENT')), /Không mở được bộ cài/);
+});

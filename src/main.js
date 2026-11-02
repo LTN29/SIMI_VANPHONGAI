@@ -23,6 +23,8 @@ if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 protocol.registerSchemesAsPrivileged([{ scheme: 'vpimg', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
 const ICON = path.join(__dirname, 'renderer', 'icon.png');
+// phiên bản code đang chạy (bản cập nhật nhanh nếu có – xem src/boot.js, src/hot.js)
+const appVersion = () => (global.vpShell && global.vpShell.hot) || app.getVersion();
 const MODEL_CACHE_MS = 10 * 60 * 1000;
 const MAX_UPLOAD = 30 * 1024 * 1024;
 const MAX_PREVIEW = 15 * 1024 * 1024;
@@ -161,7 +163,7 @@ function registerIpc() {
   const handle = (ch, fn) => ipcMain.handle(ch, (_e, ...a) => fn(...a));
 
   // cấu hình + khóa API
-  handle('config:get', () => ({ config: store.getConfig(), sources: SOURCES, secrets: store.secretStatus(), outputDir: outputDir(), platform: process.platform, version: app.getVersion() }));
+  handle('config:get', () => ({ config: store.getConfig(), sources: SOURCES, secrets: store.secretStatus(), outputDir: outputDir(), platform: process.platform, version: appVersion() }));
   handle('config:save', (cfg) => {
     if (!cfg || !Array.isArray(cfg.agents) || cfg.agents.length === 0) throw new Error('Cấu hình không hợp lệ');
     if (cfg.agents.filter((a) => a.isManager).length !== 1) throw new Error('Phải có đúng 1 Trưởng phòng');
@@ -422,6 +424,7 @@ function createWindow() {
     win.removeMenu();
   }
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.webContents.once('did-finish-load', () => { if (global.vpBootOk) global.vpBootOk(); }); // bản cập nhật nhanh mở được → giữ
   win.on('focus', () => { if (updater) updater.checkSoon(2 * 60 * 1000); }); // quay lại app sau một lúc → xem có bản mới không
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
@@ -445,13 +448,14 @@ function youtubeReferer() {
 
 app.whenReady().then(() => {
   // bảng "Giới thiệu" (menu app trên macOS, Linux): tác giả LTN
-  app.setAboutPanelOptions({ applicationName: 'Văn Phòng AI', applicationVersion: app.getVersion(), version: '', copyright: '© 2026 LTN', credits: 'Tạo bởi LTN', authors: ['LTN'] });
+  app.setAboutPanelOptions({ applicationName: 'Văn Phòng AI', applicationVersion: appVersion(), version: '', copyright: '© 2026 LTN', credits: 'Tạo bởi LTN', authors: ['LTN'] });
   store = new Store(app.getPath('userData'), safeStorage);
   refreshPath();
   simi.refreshEnv();
   codexServer = new CodexAppServer(() => simi.chatCodexCmd(store.getConfig().cli.codex.cmd || 'codex', store.getConfig().chatEngine || 'auto'));
   updater = new Updater({
-    app, emit, dir: path.join(app.getPath('userData'), 'updates'),
+    app, emit, dir: path.join(app.getPath('userData'), 'updates'), current: appVersion(),
+    shell: global.vpShell, hotRoot: path.join(app.getPath('userData'), 'app'),
     getGateway: () => simi.gatewayOrigin(simi.readCodexConfig().baseUrl || store.getConfig().simiGateway || ''),
     enabled: () => store.getConfig().autoUpdate !== false,
     autoDownload: () => store.getConfig().autoUpdate !== false,
@@ -460,11 +464,11 @@ app.whenReady().then(() => {
   chat = new ChatEngine({ userData: app.getPath('userData'), getConfig: () => store.getConfig(), emit, defaultDir: chatDir, hiddenDirs: () => [workDir()], codex: codexServer, extraConfig: computerMcp });
   lobby = new LobbyClient({
     getAuth: () => simi.gatewayAuth(),
-    appInfo: { version: app.getVersion(), os: `${process.platform}-${process.arch}` },
+    appInfo: { version: appVersion(), os: `${process.platform}-${process.arch}` },
     emit: (ev, data) => {
       emit({ type: 'lobby', ev, data });
       // admin vừa đăng bản app mới trên Gateway → kiểm tra & tải sẵn ngay, không đợi lượt kiểm tra định kỳ
-      if (ev === 'app-release' || (ev === 'hello' && data.app && newer(data.app.version, app.getVersion()))) updater.checkSoon(0);
+      if (ev === 'app-release' || (ev === 'hello' && data.app && newer(data.app.version, appVersion()))) updater.checkSoon(0);
       // tin nhắn riêng khi đang ở cửa sổ khác → thông báo
       if (ev === 'message' && lobby.me && data.from !== lobby.me.id && !lobbyDnd) {
         const body = (data.text || (data.images && data.images.length ? '📷 Đã gửi ảnh' : '')).slice(0, 140);

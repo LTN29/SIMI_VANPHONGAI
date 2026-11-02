@@ -6,9 +6,9 @@
   const $ = (s) => document.querySelector(s);
   const mb = (n) => (n >= 1048576 ? Math.round(n / 1048576) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
   const pct = () => Math.round((st.progress || 0) * 100);
-  const KIND = { 'win-setup': 'Windows (bản cài)', 'win-portable': 'Windows (bản chạy ngay)', 'mac-arm64': 'Mac chip Apple', 'mac-x64': 'Mac Intel', 'linux-deb': 'Ubuntu (.deb)', 'linux-appimage': 'Linux (AppImage)' };
+  const KIND = { app: 'Cập nhật nhanh', 'win-setup': 'Windows (bản cài)', 'win-portable': 'Windows (bản chạy ngay)', 'mac-arm64': 'Mac chip Apple', 'mac-x64': 'Mac Intel', 'linux-deb': 'Ubuntu (.deb)', 'linux-appimage': 'Linux (AppImage)' };
   const SNOOZE_MS = 4 * 60 * 60 * 1000;
-  const afterText = () => (st.kind === 'linux-deb' ? 'Ubuntu sẽ hỏi mật khẩu máy để cài, xong app tự mở lại.' : 'App tự đóng, cài bản mới rồi mở lại sau khoảng 20 giây. Đoạn chat và cài đặt được giữ nguyên.');
+  const afterText = () => (st.kind === 'app' ? 'Cập nhật nhanh: app tự mở lại sau vài giây, không cần cài lại hay nhập mật khẩu.' : st.kind === 'linux-deb' ? 'Ubuntu sẽ hỏi mật khẩu máy để cài, xong app tự mở lại.' : 'App tự đóng, cài bản mới rồi mở lại sau khoảng 20 giây. Đoạn chat và cài đặt được giữ nguyên.');
 
   // "Để sau": ẩn thẻ thông báo 4 giờ cho phiên bản này (nút trên thanh trên cùng vẫn còn)
   const snoozed = () => { try { const s = JSON.parse(localStorage.getItem('vp.updSnooze') || 'null'); return !!(s && s.v === st.version && s.until > Date.now()); } catch { return false; } };

@@ -55,6 +55,8 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run dist:linux -- --publish never
+      # gói code cho "cập nhật nhanh" (mọi hệ điều hành, ~3,5 MB): app chỉ thay phần code, không đổi file chạy
+      - run: node build/make-app-asar.js dist
       - uses: actions/upload-artifact@v6
         with:
           name: linux
@@ -62,6 +64,7 @@ jobs:
           path: |
             dist/VanPhongAI-*-linux-amd64.deb
             dist/VanPhongAI-*-linux-x86_64.AppImage
+            dist/VanPhongAI-*-app-e*.asar
 
   # macOS build trên máy Mac của GitHub (repo công khai: miễn phí) để ký ad-hoc (build/mac-adhoc-sign.js) và làm file .dmg:
   # người dùng mở app bằng giao diện (Quyền riêng tư & Bảo mật → Vẫn mở), không cần Terminal. .zip giữ cho app tự cập nhật.
