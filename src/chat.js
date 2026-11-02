@@ -2,9 +2,11 @@
 // mỗi đoạn chat = 1 phiên Codex (nhớ hội thoại), có skill, plugin (Computer Use…), MCP (trình duyệt SIMI), ảnh, file,
 // và hỏi quyền ngay trong đoạn chat khi Codex cần làm việc ngoài phạm vi cho phép.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const simi = require('./simi');
 const { computerUseStatus, computerGuide } = require('./computer-use');
+const { vietFonts } = require('./sys');
 
 const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
 const OUT_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|mp4|mov|webm|mp3|wav|m4a|pdf|docx?|xlsx?|pptx?|csv|md|txt|html?|json|zip)$/i;
@@ -17,6 +19,29 @@ const CHAT_GUIDE = [
   'Bạn đang chạy trong app Văn Phòng AI. Thao tác máy tính diễn ra trên máy người dùng, không phải máy Gateway.',
   'Chỉ đọc trang web thì ưu tiên MCP simi_browser khi có. Không nhầm lỗi browser access host của công cụ trình duyệt với runtime @oai/sky điều khiển Windows.',
 ].join('\n');
+// thư mục nháp: file trung gian của AI (ảnh ghép khung hình, ảnh thử, script tạm…) để ngoài thư mục làm việc của người dùng
+const SCRATCH = path.join(os.tmpdir(), 'vanphong-ai-nhap');
+// không coi là file kết quả: file nháp (_x, ~$x), thư mục nháp, ảnh người dùng gửi (lưu trong dữ liệu app)
+const SCRATCH_NAME = /^(?:_|~\$|\.)/;
+const SCRATCH_DIR = /[\\/](?:tmp|temp|_tmp|scratch|nhap|_nhap|__pycache__)[\\/]/i;
+
+// cách tạo file tài liệu tiếng Việt không lỗi font (lỗi hay gặp: PDF dùng font có sẵn Helvetica/Times → ô vuông,
+// chữ dấu tách rời NFD → mất dấu, CSV không BOM → Excel hiện "Há»� tÃªn", PowerShell Set-Content/Out-File → ? hoặc UTF-16)
+function docGuide(f = {}) {
+  const font = (label, p) => (p ? `${label}: ${p}` : '');
+  const have = [font('chữ thường', f.sans), font('chữ đậm', f.sansBold), font('kiểu Times', f.serif), font('Times đậm', f.serifBold)].filter(Boolean);
+  return [
+    'File nháp / trung gian (ảnh ghép khung hình, ảnh thử, file tạm, script dùng 1 lần): lưu vào ' + SCRATCH + ', KHÔNG lưu vào thư mục làm việc và không đưa vào câu trả lời. Thư mục làm việc chỉ chứa file kết quả người dùng cần.',
+    'Tạo file tài liệu tiếng Việt (bắt buộc, tránh lỗi font):',
+    '- Chuẩn hoá mọi chữ về Unicode NFC trước khi ghi (Python: unicodedata.normalize("NFC", s)); không dùng font/bảng mã VNI, TCVN3 (.VnTime).',
+    '- PDF: KHÔNG dùng font có sẵn của thư viện (Helvetica, Times-Roman, Courier, font mặc định của fpdf / pdfkit / jsPDF) vì không có chữ tiếng Việt → ô vuông. Phải nhúng font TrueType' + (have.length ? ' có sẵn trên máy này – ' + have.join('; ') : ' hỗ trợ tiếng Việt (Arial, Times New Roman, DejaVu Sans, Noto Sans)') + '. reportlab: pdfmetrics.registerFont(TTFont("VN", đường_dẫn)) rồi dùng "VN" cho mọi đoạn chữ (cả bảng, tiêu đề). Hoặc tạo .docx/.html rồi chuyển sang PDF bằng Word / LibreOffice / Chrome.',
+    '- Word (.docx, python-docx): đặt font cho style Normal và tiêu đề (Times New Roman hoặc Arial), gán cả w:eastAsia và w:cs trong rFonts, ngôn ngữ vi-VN.',
+    '- Ảnh / biểu đồ có chữ (PIL, matplotlib): chỉ định đúng file font ở trên (PIL ImageFont.truetype, matplotlib rcParams["font.family"]).',
+    '- CSV cho Excel: ghi UTF-8 có BOM (Python encoding="utf-8-sig"). File .txt/.md/.html/.json: UTF-8, HTML có <meta charset="utf-8">.',
+    '- PowerShell: ghi file bằng -Encoding utf8 (không dùng > / Out-File / Set-Content mặc định).',
+    '- Tạo xong thì tự kiểm tra: đọc lại chữ trong file (PDF: trích chữ hoặc xem ảnh trang đầu) để chắc tiếng Việt hiện đúng rồi mới báo xong.',
+  ].join('\n');
+}
 // gợi ý kèm tin nhắn khi người dùng gọi @ (người dùng đã chọn rõ công cụ → ưu tiên đúng công cụ đó)
 const TOOL_HINT = {
   vp_computer: 'Người dùng chọn @Máy tính: dùng công cụ điều khiển máy tính vp_computer của Văn Phòng AI cho yêu cầu này (screenshot trước, rồi bấm / gõ / cuộn theo toạ độ trên ảnh).',
@@ -155,6 +180,14 @@ function buildPrompt(t, text, atts, persona) {
 }
 
 // file kết quả: mới / vừa sửa trong thư mục dự án, file Codex báo đã sửa, file được nhắc tới trong câu trả lời
+// file nháp của AI / file tạm của Office → không hiện thành file kết quả
+function isScratch(p, base) {
+  const r = path.resolve(p);
+  if (SCRATCH_NAME.test(path.basename(r)) || underPath(SCRATCH, r)) return true;
+  if (!base || !underPath(base, r)) return false;
+  return SCRATCH_DIR.test(path.sep + path.relative(base, r)); // chỉ xét thư mục con trong thư mục làm việc
+}
+
 function collectFiles(dir, before, t0, blocks) {
   const files = new Set();
   if (before) for (const [p, m] of snapshot(dir)) if ((!before.has(p) || before.get(p) < m) && m >= t0 - 2000) files.add(p);
@@ -162,7 +195,7 @@ function collectFiles(dir, before, t0, blocks) {
   for (const b of blocks) if (b.files) b.files.forEach(add);
   const txt = blocks.filter((b) => b.kind === 'text').map((b) => b.text).join('\n');
   (txt.match(MENTIONED_FILE) || []).forEach(add);
-  return [...files].slice(0, 24).map((p) => ({ path: p, name: path.basename(p), image: IMG_EXT.test(p) }));
+  return [...files].filter((p) => !isScratch(p, dir)).slice(0, 24).map((p) => ({ path: p, name: path.basename(p), image: IMG_EXT.test(p) }));
 }
 
 // ---------- lịch sử từ Codex (ChatGPT Work) ----------
@@ -752,7 +785,8 @@ class ChatEngine {
         const set = simi.chatSettings({ model: t.model, effort: t.effort, sandbox: t.sandbox });
         const gen = await srv.start();
         const cu = await this.computerUse();
-        const guide = CHAT_GUIDE + '\n' + computerGuide({ native: !!(cu && cu.native), enabled: this.getConfig().computerControl !== false });
+        try { fs.mkdirSync(SCRATCH, { recursive: true }); } catch { /* bỏ qua */ }
+        const guide = CHAT_GUIDE + '\n' + docGuide(vietFonts()) + '\n' + computerGuide({ native: !!(cu && cu.native), enabled: this.getConfig().computerControl !== false });
         const threadOpts = { cwd: dir, model: set.model, modelProvider: set.modelProvider, approvalPolicy: set.approvalPolicy, sandbox: set.sandbox, config: { ...set.config, ...this.extraConfig() }, developerInstructions: guide };
         if (t.codexThread && !srv.loaded.has(t.codexThread)) {
           try {
@@ -892,4 +926,4 @@ class ChatEngine {
   }
 }
 
-module.exports = { cmdProgram, askKey, ChatEngine };
+module.exports = { cmdProgram, askKey, docGuide, isScratch, collectFiles, SCRATCH, ChatEngine };

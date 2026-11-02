@@ -1,5 +1,6 @@
 // Tiện ích hệ thống dùng chung: chạy lệnh, dừng tiến trình, mở cửa sổ Terminal, PATH, registry, gọi HTTP.
 const os = require('os');
+const fs = require('fs');
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 
@@ -39,13 +40,42 @@ function friendlyCliError(cmd, code, msg) {
   return `Lệnh "${cmd}" báo lỗi (mã ${code}):\n${msg || '(không có thông báo)'}`;
 }
 
+// ---------- font tiếng Việt có sẵn trên máy (để AI tạo PDF / ảnh / biểu đồ không bị ô vuông) ----------
+function fontCandidates(platform = process.platform, env = process.env) {
+  if (platform === 'win32') {
+    const w = path.win32; const d = w.join(env.WINDIR || env.SystemRoot || 'C:\\Windows', 'Fonts');
+    return { sans: [w.join(d, 'arial.ttf'), w.join(d, 'segoeui.ttf'), w.join(d, 'tahoma.ttf')], sansBold: [w.join(d, 'arialbd.ttf'), w.join(d, 'segoeuib.ttf'), w.join(d, 'tahomabd.ttf')],
+      serif: [w.join(d, 'times.ttf')], serifBold: [w.join(d, 'timesbd.ttf')] };
+  }
+  if (platform === 'darwin') {
+    const s = '/System/Library/Fonts/Supplemental';
+    return { sans: [`${s}/Arial.ttf`, '/Library/Fonts/Arial.ttf', `${s}/Tahoma.ttf`], sansBold: [`${s}/Arial Bold.ttf`, '/Library/Fonts/Arial Bold.ttf', `${s}/Tahoma Bold.ttf`],
+      serif: [`${s}/Times New Roman.ttf`], serifBold: [`${s}/Times New Roman Bold.ttf`] };
+  }
+  const t = '/usr/share/fonts/truetype';
+  return { sans: [`${t}/dejavu/DejaVuSans.ttf`, `${t}/noto/NotoSans-Regular.ttf`, `${t}/liberation/LiberationSans-Regular.ttf`, `${t}/liberation2/LiberationSans-Regular.ttf`, `${t}/msttcorefonts/Arial.ttf`],
+    sansBold: [`${t}/dejavu/DejaVuSans-Bold.ttf`, `${t}/noto/NotoSans-Bold.ttf`, `${t}/liberation/LiberationSans-Bold.ttf`, `${t}/liberation2/LiberationSans-Bold.ttf`, `${t}/msttcorefonts/Arial_Bold.ttf`],
+    serif: [`${t}/dejavu/DejaVuSerif.ttf`, `${t}/liberation/LiberationSerif-Regular.ttf`, `${t}/liberation2/LiberationSerif-Regular.ttf`, `${t}/msttcorefonts/Times_New_Roman.ttf`],
+    serifBold: [`${t}/dejavu/DejaVuSerif-Bold.ttf`, `${t}/liberation/LiberationSerif-Bold.ttf`, `${t}/liberation2/LiberationSerif-Bold.ttf`, `${t}/msttcorefonts/Times_New_Roman_Bold.ttf`] };
+}
+let fontCache = null;
+function vietFonts(exists = fs.existsSync, platform = process.platform, env = process.env) {
+  if (fontCache && exists === fs.existsSync) return fontCache;
+  const c = fontCandidates(platform, env);
+  const pick = (list) => list.find((f) => { try { return exists(f); } catch { return false; } }) || '';
+  const r = { sans: pick(c.sans), sansBold: pick(c.sansBold), serif: pick(c.serif), serifBold: pick(c.serifBold) };
+  if (exists === fs.existsSync) fontCache = r;
+  return r;
+}
+
 // ---------- tiến trình ----------
 function spawnCli(cmd, args, { cwd, shell } = {}) {
   // Windows: lệnh trong PATH (codex.cmd, npm…) cần cmd.exe; file .exe có đường dẫn đầy đủ thì chạy thẳng
   const useShell = shell === undefined ? IS_WIN && !(path.isAbsolute(cmd) && /\.exe$/i.test(cmd)) : shell;
   return spawn(cmd, useShell ? args.map(quoteArg) : args, {
     cwd, shell: useShell, windowsHide: true,
-    env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+    // Python mặc định UTF-8 (Windows hay dùng cp1252 → lỗi font / UnicodeEncodeError khi AI ghi file tiếng Việt)
+    env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0', PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
   });
 }
 
@@ -193,4 +223,5 @@ module.exports = {
   quoteArg, splitArgs, stripAnsi, firstLine,
   spawnCli, killTree, runProcess, openTerminal,
   regValue, userEnv, refreshPath, fetchJson, htmlError,
+  vietFonts, fontCandidates,
 };
