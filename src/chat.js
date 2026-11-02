@@ -236,6 +236,20 @@ const ALLOW = { id: 'accept', label: 'Cho phép', done: '✓ Đã cho phép', st
 const DECLINE = { id: 'decline', label: 'Từ chối', done: '✕ Đã từ chối', style: 'ghost' };
 const SESSION = { id: 'session', label: 'Luôn cho phép trong đoạn chat này', done: '✓ Luôn cho phép trong đoạn chat này' };
 const ALWAYS = { id: 'always', label: 'Luôn cho phép', done: '✓ Luôn cho phép (đã lưu)' };
+// chuyển đoạn chat sang "Tự cho phép mọi lệnh" (danger-full-access) và nhớ cho các đoạn chat sau → không hỏi nữa
+const ALL = { id: 'all', label: 'Luôn cho phép, không hỏi nữa', done: '✓ Từ giờ tự cho phép mọi lệnh', title: 'Chuyển sang "Tự cho phép mọi lệnh" – đổi lại ở ô quyền dưới ô nhập' };
+const FULL = 'danger-full-access';
+// các yêu cầu tự đồng ý khi đoạn chat ở chế độ "Tự cho phép mọi lệnh" (không gồm điều khiển chuột/bàn phím, plugin)
+const AUTO_OK = new Set(['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval']);
+
+// chương trình chính của 1 lệnh: bỏ lớp powershell/bash bọc ngoài, "& 'C:\…\node.exe' x.mjs" → node
+function cmdProgram(c) {
+  let s = shownCmd(c).trim().replace(/^&\s*/, '');
+  const m = s.match(/^(['"])(.*?)\1/) || s.match(/^(\S+)/);
+  if (!m) return '';
+  s = (m[2] !== undefined ? m[2] : m[1]).replace(/\\\\/g, '\\'); // chuỗi có thể còn \\ kép
+  return (s.split(/[\\/]/).pop() || '').toLowerCase().replace(/\.(exe|cmd|bat|ps1)$/, '').slice(0, 60);
+}
 
 // câu hỏi dạng form (MCP elicitation / request_user_input) → các ô nhập đơn giản
 function schemaFields(schema) {
@@ -252,10 +266,12 @@ function askFrom(method, p) {
   switch (method) {
     case 'item/commandExecution/requestApproval': {
       const net = p.networkApprovalContext && p.networkApprovalContext.host;
-      return { icon: '⌘', title: net ? `Cho phép truy cập mạng tới ${net}?` : 'Cho phép chạy lệnh này?', text: p.reason || 'Lệnh cần quyền ngoài phạm vi đang cho phép.', detail: p.command || '', options: [ALLOW, SESSION, DECLINE] };
+      const prog = !net && cmdProgram(p.command);
+      const sess = prog ? { ...SESSION, label: `Luôn cho phép lệnh ${prog} trong đoạn chat này`, done: `✓ Luôn cho phép lệnh ${prog} trong đoạn chat này` } : SESSION;
+      return { icon: '⌘', title: net ? `Cho phép truy cập mạng tới ${net}?` : 'Cho phép chạy lệnh này?', text: p.reason || 'Lệnh cần quyền ngoài phạm vi đang cho phép.', detail: p.command || '', options: [ALLOW, sess, ALL, DECLINE] };
     }
     case 'item/fileChange/requestApproval':
-      return { icon: '📝', title: 'Cho phép sửa file?', text: p.reason || 'Codex muốn tạo/sửa file ngoài thư mục dự án.', detail: p.grantRoot || '', options: [ALLOW, SESSION, DECLINE] };
+      return { icon: '📝', title: 'Cho phép sửa file?', text: p.reason || 'Codex muốn tạo/sửa file ngoài thư mục dự án.', detail: p.grantRoot || '', options: [ALLOW, SESSION, ALL, DECLINE] };
     case 'item/permissions/requestApproval': {
       const pm = p.permissions || {};
       const parts = [];
@@ -263,7 +279,7 @@ function askFrom(method, p) {
       const fsx = pm.fileSystem || {};
       for (const w of fsx.write || []) parts.push('Ghi: ' + w);
       for (const r of fsx.read || []) parts.push('Đọc: ' + r);
-      return { icon: '🔐', title: 'Cho phép thêm quyền?', text: p.reason || 'Codex cần thêm quyền để làm tiếp.', detail: parts.join('\n'), options: [ALLOW, SESSION, DECLINE] };
+      return { icon: '🔐', title: 'Cho phép thêm quyền?', text: p.reason || 'Codex cần thêm quyền để làm tiếp.', detail: parts.join('\n'), options: [ALLOW, SESSION, ALL, DECLINE] };
     }
     case 'mcpServer/elicitation/request': {
       const meta = p._meta || {};
@@ -308,7 +324,11 @@ function askKey(method, p) {
     if (p.serverName === VPC) return `mcp:${VPC}:*`; // cho phép 1 lần cho mọi thao tác chuột/bàn phím trong đoạn chat
     return `mcp:${p.serverName}:${(String(p.message || '').match(/tool "([^"]+)"/) || [])[1] || ''}`;
   }
-  if (method === 'item/commandExecution/requestApproval') return p.networkApprovalContext ? `net:${p.networkApprovalContext.host}` : p.command ? `cmd:${String(p.command).slice(0, 400)}` : null;
+  if (method === 'item/commandExecution/requestApproval') {
+    if (p.networkApprovalContext) return `net:${p.networkApprovalContext.host}`;
+    const prog = cmdProgram(p.command); // cho phép theo chương trình (node, python, git…), không theo nguyên câu lệnh
+    return prog ? `prog:${prog}` : p.command ? `cmd:${String(p.command).slice(0, 400)}` : null;
+  }
   if (method === 'item/fileChange/requestApproval') return `file:${p.grantRoot || ''}`;
   if (method === 'item/permissions/requestApproval') return `perm:${JSON.stringify(p.permissions || {}).slice(0, 400)}`;
   return null;
@@ -330,9 +350,9 @@ function responseFor(method, p, choice, block) {
   switch (method) {
     case 'item/commandExecution/requestApproval':
     case 'item/fileChange/requestApproval':
-      return { decision: choice === 'session' ? 'acceptForSession' : 'accept' };
+      return { decision: choice === 'session' || choice === 'all' ? 'acceptForSession' : 'accept' };
     case 'item/permissions/requestApproval':
-      return { permissions: p.permissions || {}, scope: choice === 'session' ? 'session' : 'turn' };
+      return { permissions: p.permissions || {}, scope: choice === 'session' || choice === 'all' ? 'session' : 'turn' };
     case 'mcpServer/elicitation/request': {
       const r = { action: 'accept', content: {} };
       if (choice === 'session' || choice === 'always') r._meta = { persist: choice };
@@ -543,6 +563,8 @@ class ChatEngine {
       const d = declineFor(method);
       return d ? this.codex.respond(id, d) : this.codex.respondError(id, 'Văn Phòng AI chưa hỗ trợ yêu cầu ' + method);
     }
+    // đoạn chat ở chế độ "Tự cho phép mọi lệnh" → đồng ý luôn, không hỏi
+    if (AUTO_OK.has(method) && this._autoAll(run)) return this.codex.respond(id, responseFor(method, params, 'all', { fields: [] }));
     // đã chọn "Luôn cho phép trong đoạn chat này" cho đúng việc này → tự đồng ý
     const key = askKey(method, params);
     if (key && (run.t.allow || []).includes(key)) return this.codex.respond(id, responseFor(method, params, 'session', { fields: [] }));
@@ -552,6 +574,14 @@ class ChatEngine {
     run.msg.blocks.push(block);
     run.emitBlocks(true);
     this.emit({ type: 'chat-ask', threadId: run.threadId, title: run.title, ask: block });
+  }
+
+  // chế độ quyền mới nhất của đoạn chat (người dùng có thể đổi ở ô quyền trong lúc AI đang chạy)
+  _autoAll(run) {
+    const f = this.store.get(run.threadId);
+    const sb = f ? f.sandbox : run.t.sandbox;
+    if (f && run.t.sandbox !== sb) run.t.sandbox = sb;
+    return sb === FULL;
   }
 
   _computer(run, active) {
@@ -570,6 +600,16 @@ class ChatEngine {
     const key = opt.id === 'session' && askKey(a.method, a.params);
     if (key) { const t = a.run.t; t.allow = [...new Set([...(t.allow || []), key])].slice(-60); this.store.save(t); }
     this.codex.respond(a.srvId, responseFor(a.method, a.params, opt.id, a.block));
+    if (opt.id === 'all') {
+      // "Luôn cho phép, không hỏi nữa": đoạn chat chuyển sang Tự cho phép mọi lệnh; các câu đang chờ cũng đồng ý luôn
+      const t = a.run.t; t.sandbox = FULL; this.store.save(t);
+      this.emit({ type: 'chat-sandbox', threadId, sandbox: FULL });
+      for (const [rid2, b] of [...this.asks]) {
+        if (b.run !== a.run || !AUTO_OK.has(b.method)) continue;
+        this.asks.delete(rid2); b.block.answer = ALL.done;
+        this.codex.respond(b.srvId, responseFor(b.method, b.params, 'all', b.block));
+      }
+    }
     if (opt.id !== 'decline' && a.params.serverName === VPC) setTimeout(() => { if (this.running.get(threadId) === a.run) this._computer(a.run, true); }, 200);
     a.run.emitBlocks(true);
     return true;
@@ -850,4 +890,4 @@ class ChatEngine {
   }
 }
 
-module.exports = { ChatEngine };
+module.exports = { cmdProgram, askKey, ChatEngine };

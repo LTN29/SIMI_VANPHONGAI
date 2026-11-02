@@ -9,7 +9,7 @@
   };
   const ls = { get: (k, d) => U.store.get(k, d), set: (k, v) => U.store.set(k, v) }; // lưu tùy chọn nhỏ trên máy
   const EFFORTS = [['', 'Mặc định'], ['low', 'Nhanh'], ['medium', 'Vừa'], ['high', 'Kỹ'], ['xhigh', 'Rất kỹ']];
-  const SANDBOX = [['read-only', '🔒 Chỉ đọc', 'Chỉ đọc file, không sửa gì trên máy'], ['workspace-write', '📁 Sửa trong dự án', 'Được tạo/sửa file trong thư mục dự án (khuyên dùng)'], ['danger-full-access', '⚠️ Toàn quyền', 'Chạy lệnh và sửa file ở bất kỳ đâu – chỉ dùng khi tin tưởng']];
+  const SANDBOX = [['read-only', '🔒 Chỉ đọc', 'Chỉ đọc file, không sửa gì trên máy'], ['workspace-write', '📁 Sửa trong dự án', 'Được tạo/sửa file trong thư mục dự án (khuyên dùng)'], ['danger-full-access', '✅ Tự cho phép mọi lệnh', 'Chạy lệnh và sửa file ở bất kỳ đâu, không hỏi lại – chỉ dùng khi tin tưởng']];
   const SKILL_UI = {
     'simi-tao-anh': ['🎨', 'Tạo ảnh'], 'muse-tao-anh': ['🖼️', 'Tạo ảnh Muse'], 'simi-tao-video': ['🎬', 'Tạo video'], 'simi-doc-pdf': ['📄', 'Đọc PDF'],
     'simi-tim-kiem-web': ['🔎', 'Tìm trên web'], 'simi-doc-trang-web': ['🌐', 'Đọc trang web'], 'simi-trinh-duyet': ['🧭', 'Dùng trình duyệt'],
@@ -595,7 +595,7 @@
       b.detail ? el('pre', { class: 'adetail', text: String(b.detail).slice(0, 1200) }) : null,
       ...fields,
       b.answer ? el('div', { class: 'aans', text: b.answer })
-        : live ? el('div', { class: 'abtns' }, b.options.map((o) => el('button', { class: 'btn ' + (o.style === 'primary' ? 'primary' : o.style === 'ghost' ? 'ghost' : ''), onclick: () => answer(o) }, o.label)))
+        : live ? el('div', { class: 'abtns' }, b.options.map((o) => el('button', { class: 'btn ' + (o.style === 'primary' ? 'primary' : o.style === 'ghost' ? 'ghost' : ''), title: o.title || '', onclick: () => answer(o) }, o.label)))
           : el('div', { class: 'aans', text: 'Đã hết hạn' }));
   }
 
@@ -830,6 +830,12 @@
   function onEvent(e) {
     if (e.type === 'chat-open') { setView('chat'); openThread(e.threadId); return; }
     if (e.type === 'simi-update') { onSimiUpdate(e); return; }
+    if (e.type === 'chat-sandbox') {
+      // bấm "Luôn cho phép, không hỏi nữa" → đoạn chat này + các đoạn chat mới đều tự cho phép
+      const prefs = ls.get('vp.chatPrefs', {}); prefs.sandbox = e.sandbox; ls.set('vp.chatPrefs', prefs);
+      if (C.cur && C.cur.id === e.threadId) { C.cur.sandbox = e.sandbox; const s = $('#chSandbox'); if (s) s.value = e.sandbox; }
+      return;
+    }
     if (e.type === 'chat-ask') { if (U.sfx) U.sfx('pop'); if (!C.cur || C.cur.id !== e.threadId) U.toast(`🔐 "${e.title}" đang chờ bạn cho phép`); return; }
     if (e.type !== 'chat') return;
     if (e.ev === 'start') C.running.add(e.threadId);
