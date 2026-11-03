@@ -1,5 +1,5 @@
 // SIMI BAR CHILL – sảnh online rộng 40 x 28 m, tông sáng: sàn gỗ sồi, tường kem, mảng tường xanh đậm sau quầy cho biển neon nổi bật.
-// Trong nhà (z ≤ 10): quầy bar + ghế cao, bàn thờ Tổ nghề AI (bot sư quỳ lạy), góc thiền dưỡng sinh, lounge sofa, sàn nhảy, góc DJ, màn chiếu, cửa sổ, cây xanh, đèn thả.
+// Trong nhà (z ≤ 10): quầy bar + ghế cao, bàn thờ Tổ nghề AI (bồ đoàn quỳ lạy), góc thiền dưỡng sinh, lounge sofa, sàn nhảy, góc DJ, màn chiếu, cửa sổ, cây xanh, đèn thả.
 // Khu Game (bên phải): 2 bàn bida chơi được, máy game thùng, phi tiêu, bi lắc, ghế lười, máy bán nước.
 // Sân vườn (z > 10): sàn gỗ ngoài trời, cổng vào, bàn dù, đài phun nước, ghế đá, đèn vườn, cây xanh.
 // Hiệu năng: đồ vật đứng yên được gộp theo vật liệu (vài chục lần vẽ thay vì hàng trăm), đèn dây + sàn nhảy dùng InstancedMesh,
@@ -356,7 +356,7 @@ export function buildBar(scene) {
   const potMs = [std('#f6f1e8', 0.6), std('#d98b5f', 0.75)];
   const leafMs = [std('#5fb36f', 0.85, { flatShading: true }), std('#3f9a5a', 0.85, { flatShading: true })];
   const leafGeo = new THREE.IcosahedronGeometry(1, 1);
-  [[-13.3, -9.3], [-13.3, 9.3], [-6, -9.3], [12.8, -4.5], [-13.3, -3.6], [14.3, 9.2], [25.5, 6.8]].forEach(([x, z], i) => {
+  [[-13.3, -9.3], [-13.3, 9.3], [-6, -9.3], [-13.3, -3.6], [14.3, 9.2], [25.5, 6.8]].forEach(([x, z], i) => {
     add(new THREE.CylinderGeometry(0.26, 0.19, 0.5, 18), potMs[i % 2], x, 0.25, z);
     add(new THREE.CylinderGeometry(0.24, 0.24, 0.03, 18), std('#6b4a32', 0.9), x, 0.49, z, scene, flat);
     const RR = rng(30 + i);
@@ -655,7 +655,7 @@ function buildZen({ scene, add, box, block, seat, out }) {
 
   // ---------- khóm trúc ----------
   const stalkM = std('#6fa64a', 0.55), nodeM = std('#4e7d33', 0.6), leafMs = [std('#5f9e45', 0.85, { flatShading: true }), std('#79b856', 0.85, { flatShading: true })];
-  [[5.0, -3.0, 1], [13.45, -2.6, 2], [13.5, 3.3, 3], [4.6, 8.7, 4]].forEach(([x, z, seed]) => {
+  [[5.0, -3.0, 1], [13.5, 3.3, 3], [4.6, 8.7, 4]].forEach(([x, z, seed]) => {
     const R = rng(seed * 13);
     add(new THREE.CylinderGeometry(0.42, 0.46, 0.12, 14), std('#cfc6b4', 0.95), x, 0.06, z);
     for (let k = 0; k < 6; k++) {
@@ -679,9 +679,8 @@ function buildZen({ scene, add, box, block, seat, out }) {
 
 // ================= Bàn thờ Tổ nghề AI (tường sau, giữa quầy bar và khu Game) =================
 // Góc vui: hoành phi + câu đối chế, tượng "Tổ nghề" là robot vàng ngồi đài sen, lư trầm có khói, mâm ngũ quả, cà phê sữa đá,
-// chồng xu token, 2 cây quất, đèn lồng đỏ. Hàng trước: 3 bot sư mặc cà sa quỳ lạy liên tục (lobby3d dựng nhân vật);
-// hàng sau: 4 bồ đoàn cho người chơi vào quỳ lạy (seat kind 'kneel').
-export const ALTAR = { x: 12.6, botZ: -8.25, rowZ: -7.0 };
+// chồng xu token, 2 cây quất, đèn lồng đỏ. Trước bàn thờ: 3 hàng × 5 bồ đoàn cho người vào quỳ lạy (seat kind 'kneel').
+export const ALTAR = { x: 12.6, rows: [-8.1, -7.0, -5.9], cols: [-1.4, -0.7, 0, 0.7, 1.4] };
 
 function altarPanelTex() {
   return canvasTex(1024, 1160, (g, w, h) => {
@@ -815,18 +814,13 @@ function buildAltar({ scene, add, box, block, seat, out }) {
   out.animated.push((t) => { redL.emissiveIntensity = 0.55 + Math.sin(t * 1.3) * 0.12; });
   lightPool(scene, X, WZ + 1.6, 2.4, '#ffcf8a', 0.28);
 
-  // bồ đoàn quỳ: hàng trước của 3 bot sư, hàng sau 4 chỗ cho người
-  const cush = [std('#b3241b', 0.9), std('#d9a63e', 0.85)], cGeo = new THREE.CylinderGeometry(0.2, 0.22, 0.09, 20);
-  out.botSpots = [];
-  [-0.78, 0, 0.78].forEach((dx) => {
-    add(cGeo, cush[0], X + dx, 0.045, ALTAR.botZ + 0.12, scene, flat);
-    out.botSpots.push({ x: X + dx, z: ALTAR.botZ, face: Math.PI, h: 0.09 });
-  });
-  block(X - 1.15, ALTAR.botZ - 0.35, X + 1.15, ALTAR.botZ + 0.5);
-  [-1.17, -0.39, 0.39, 1.17].forEach((dx, i) => {
-    add(cGeo, cush[1], X + dx, 0.045, ALTAR.rowZ + 0.12, scene, flat);
-    seat(`k${i + 1}`, X + dx, ALTAR.rowZ, Math.PI, 0.09, { x: X + dx, z: ALTAR.rowZ + 0.75 }, 'kneel');
-  });
+  // 15 bồ đoàn quỳ trước bàn thờ (3 hàng × 5), hàng sau xen màu đỏ cho dễ nhìn
+  const cushMs = [std('#d9a63e', 0.85), std('#b3241b', 0.9)], cGeo = new THREE.CylinderGeometry(0.2, 0.22, 0.09, 20);
+  let k = 0;
+  ALTAR.rows.forEach((rz, r) => ALTAR.cols.forEach((dx) => {
+    add(cGeo, cushMs[r % 2], X + dx, 0.045, rz + 0.12, scene, flat);
+    seat(`k${++k}`, X + dx, rz, Math.PI, 0.09, { x: X + dx, z: rz + 0.6 }, 'kneel');
+  }));
 }
 
 // ================= khu Game (bên phải, trong nhà) =================

@@ -257,8 +257,6 @@
 /* ---------- 0.9.15: NPC Trợ lý SIMI ---------- */
 .plate3d.lobby.npc { border-color: #f5c518; background: #fffbea; }
 .plate3d.lobby.npc .pl-title { color: #8a6400; }
-.plate3d.lobby.bot { border-color: #ec8a1c; background: #fff4e6; cursor: pointer; }
-.plate3d.lobby.bot .pl-title { color: #a8401a; }
 .plate3d .npc-q { position: absolute; left: 50%; top: -26px; transform: translateX(-50%); font-size: 18px; animation: npcBob 1.6s ease-in-out infinite; pointer-events: none; }
 @keyframes npcBob { 0%, 100% { margin-top: 0; } 50% { margin-top: -5px; } }
 .lb-npc { position: absolute; top: 62px; right: 12px; z-index: 7; width: min(380px, calc(100% - 24px)); max-height: calc(100% - 210px); /* chừa chỗ thanh biểu cảm / thanh nhắc ở đáy */ display: flex; flex-direction: column;

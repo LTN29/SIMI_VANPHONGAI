@@ -173,11 +173,6 @@ export class Person {
       add(head, G('bowK', () => new THREE.SphereGeometry(0.035, 8, 6)), accM, 0, 0.43, 0.06);
     } else if (acc === 'crown') {
       add(head, G('crown', () => new THREE.CylinderGeometry(0.14, 0.15, 0.1, 5, 1, true)), std('#f5c518', 0.3), 0, 0.5, -0.02).material.side = THREE.DoubleSide;
-    } else if (acc === 'antenna') {
-      // ăng-ten của bot: cần mảnh + bóng đèn sáng
-      add(head, G('antStick', () => new THREE.CylinderGeometry(0.01, 0.012, 0.2, 6)), std('#8a94a6', 0.4), 0, 0.52, 0);
-      add(head, G('antBall', () => new THREE.SphereGeometry(0.04, 10, 8)), new THREE.MeshStandardMaterial({ color: a.accent || '#29e0ff', emissive: a.accent || '#29e0ff', emissiveIntensity: 1.6 }), 0, 0.64, 0);
-      for (const side of [-1, 1]) add(head, G('antEar', () => new THREE.CylinderGeometry(0.05, 0.05, 0.05, 12)), std('#8a94a6', 0.4), side * 0.27, 0.2, 0).rotation.z = Math.PI / 2;
     } else if (acc === 'headset') {
       // tai nghe lễ tân: quai mảnh, một bên tai + cần mic tới miệng
       const dark = std('#23262f', 0.4);
@@ -245,7 +240,7 @@ export class Person {
       T.lean = 0.06;
     } else if (seated && kneel) {
       // quỳ lạy: ngồi trên gót, chắp tay; mỗi chu kỳ cúi rạp xuống 1 lần (thân xoay quanh hông, chân nằm yên trên sàn)
-      const per = t < (this.bowFastUntil || 0) ? 0.8 : (this.bowPeriod || 3.2);
+      const per = this.bowPeriod || 3.2;
       this.bowPh = ((this.bowPh || 0) + dt / per) % 1;
       const down = this.bowPh < 0.55 ? Math.sin((this.bowPh / 0.55) * Math.PI) : 0;
       T.hip = 1; T.foot = 1.5; T.lean = 1.12 * down; // mu bàn chân áp sàn, mũi chân duỗi ra sau

@@ -156,14 +156,9 @@ run(async () => {
     await win.click('.sheet footer .btn.primary');
     const monk = await bao.waitFor('member', (d) => d.name === 'Ngọc' && d.avatar && d.avatar.outfit === 'kasaya');
     check(monk.avatar.hairStyle === 'bald', 'mặc áo cà sa SIMI + đầu trọc, đồng nghiệp thấy ngay');
-    // bàn thờ Tổ nghề: 3 bot sư quỳ lạy, bấm bot → bot nói; bồ đoàn quỳ cho người
-    const altar = await win.evaluate(() => { const L = window.__lobby; return { bots: L.bots.length, plates: document.querySelectorAll('.plate3d.bot').length, kneel: [...L.seats.values()].filter((s) => s.kind === 'kneel').length }; });
-    check(altar.bots === 3 && altar.plates === 3 && altar.kneel === 4, 'bàn thờ Tổ nghề: 3 bot sư quỳ lạy + 4 bồ đoàn quỳ');
-    await win.evaluate(() => { const L = window.__lobby; L.lookAt('altar'); });
-    await win.waitForTimeout(1500);
-    await win.evaluate(() => { const L = window.__lobby; L.pokeBot(L.bots[0]); });
-    await win.waitForSelector('.bubble3d.show', { timeout: 4000 });
-    check(true, 'bấm bot sư → bot lạy nhanh + nói đùa');
+    // bàn thờ Tổ nghề: 4 bồ đoàn quỳ cho người (không còn bot)
+    const kneel = await win.evaluate(() => [...window.__lobby.seats.values()].filter((s) => s.kind === 'kneel').length);
+    check(kneel === 15, 'bàn thờ Tổ nghề có 15 bồ đoàn quỳ');
     await win.evaluate(() => window.__lobby.sitSelf('k2'));
     await win.waitForFunction(() => { const p = window.__lobby.self(); return p.sitting && p.seatKind === 'kneel'; }, null, { timeout: 60000 });
     await win.waitForTimeout(1200); await shot('03c-altar');
