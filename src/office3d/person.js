@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 
 export const SKINS = ['#f1c9a5', '#e2ae84', '#f6d7bd', '#c98e62', '#ebbf98', '#d9a074'];
-export const HAIR_STYLES = { short: 'Ngắn', long: 'Dài', bun: 'Búi', spiky: 'Dựng', bob: 'Bob', curly: 'Xoăn', ponytail: 'Đuôi ngựa', buzz: 'Húi cua' };
+export const HAIR_STYLES = { short: 'Ngắn', long: 'Dài', bun: 'Búi', spiky: 'Dựng', bob: 'Bob', curly: 'Xoăn', ponytail: 'Đuôi ngựa', buzz: 'Húi cua', bald: 'Trọc' };
 export const ACCESSORIES = { none: 'Không', glasses: 'Kính', cap: 'Mũ lưỡi trai', headphones: 'Tai nghe', bow: 'Nơ', tie: 'Cà vạt', crown: 'Vương miện' };
 const DEFAULT_STYLES = ['short', 'long', 'spiky', 'bun', 'bob', 'short'];
 
@@ -14,6 +14,22 @@ const G = (key, make) => geoCache[key] || (geoCache[key] = make());
 
 function std(color, rough = 0.75) { return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0 }); }
 
+// áo cà sa tu hành SIMI: vàng nghệ, vạt chéo nâu đỏ, tràng hạt, chữ SIMI sau lưng
+export const KASAYA = { robe: '#ec8a1c', under: '#d06a17', sash: '#a8401a', shoes: '#5b3a24' };
+let simiBackMat = null;
+function simiBack() {
+  if (simiBackMat) return simiBackMat;
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#a8401a'; g.fillRect(0, 0, 256, 128);
+  g.strokeStyle = '#f2c14e'; g.lineWidth = 8; g.strokeRect(8, 8, 240, 112);
+  g.fillStyle = '#ffd56a'; g.font = '900 72px "Segoe UI", "Noto Sans", Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('SIMI', 128, 68);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  simiBackMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 });
+  return simiBackMat;
+}
+
 export class Person {
   constructor(agent, index) {
     this.index = index;
@@ -21,7 +37,7 @@ export class Person {
     this.body = new THREE.Group();
     this.root.add(this.body);
     this.joint = {};
-    this.pose = { legL: 0, legR: 0, legLz: 0, legRz: 0, armLx: 0, armRx: 0, armLz: 0.08, armRz: -0.08, headY: 0, headX: 0, lean: 0, lift: 0 };
+    this.pose = { hip: 0, foot: 0, legL: 0, legR: 0, legLz: 0, legRz: 0, armLx: 0, armRx: 0, armLz: 0.08, armRz: -0.08, headY: 0, headX: 0, lean: 0, lift: 0 };
     this.phase = Math.random() * 10;
     this.blinkAt = performance.now() / 1000 + 1 + Math.random() * 3;
     this.talkUntil = 0;
@@ -34,6 +50,7 @@ export class Person {
   build(a) {
     this.agent = a;
     a = { ...a };
+    if (a.outfit === 'kasaya') Object.assign(a, { shirt: KASAYA.robe, pants: KASAYA.under, shoes: KASAYA.shoes });
     const skin = a.skin || SKINS[this.index % SKINS.length];
     const style = a.hairStyle || DEFAULT_STYLES[this.index % DEFAULT_STYLES.length];
     // dọn mô hình cũ (khi đổi màu/kiểu tóc)
@@ -48,12 +65,13 @@ export class Person {
 
     // chân (khớp hông)
     const hipY = 0.42;
+    this.shoes = [];
     const legGeo = G('leg', () => new THREE.CapsuleGeometry(0.078, 0.25, 4, 10));
     const shoeGeo = G('shoe', () => new THREE.BoxGeometry(0.14, 0.08, 0.22));
     for (const side of [-1, 1]) {
       const g = new THREE.Group(); g.position.set(side * 0.095, hipY, 0);
       add(g, legGeo, M.pants, 0, -0.2, 0);
-      add(g, shoeGeo, M.shoe, 0, -0.375, 0.045);
+      this.shoes.push(add(g, shoeGeo, M.shoe, 0, -0.375, 0.045));
       this.body.add(g);
       this.joint[side < 0 ? 'legL' : 'legR'] = g;
     }
@@ -99,6 +117,11 @@ export class Person {
     }
     this.mouth = add(head, G('mouth', () => new THREE.BoxGeometry(0.075, 0.02, 0.02)), M.mouth, 0, 0.1, 0.238);
     // tóc
+    if (style === 'bald') {
+      // đầu trọc: chỉ thêm vệt bóng nhẹ trên đỉnh
+      const shine = add(head, G('shine', () => new THREE.SphereGeometry(0.06, 10, 8)), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.35, depthWrite: false }), -0.07, 0.42, 0.1);
+      shine.scale.set(1.3, 0.35, 0.8); shine.castShadow = false;
+    } else {
     const cap = add(head, G('cap', () => new THREE.SphereGeometry(0.268, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.52)), M.hair, 0, 0.2, -0.005);
     cap.rotation.x = -0.32;
     if (style === 'buzz') cap.scale.set(0.97, 0.9, 0.97);
@@ -132,6 +155,7 @@ export class Person {
       const bob = add(head, G('bob', () => new THREE.SphereGeometry(0.29, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.62)), M.hair, 0, 0.16, -0.03);
       bob.rotation.x = -0.15;
     }
+    }
     // phụ kiện tự chọn (Sảnh) hoặc theo vai trò (văn phòng)
     const acc = a.accessory || 'none';
     const accM = std(a.accent || '#e1262d', 0.5);
@@ -149,6 +173,11 @@ export class Person {
       add(head, G('bowK', () => new THREE.SphereGeometry(0.035, 8, 6)), accM, 0, 0.43, 0.06);
     } else if (acc === 'crown') {
       add(head, G('crown', () => new THREE.CylinderGeometry(0.14, 0.15, 0.1, 5, 1, true)), std('#f5c518', 0.3), 0, 0.5, -0.02).material.side = THREE.DoubleSide;
+    } else if (acc === 'antenna') {
+      // ăng-ten của bot: cần mảnh + bóng đèn sáng
+      add(head, G('antStick', () => new THREE.CylinderGeometry(0.01, 0.012, 0.2, 6)), std('#8a94a6', 0.4), 0, 0.52, 0);
+      add(head, G('antBall', () => new THREE.SphereGeometry(0.04, 10, 8)), new THREE.MeshStandardMaterial({ color: a.accent || '#29e0ff', emissive: a.accent || '#29e0ff', emissiveIntensity: 1.6 }), 0, 0.64, 0);
+      for (const side of [-1, 1]) add(head, G('antEar', () => new THREE.CylinderGeometry(0.05, 0.05, 0.05, 12)), std('#8a94a6', 0.4), side * 0.27, 0.2, 0).rotation.z = Math.PI / 2;
     } else if (acc === 'headset') {
       // tai nghe lễ tân: quai mảnh, một bên tai + cần mic tới miệng
       const dark = std('#23262f', 0.4);
@@ -165,6 +194,24 @@ export class Person {
       add(this.body, G('vTie', () => new THREE.BoxGeometry(0.04, 0.17, 0.012)), std(a.accent || '#f5c518', 0.5), 0, 0.76, 0.16);
       for (const side of [-1, 1]) { const l = add(this.body, G('vLapel', () => new THREE.BoxGeometry(0.045, 0.24, 0.016)), std(a.lapel || '#0b3f86', 0.6), side * 0.075, 0.76, 0.155); l.rotation.z = side * 0.32; }
       add(this.body, G('vBadge', () => new THREE.BoxGeometry(0.075, 0.032, 0.01)), std('#f5c518', 0.3), 0.12, 0.8, 0.14).rotation.y = 0.45;
+    }
+    if (a.outfit === 'kasaya') {
+      const sash = std(KASAYA.sash, 0.85);
+      // vạt cà sa vắt chéo từ vai trái xuống hông phải (trước + sau)
+      for (const z of [0.152, -0.152]) { const v = add(this.body, G('ksSash', () => new THREE.BoxGeometry(0.11, 0.48, 0.02)), sash, 0.02, 0.7, z); v.rotation.z = -0.62; }
+      add(this.body, G('ksShoulder', () => new THREE.SphereGeometry(0.085, 12, 8)), sash, -0.2, 0.9, 0).scale.set(1, 0.6, 1.2);
+      // tà áo dài phủ quá gối
+      const skirtM = new THREE.MeshStandardMaterial({ color: KASAYA.robe, roughness: 0.85, side: THREE.DoubleSide });
+      add(this.body, G('ksSkirt', () => new THREE.CylinderGeometry(0.195, 0.25, 0.3, 18, 1, true)), skirtM, 0, 0.32, 0).scale.set(1, 1, 0.85);
+      const hem = add(this.body, G('ksHem', () => new THREE.TorusGeometry(0.25, 0.012, 6, 24)), sash, 0, 0.17, 0);
+      hem.rotation.x = Math.PI / 2; hem.scale.set(1, 0.85, 1);
+      // tràng hạt quanh cổ + hạt vàng
+      const beads = add(this.body, G('ksBeads', () => new THREE.TorusGeometry(0.2, 0.022, 6, 18)), std('#5b3418', 0.5), 0, 0.9, 0.01);
+      beads.rotation.x = Math.PI / 2 - 0.35; beads.scale.set(1, 0.8, 1);
+      add(this.body, G('ksBead', () => new THREE.SphereGeometry(0.035, 10, 8)), std('#f2c14e', 0.3), 0, 0.84, 0.17);
+      // chữ SIMI sau lưng
+      const back = add(this.body, G('ksBack', () => new THREE.PlaneGeometry(0.22, 0.11)), simiBack(), 0, 0.66, -0.156);
+      back.rotation.y = Math.PI; back.castShadow = false;
     }
     if (acc === 'glasses' && !a.isReviewer) a = { ...a, isReviewer: true };
     if (acc === 'tie' && !a.isManager) a = { ...a, isManager: true };
@@ -185,9 +232,9 @@ export class Person {
 
   // moving: tốc độ hiện tại (m/s); seated, typing: trạng thái ngồi/gõ; meditate: ngồi thiền xếp bằng trên bồ đoàn
   // beat: nhịp chung (giây × số nhịp/giây, theo giờ Gateway) – ai nhảy cũng khớp nhịp với nhau
-  animate(dt, t, { moving, speed, seated, typing, beat, meditate }) {
+  animate(dt, t, { moving, speed, seated, typing, beat, meditate, kneel }) {
     const p = this.pose;
-    const T = { legL: 0, legR: 0, legLz: 0, legRz: 0, armLx: 0, armRx: 0, armLz: 0.1, armRz: -0.1, headY: 0, headX: 0, lean: 0, lift: 0 };
+    const T = { hip: 0, foot: 0, legL: 0, legR: 0, legLz: 0, legRz: 0, armLx: 0, armRx: 0, armLz: 0.1, armRz: -0.1, headY: 0, headX: 0, lean: 0, lift: 0 };
     if (this.action && t > this.actionUntil) this.action = null;
     if (moving) {
       this.phase += dt * (4 + speed * 3.2);
@@ -196,6 +243,16 @@ export class Person {
       T.armLx = -s * 0.55; T.armRx = s * 0.55;
       T.lift = Math.abs(Math.cos(this.phase)) * 0.04;
       T.lean = 0.06;
+    } else if (seated && kneel) {
+      // quỳ lạy: ngồi trên gót, chắp tay; mỗi chu kỳ cúi rạp xuống 1 lần (thân xoay quanh hông, chân nằm yên trên sàn)
+      const per = t < (this.bowFastUntil || 0) ? 0.8 : (this.bowPeriod || 3.2);
+      this.bowPh = ((this.bowPh || 0) + dt / per) % 1;
+      const down = this.bowPh < 0.55 ? Math.sin((this.bowPh / 0.55) * Math.PI) : 0;
+      T.hip = 1; T.foot = 1.5; T.lean = 1.12 * down; // mu bàn chân áp sàn, mũi chân duỗi ra sau
+      T.legL = T.legR = 1.5 - T.lean; T.legLz = -0.1; T.legRz = 0.1;
+      T.armLx = -1.45 - 0.85 * down; T.armRx = T.armLx; T.armLz = -0.5 + 0.62 * down; T.armRz = -T.armLz;
+      T.headX = 0.1 + 0.25 * down;
+      this.bowDown = down;
     } else if (seated && meditate) {
       // xếp bằng: 2 chân gần nằm ngang, bắt chéo trước bụng (chân trái nằm trên); tay đặt trong lòng; cúi nhẹ, thở chậm
       T.legL = -1.47; T.legR = -1.33; T.legLz = 0.62; T.legRz = -0.62;
@@ -276,15 +333,19 @@ export class Person {
     for (const key of Object.keys(T)) p[key] = lerp(p[key], T[key], k);
     const J = this.joint;
     J.legL.rotation.set(p.legL, 0, p.legLz); J.legR.rotation.set(p.legR, 0, p.legRz);
+    for (const sh of this.shoes) sh.rotation.x = p.foot;
     J.armL.rotation.set(p.armLx, 0, p.armLz); J.armR.rotation.set(p.armRx, 0, p.armRz);
     J.head.rotation.set(p.headX, p.headY, 0);
     this.body.rotation.x = p.lean;
-    this.body.position.y = p.lift;
+    // quỳ lạy: xoay thân quanh hông (0,42 m) thay vì quanh gót chân → cúi rạp mà hông không trượt
+    const pv = p.hip * 0.42;
+    this.body.position.set(0, p.lift + pv * (1 - Math.cos(p.lean)), -pv * Math.sin(p.lean));
     this.torso.scale.y = 1 + Math.sin(t * 2.2 + this.index) * 0.012;
     // chớp mắt
     let eyeY = 1.15;
     if (t > this.blinkAt) { eyeY = 0.15; if (t > this.blinkAt + 0.12) this.blinkAt = t + 2 + Math.random() * 4; }
     if (meditate && seated && !moving && !talking && !this.action) eyeY = 0.15; // nhắm mắt khi thiền
+    if (kneel && seated && !moving && (this.bowDown || 0) > 0.3) eyeY = 0.15; // cúi lạy thì nhắm mắt
     for (const e of this.eyes) e.scale.y = eyeY;
     // miệng khi nói
     this.mouth.scale.set(talking ? 0.8 : 1, talking ? 1 + Math.abs(Math.sin(t * 17)) * 2.6 : 1, 1);

@@ -1,5 +1,5 @@
 // SIMI BAR CHILL – sảnh online rộng 40 x 28 m, tông sáng: sàn gỗ sồi, tường kem, mảng tường xanh đậm sau quầy cho biển neon nổi bật.
-// Trong nhà (z ≤ 10): quầy bar + ghế cao, góc thiền dưỡng sinh, lounge sofa, sàn nhảy, góc DJ, màn chiếu, cửa sổ, cây xanh, đèn thả.
+// Trong nhà (z ≤ 10): quầy bar + ghế cao, bàn thờ Tổ nghề AI (bot sư quỳ lạy), góc thiền dưỡng sinh, lounge sofa, sàn nhảy, góc DJ, màn chiếu, cửa sổ, cây xanh, đèn thả.
 // Khu Game (bên phải): 2 bàn bida chơi được, máy game thùng, phi tiêu, bi lắc, ghế lười, máy bán nước.
 // Sân vườn (z > 10): sàn gỗ ngoài trời, cổng vào, bàn dù, đài phun nước, ghế đá, đèn vườn, cây xanh.
 // Hiệu năng: đồ vật đứng yên được gộp theo vật liệu (vài chục lần vẽ thay vì hàng trăm), đèn dây + sàn nhảy dùng InstancedMesh,
@@ -349,17 +349,14 @@ export function buildBar(scene) {
     add(box(0.1, 1.6, 0.05), std('#ffffff', 0.5), BAR.minX + 0.06, 2.15, z, scene, flat);
     add(box(0.22, 0.06, 1.95, 0.02), std('#ffffff', 0.5), BAR.minX + 0.1, 1.32, z, scene, flat); // bậu cửa
   }
-  // khung ảnh treo tường sau (bên phải quầy)
-  for (const [x, c] of [[11.95, '#4aa8ff'], [13.2, '#ff9a6b']]) { // không lấn bảng menu (x ≤ 11.22) – lấn là 2 mặt trùng nhau, chớp
-    add(box(0.9, 0.7, 0.04, 0.01), std('#ffffff', 0.5), x, 2.2, BAR.minZ + 0.03, scene, flat);
-    add(box(0.74, 0.54, 0.03), std(c, 0.8), x, 2.2, BAR.minZ + 0.05, scene, flat);
-  }
+  // bàn thờ Tổ nghề AI (tường sau, bên phải bảng menu – thay 2 khung ảnh cũ)
+  buildAltar({ scene, add, box, block, seat, out });
 
   // ---------- cây xanh (chậu + tán lá tròn) ----------
   const potMs = [std('#f6f1e8', 0.6), std('#d98b5f', 0.75)];
   const leafMs = [std('#5fb36f', 0.85, { flatShading: true }), std('#3f9a5a', 0.85, { flatShading: true })];
   const leafGeo = new THREE.IcosahedronGeometry(1, 1);
-  [[-13.3, -9.3], [13.3, -9.3], [-13.3, 9.3], [-6, -9.3], [12.8, -4.5], [-13.3, -3.6], [14.3, 9.2], [25.5, 6.8]].forEach(([x, z], i) => {
+  [[-13.3, -9.3], [-13.3, 9.3], [-6, -9.3], [12.8, -4.5], [-13.3, -3.6], [14.3, 9.2], [25.5, 6.8]].forEach(([x, z], i) => {
     add(new THREE.CylinderGeometry(0.26, 0.19, 0.5, 18), potMs[i % 2], x, 0.25, z);
     add(new THREE.CylinderGeometry(0.24, 0.24, 0.03, 18), std('#6b4a32', 0.9), x, 0.49, z, scene, flat);
     const RR = rng(30 + i);
@@ -678,6 +675,158 @@ function buildZen({ scene, add, box, block, seat, out }) {
   sign.position.set(0, 1.13, 0.04); sg.add(sign);
   add(box(1.26, 0.42, 0.05, 0.015), woodD, 0, 1.13, 0, sg, flat);
   block(4.55 - 0.7, 3.45 - 0.45, 4.55 + 0.7, 3.45 + 0.45);
+}
+
+// ================= Bàn thờ Tổ nghề AI (tường sau, giữa quầy bar và khu Game) =================
+// Góc vui: hoành phi + câu đối chế, tượng "Tổ nghề" là robot vàng ngồi đài sen, lư trầm có khói, mâm ngũ quả, cà phê sữa đá,
+// chồng xu token, 2 cây quất, đèn lồng đỏ. Hàng trước: 3 bot sư mặc cà sa quỳ lạy liên tục (lobby3d dựng nhân vật);
+// hàng sau: 4 bồ đoàn cho người chơi vào quỳ lạy (seat kind 'kneel').
+export const ALTAR = { x: 12.6, botZ: -8.25, rowZ: -7.0 };
+
+function altarPanelTex() {
+  return canvasTex(1024, 1160, (g, w, h) => {
+    g.fillStyle = '#7e1512'; g.fillRect(0, 0, w, h);
+    // hoạ tiết mây chìm
+    g.strokeStyle = 'rgba(255,190,90,.10)'; g.lineWidth = 6;
+    for (let y = 300; y < h; y += 150) for (let x = (y / 150 % 2) * 110; x < w; x += 220) { g.beginPath(); g.arc(x, y, 34, Math.PI, 0); g.arc(x + 50, y, 18, Math.PI, 0); g.stroke(); }
+    g.strokeStyle = '#d9a63e'; g.lineWidth = 14; g.strokeRect(14, 14, w - 28, h - 28);
+    g.lineWidth = 3; g.strokeRect(36, 36, w - 72, h - 72);
+    // hoành phi
+    g.fillStyle = '#3d1d0f'; g.fillRect(110, 70, w - 220, 190);
+    g.strokeStyle = '#e8b84a'; g.lineWidth = 8; g.strokeRect(122, 82, w - 244, 166);
+    g.fillStyle = '#ffd56a'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '900 112px "Segoe UI", "Noto Sans", Arial, sans-serif'; g.fillText('TỔ NGHỀ AI'.normalize('NFC'), w / 2, 168);
+    g.fillStyle = '#ffe3a3'; g.font = '700 38px "Segoe UI", "Noto Sans", Arial, sans-serif';
+    g.fillText('Phù hộ độ trì · Không bug · Không lag'.normalize('NFC'), w / 2, 318);
+    // hào quang sau tượng
+    const cy = 700;
+    const rg = g.createRadialGradient(w / 2, cy, 20, w / 2, cy, 300); rg.addColorStop(0, 'rgba(255,226,140,.95)'); rg.addColorStop(0.45, 'rgba(255,190,70,.45)'); rg.addColorStop(1, 'rgba(255,170,40,0)');
+    g.fillStyle = rg; g.beginPath(); g.arc(w / 2, cy, 300, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,215,110,.55)'; g.lineWidth = 5;
+    for (let k = 0; k < 24; k++) { const a = (k / 24) * Math.PI * 2; g.beginPath(); g.moveTo(w / 2 + Math.cos(a) * 170, cy + Math.sin(a) * 170); g.lineTo(w / 2 + Math.cos(a) * 280, cy + Math.sin(a) * 280); g.stroke(); }
+    // câu đối 2 bên (chữ xếp dọc từng tiếng)
+    const couplet = (x, words) => {
+      g.fillStyle = '#b3241b'; g.fillRect(x - 70, 380, 140, 700);
+      g.strokeStyle = '#e8b84a'; g.lineWidth = 6; g.strokeRect(x - 62, 388, 124, 684);
+      g.fillStyle = '#ffd56a'; g.font = '800 44px "Segoe UI", "Noto Sans", Arial, sans-serif';
+      words.forEach((t, i) => g.fillText(t.normalize('NFC'), x, 450 + i * (600 / words.length)));
+    };
+    couplet(120, ['Code', 'chạy', 'một', 'phát', 'ăn', 'ngay']);
+    couplet(w - 120, ['Deploy', 'thứ', 'Sáu', 'vẫn', 'êm', 'ru']);
+  });
+}
+
+function buildAltar({ scene, add, box, block, seat, out }) {
+  const flat = { cast: false };
+  const X = ALTAR.x, WZ = BAR.minZ;
+  const lacq = std('#8c1d18', 0.35), lacqD = std('#5c120f', 0.4), gold = std('#d9a63e', 0.3, { metalness: 0.6 }), wood = std('#4a2a17', 0.55);
+
+  // tấm vách đỏ sau bàn thờ (nhô khỏi nẹp tường để không trùng mặt)
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 2.6), new THREE.MeshStandardMaterial({ map: altarPanelTex(), roughness: 0.7, emissive: '#3a0a06', emissiveIntensity: 0.25 }));
+  panel.position.set(X, 2.2, WZ + 0.1); scene.add(panel);
+  add(box(2.42, 2.72, 0.05, 0.02), wood, X, 2.2, WZ + 0.07, scene, flat);
+
+  // sập thờ 2 tầng sơn son
+  const TZ = WZ + 0.45;
+  add(box(1.95, 0.08, 0.62, 0.02), lacq, X, 1.0, TZ);
+  add(box(1.95, 0.16, 0.03, 0.01), lacqD, X, 0.88, TZ + 0.3, scene, flat);
+  add(box(1.75, 0.025, 0.012), gold, X, 0.88, TZ + 0.32, scene, flat);
+  for (const [lx, lz] of [[-0.9, -0.26], [0.9, -0.26], [-0.9, 0.26], [0.9, 0.26]]) add(box(0.08, 0.96, 0.08, 0.015), lacqD, X + lx, 0.48, TZ + lz);
+  add(box(2.15, 0.42, 0.42, 0.03), lacq, X, 0.21, TZ + 0.55); // bậc dưới
+  add(box(2.0, 0.025, 0.012), gold, X, 0.33, TZ + 0.767, scene, flat);
+  block(X - 1.15, WZ, X + 1.15, TZ + 0.85);
+
+  // tượng Tổ nghề: robot vàng ngồi đài sen, mắt sáng xanh, ăng-ten
+  const SZ = TZ - 0.12, statue = std('#e3b341', 0.25, { metalness: 0.75 });
+  for (let k = 0; k < 10; k++) {
+    const a = (k / 10) * Math.PI * 2;
+    const pt = add(new THREE.SphereGeometry(0.09, 10, 8), std(k % 2 ? '#f5a3bf' : '#ef86a8', 0.6), X + Math.sin(a) * 0.2, 1.1, SZ + Math.cos(a) * 0.2, scene, flat);
+    pt.scale.set(0.8, 0.7, 1.3); pt.rotation.y = a;
+  }
+  add(new THREE.CylinderGeometry(0.22, 0.25, 0.06, 20), std('#e7799c', 0.6), X, 1.07, SZ, scene, flat);
+  add(new THREE.CapsuleGeometry(0.17, 0.16, 6, 14), statue, X, 1.38, SZ);
+  const lap = add(new THREE.CapsuleGeometry(0.1, 0.26, 4, 10), statue, X, 1.2, SZ + 0.08, scene, flat); lap.rotation.z = Math.PI / 2;
+  add(box(0.36, 0.28, 0.3, 0.12), statue, X, 1.7, SZ);
+  add(box(0.26, 0.13, 0.02, 0.02), std('#1b2a3a', 0.3), X, 1.71, SZ + 0.155, scene, flat); // màn hình mặt
+  for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.028, 8, 6), glow('#5ff0ff', 3), X + s * 0.06, 1.72, SZ + 0.167, scene, flat);
+  add(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 6), statue, X, 1.92, SZ, scene, flat);
+  add(new THREE.SphereGeometry(0.035, 10, 8), glow('#ff5a4a', 2.6), X, 2.02, SZ, scene, flat);
+  for (const s of [-1, 1]) { const arm = add(new THREE.CapsuleGeometry(0.05, 0.16, 4, 8), statue, X + s * 0.2, 1.37, SZ + 0.06, scene, flat); arm.rotation.set(-0.7, 0, s * 0.35); }
+  add(new THREE.SphereGeometry(0.055, 10, 8), statue, X, 1.3, SZ + 0.2, scene, flat); // 2 tay chắp
+
+  // lư hương + khói, đèn thờ, bình cúc
+  const bronze = std('#9a7432', 0.35, { metalness: 0.7 }), FZ = TZ + 0.18;
+  add(new THREE.CylinderGeometry(0.11, 0.09, 0.11, 16), bronze, X, 1.095, FZ);
+  for (const dx of [-0.035, 0, 0.035]) add(new THREE.CylinderGeometry(0.004, 0.004, 0.24, 4), std('#7a3b22', 0.8), X + dx, 1.27, FZ, scene, flat);
+  for (const dx of [-0.035, 0, 0.035]) add(new THREE.SphereGeometry(0.011, 6, 4), glow('#ff6a2a', 3), X + dx, 1.39, FZ, scene, flat);
+  const puffs = [];
+  for (let i = 0; i < 6; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), new THREE.MeshBasicMaterial({ color: '#f4f1ea', transparent: true, opacity: 0, depthWrite: false }));
+    m.renderOrder = 3; scene.add(m); puffs.push(m);
+  }
+  out.animated.push((t) => {
+    puffs.forEach((m, i) => {
+      const k = (t * 0.2 + i / puffs.length) % 1;
+      m.position.set(X + Math.sin(t * 0.8 + i * 1.9) * 0.08 * k, 1.42 + k * 1.1, FZ + Math.cos(t * 0.6 + i) * 0.05 * k);
+      m.scale.setScalar(1 + k * 3); m.material.opacity = 0.3 * Math.sin(Math.PI * Math.min(1, k * 1.25));
+    });
+  });
+  for (const s of [-1, 1]) {
+    add(new THREE.CylinderGeometry(0.05, 0.07, 0.05, 12), gold, X + s * 0.82, 1.065, TZ + 0.05, scene, flat);
+    add(new THREE.CylinderGeometry(0.035, 0.035, 0.26, 12), std('#c8231b', 0.5), X + s * 0.82, 1.22, TZ + 0.05, scene, flat);
+    add(new THREE.SphereGeometry(0.03, 8, 6), glow('#ffcf6a', 3), X + s * 0.82, 1.38, TZ + 0.05, scene, flat).scale.set(1, 1.5, 1);
+    add(new THREE.CylinderGeometry(0.06, 0.08, 0.22, 14), std('#f3efe6', 0.25), X + s * 0.58, 1.15, TZ - 0.15, scene, flat);
+    for (let k = 0; k < 5; k++) { const a = k * 1.256; add(new THREE.SphereGeometry(0.07, 10, 8), std('#ffcc2e', 0.75), X + s * 0.58 + Math.sin(a) * 0.07, 1.36 + (k % 2) * 0.04, TZ - 0.15 + Math.cos(a) * 0.07, scene, flat); }
+  }
+  // mâm ngũ quả (trái)
+  const PX = X - 0.42, PZ = TZ + 0.12;
+  add(new THREE.CylinderGeometry(0.2, 0.16, 0.03, 20), gold, PX, 1.055, PZ, scene, flat);
+  add(new THREE.SphereGeometry(0.1, 14, 10), std('#b9d65a', 0.7), PX, 1.15, PZ - 0.04, scene, flat);
+  for (const [dx, dz, c] of [[-0.1, 0.07, '#ff8a1e'], [0.1, 0.07, '#d8261c'], [0.0, 0.11, '#ff8a1e'], [-0.12, -0.05, '#d8261c']]) add(new THREE.SphereGeometry(0.05, 10, 8), std(c, 0.55), PX + dx, 1.11, PZ + dz, scene, flat);
+  for (let k = 0; k < 4; k++) { const b = add(new THREE.CapsuleGeometry(0.022, 0.15, 4, 8), std('#f5d23c', 0.6), PX + 0.05 + k * 0.03, 1.22, PZ - 0.02, scene, flat); b.rotation.set(0.2, 0, 0.9 - k * 0.15); }
+  // xu "token" + cà phê sữa đá (phải)
+  const CX2 = X + 0.42;
+  for (let k = 0; k < 6; k++) add(new THREE.CylinderGeometry(0.06, 0.06, 0.018, 16), gold, CX2 - 0.06 + (k > 3 ? 0.12 : 0), 1.05 + (k % 4) * 0.02, TZ + 0.12, scene, flat);
+  add(new THREE.CylinderGeometry(0.045, 0.038, 0.14, 14), std('#e9f3fb', 0.15), CX2 + 0.1, 1.11, TZ - 0.06, scene, flat);
+  add(new THREE.CylinderGeometry(0.04, 0.034, 0.09, 14), std('#8a5a33', 0.5), CX2 + 0.1, 1.09, TZ - 0.06, scene, flat);
+  add(new THREE.CylinderGeometry(0.005, 0.005, 0.2, 6), std('#ff5a8a', 0.5), CX2 + 0.12, 1.2, TZ - 0.06, scene, flat).rotation.z = 0.2;
+  // bậc dưới: bàn phím cơ cũ làm lễ vật
+  add(box(0.5, 0.04, 0.17, 0.01), std('#2c2f38', 0.5), X, 0.44, TZ + 0.58, scene, flat);
+  add(box(0.46, 0.012, 0.13), std('#e6e8ee', 0.6), X, 0.466, TZ + 0.58, scene, flat);
+
+  // đèn lồng đỏ 2 bên + cây quất
+  const redL = new THREE.MeshStandardMaterial({ color: '#e2261b', roughness: 0.5, emissive: '#ff3a1a', emissiveIntensity: 0.6 });
+  for (const s of [-1, 1]) {
+    const lx = X + s * 1.45, ly = 2.85;
+    add(new THREE.CylinderGeometry(0.006, 0.006, BAR.wallH - ly - 0.25, 4), std('#5d5048', 0.8), lx, (BAR.wallH + ly + 0.25) / 2, WZ + 0.55, scene, flat);
+    const l = new THREE.Mesh(new THREE.SphereGeometry(0.22, 18, 12), redL); l.scale.set(1, 0.85, 1); l.position.set(lx, ly, WZ + 0.55); scene.add(l);
+    add(new THREE.CylinderGeometry(0.09, 0.09, 0.05, 14), gold, lx, ly + 0.2, WZ + 0.55, scene, flat);
+    add(new THREE.CylinderGeometry(0.09, 0.09, 0.05, 14), gold, lx, ly - 0.2, WZ + 0.55, scene, flat);
+    add(new THREE.CylinderGeometry(0.012, 0.012, 0.22, 6), std('#f5c518', 0.6), lx, ly - 0.34, WZ + 0.55, scene, flat);
+    // chậu quất
+    const qx = X + s * 1.55, qz = WZ + 0.6;
+    add(new THREE.CylinderGeometry(0.24, 0.18, 0.4, 16), std('#2f6fb5', 0.4), qx, 0.2, qz);
+    add(new THREE.CylinderGeometry(0.245, 0.245, 0.04, 16), std('#f3efe6', 0.4), qx, 0.39, qz, scene, flat); // viền chậu nhô 1 cm trên miệng chậu (trùng mặt → chớp)
+    const R = rng(77 + s);
+    for (let k = 0; k < 6; k++) { const lf = add(new THREE.IcosahedronGeometry(0.2, 1), std(k % 2 ? '#3f8a3f' : '#4f9d4a', 0.85, { flatShading: true }), qx + (R() - 0.5) * 0.3, 0.62 + k * 0.1, qz + (R() - 0.5) * 0.3, scene, flat); lf.scale.setScalar(1 - k * 0.1); }
+    for (let k = 0; k < 14; k++) { const a = R() * Math.PI * 2, y = 0.55 + R() * 0.55, r = 0.2 + (1 - (y - 0.55) / 0.55) * 0.08; add(new THREE.SphereGeometry(0.03, 8, 6), std('#ff9a1a', 0.5), qx + Math.sin(a) * r, y, qz + Math.cos(a) * r, scene, flat); }
+    block(qx - 0.3, qz - 0.3, qx + 0.3, qz + 0.3);
+  }
+  out.animated.push((t) => { redL.emissiveIntensity = 0.55 + Math.sin(t * 1.3) * 0.12; });
+  lightPool(scene, X, WZ + 1.6, 2.4, '#ffcf8a', 0.28);
+
+  // bồ đoàn quỳ: hàng trước của 3 bot sư, hàng sau 4 chỗ cho người
+  const cush = [std('#b3241b', 0.9), std('#d9a63e', 0.85)], cGeo = new THREE.CylinderGeometry(0.2, 0.22, 0.09, 20);
+  out.botSpots = [];
+  [-0.78, 0, 0.78].forEach((dx) => {
+    add(cGeo, cush[0], X + dx, 0.045, ALTAR.botZ + 0.12, scene, flat);
+    out.botSpots.push({ x: X + dx, z: ALTAR.botZ, face: Math.PI, h: 0.09 });
+  });
+  block(X - 1.15, ALTAR.botZ - 0.35, X + 1.15, ALTAR.botZ + 0.5);
+  [-1.17, -0.39, 0.39, 1.17].forEach((dx, i) => {
+    add(cGeo, cush[1], X + dx, 0.045, ALTAR.rowZ + 0.12, scene, flat);
+    seat(`k${i + 1}`, X + dx, ALTAR.rowZ, Math.PI, 0.09, { x: X + dx, z: ALTAR.rowZ + 0.75 }, 'kneel');
+  });
 }
 
 // ================= khu Game (bên phải, trong nhà) =================

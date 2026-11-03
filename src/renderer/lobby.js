@@ -18,8 +18,9 @@
   const $ = (s, r = document) => r.querySelector(s);
   const ls = { get: (k, d) => U.store.get(k, d), set: (k, v) => U.store.set(k, v) };
 
-  const HAIR = ['short', 'long', 'spiky', 'bun', 'bob', 'curly', 'ponytail', 'buzz'];
-  const HAIR_NAME = { short: 'Ngắn', long: 'Dài', spiky: 'Dựng', bun: 'Búi', bob: 'Bob', curly: 'Xoăn', ponytail: 'Đuôi ngựa', buzz: 'Húi cua' };
+  const HAIR = ['short', 'long', 'spiky', 'bun', 'bob', 'curly', 'ponytail', 'buzz', 'bald'];
+  const HAIR_NAME = { short: 'Ngắn', long: 'Dài', spiky: 'Dựng', bun: 'Búi', bob: 'Bob', curly: 'Xoăn', ponytail: 'Đuôi ngựa', buzz: 'Húi cua', bald: 'Trọc' };
+  const OUTFITS = [['none', 'Thường'], ['kasaya', '🧡 Áo cà sa SIMI']];
   const ACC = [['none', 'Không'], ['glasses', '👓 Kính'], ['cap', '🧢 Mũ'], ['headphones', '🎧 Tai nghe'], ['bow', '🎀 Nơ'], ['tie', '👔 Cà vạt'], ['crown', '👑 Vương miện']];
   const PALETTE = {
     hair: ['#1a1a1a', '#2b1d14', '#5a3a1e', '#8a5a2e', '#c99a5b', '#e8d29a', '#7a2e2e', '#d65a8a', '#4a6fd6', '#7b4fa0', '#2fc1a5', '#cfd6e0'],
@@ -281,7 +282,7 @@
 
   function openWardrobe() {
     const { el } = U;
-    let draft = { hairStyle: 'short', accessory: 'none', ...look({ id: L.me ? L.me.id : 'me', avatar: myAvatar() }), ...myAvatar() };
+    let draft = { hairStyle: 'short', accessory: 'none', outfit: 'none', ...look({ id: L.me ? L.me.id : 'me', avatar: myAvatar() }), ...myAvatar() };
     delete draft.id; delete draft.name;
     const previewBox = el('div', { class: 'wd-preview' });
     const name = el('div', { class: 'wd-name' }, el('b', { text: L.me ? L.me.name : 'Bạn' }), el('small', { text: L.me && L.me.teamName ? `Team ${L.me.teamName}` : '' }));
@@ -308,12 +309,12 @@
     const groups = [
       chips('hairStyle', HAIR.map((h) => [h, HAIR_NAME[h]])), swatches('hair', PALETTE.hair), swatches('skin', PALETTE.skin),
       swatches('shirt', PALETTE.shirt), swatches('pants', PALETTE.pants), swatches('shoes', PALETTE.shoes),
-      chips('accessory', ACC), swatches('accent', PALETTE.accent),
+      chips('accessory', ACC), swatches('accent', PALETTE.accent), chips('outfit', OUTFITS),
     ];
-    const labels = ['Kiểu tóc', 'Màu tóc', 'Màu da', 'Áo', 'Quần', 'Giày', 'Phụ kiện', 'Màu phụ kiện'];
+    const labels = ['Kiểu tóc', 'Màu tóc', 'Màu da', 'Áo', 'Quần', 'Giày', 'Phụ kiện', 'Màu phụ kiện', 'Trang phục'];
     const random = () => {
       const P = (a) => a[Math.floor(Math.random() * a.length)];
-      draft = { hairStyle: P(HAIR), hair: P(PALETTE.hair), skin: P(PALETTE.skin), shirt: P(PALETTE.shirt), pants: P(PALETTE.pants), shoes: P(PALETTE.shoes), accessory: P(ACC)[0], accent: P(PALETTE.accent) };
+      draft = { hairStyle: P(HAIR), hair: P(PALETTE.hair), skin: P(PALETTE.skin), shirt: P(PALETTE.shirt), pants: P(PALETTE.pants), shoes: P(PALETTE.shoes), accessory: P(ACC)[0], accent: P(PALETTE.accent), outfit: Math.random() < 0.15 ? 'kasaya' : 'none' };
       refresh(); preview && preview.wave(); U.sfx && U.sfx('sparkle');
     };
     const body = el('div', { class: 'wardrobe' },
