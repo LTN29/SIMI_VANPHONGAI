@@ -78,9 +78,9 @@ run(async () => {
   await bao.waitFor('hello');
   await bao.post('profile', { avatar: { hairStyle: 'spiky', hair: '#1a1a1a', shirt: '#e1262d', accessory: 'headphones', accent: '#0a78f0' } });
   await bao.post('state', { status: { activity: 'image', text: '🎨 Đang tạo ảnh', model: 'muse-image' } });
-  // 28 đồng nghiệp khác: đồ ngẫu nhiên, một nửa ngồi sẵn ở quầy / bàn ăn / sofa
+  // 28 đồng nghiệp khác: đồ ngẫu nhiên, một nửa ngồi sẵn ở quầy / góc thiền / sofa
   const R = (a) => a[Math.floor(Math.random() * a.length)];
-  const seats = ['b1', 'b2', 'b4', 'b5', 'b6', 'b7', 'b8', 't1a', 't1c', 't2b', 't3a', 't3d', 't4c', 's11', 's13', 's22'];
+  const seats = ['b1', 'b2', 'b4', 'b5', 'b6', 'b7', 'b8', 'z1', 'z3', 'z4', 'z6', 'z8', 'zt1', 's11', 's13', 's22'];
   const acts = [['chat', '💬 Đang chat với AI'], ['image', '🎨 Đang tạo ảnh'], ['idle', '☕ Đang rảnh'], ['video', '🎬 Đang làm video'], ['web', '🔎 Đang tìm trên web']];
   const crowd = [];
   for (let i = 0; i < CROWD; i++) {

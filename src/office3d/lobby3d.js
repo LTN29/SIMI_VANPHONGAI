@@ -28,7 +28,7 @@ const OVERVIEW = { x: 6, z: 4, zoom: 0.31 };
 // các khu trong Sảnh (Trợ lý dẫn đi tham quan: camera bay tới, vòng sáng chỉ vào đúng chỗ)
 const PLACES = {
   npc: { x: NPC.x, z: NPC.z, y: 1.1, zoom: 1.45 }, bar: { x: 3, z: -7.6, y: 1.0, zoom: 0.95 }, dance: { x: -2, z: 4.5, y: 0.2, zoom: 1.05 },
-  cinema: { x: -9.6, z: -9.0, y: 1.9, zoom: 0.95 }, game: { x: 20.8, z: -4.4, y: 0.9, zoom: 0.95 }, garden: { x: 8, z: 14.2, y: 0.4, zoom: 0.62 },
+  cinema: { x: -9.6, z: -9.0, y: 1.9, zoom: 0.95 }, game: { x: 20.8, z: -4.4, y: 0.9, zoom: 0.95 }, zen: { x: 8.4, z: 2.2, y: 0.4, zoom: 0.92 }, garden: { x: 8, z: 14.2, y: 0.4, zoom: 0.62 },
 };
 
 // hồ sơ nhân vật (từ Sảnh) → dữ liệu cho Person
@@ -390,12 +390,16 @@ class Lobby3D {
   }
 
   // ---------------- di chuyển ----------------
-  standUp(p) { p.seat = null; p.pendingSeat = null; p.sitting = false; }
+  standUp(p) { p.seat = null; p.pendingSeat = null; p.sitting = false; p.seatKind = null; }
   // đi chỗ khác là thôi nhảy / thôi tương tác
   stopMoves(p) { p.meet = null; if (p.dance) { p.dance = null; p.person.dance = null; this.updatePlate(p); if (p.me) this.opts.onDance && this.opts.onDance(null, true); } }
   sitNow(p, st) {
     p.path = []; p.pos = { x: st.x, z: st.z }; p.facing = st.face;
-    p.seat = st.id; p.pendingSeat = null; p.sitting = true; p.seatH = st.h;
+    p.seat = st.id; p.pendingSeat = null; p.sitting = true; p.seatH = st.h; p.seatKind = st.kind || null;
+    if (st.kind === 'zen') {
+      p.zenFx = performance.now() / 1000 + 2 + Math.random() * 3;
+      if (p.me && this.opts.onToast) this.opts.onToast('🧘 Hít vào thật chậm… thở ra nhẹ nhàng. Bấm đi chỗ khác là đứng dậy.');
+    }
   }
   walk(p, x, z) {
     this.standUp(p); this.stopMoves(p);
@@ -708,13 +712,16 @@ class Lobby3D {
       if (p.danceUntil && now < p.danceUntil && !moving) p.facing += dt * 5;
       if (p.dance === 'spin' && !moving && !p.sitting) p.facing += dt * 3.2;
       const seated = !!p.sitting && !moving;
-      const rootY = seated ? Math.max(0, (p.seatH || 0.45) - 0.45) : 0;
+      const zen = seated && p.seatKind === 'zen';
+      // ghế thường: hông cao ~0,45 m; ngồi thiền: hông sát mặt bồ đoàn (thân hạ thấp hơn sàn gốc)
+      const rootY = zen ? (p.seatH || 0.2) - 0.4 : seated ? Math.max(0, (p.seatH || 0.45) - 0.45) : 0;
+      if (zen && now > (p.zenFx || 0)) { p.zenFx = now + 6 + Math.random() * 5; this.fx(p, ['🧘', '🍃', '✨', '🌿', '☯️', '🕉️'][Math.floor(Math.random() * 6)], 2200); }
       p.person.root.position.set(p.pos.x, rootY, p.pos.z);
       if (p.person.blob) { p.person.blob.position.y = 0.012 - rootY; p.person.blob.visible = !seated || rootY < 0.05; }
       p.person.root.rotation.y = p.facing;
       // đang dùng AI: đứng thì nhìn quanh, ngồi thì gõ phím
       if (p.busy && !moving && !seated && !p.person.action && Math.random() < dt * 0.15) p.person.doAction('look', 1600);
-      p.person.animate(dt, now, { moving, speed: p.speed, seated, typing: seated && p.busy && !p.dance, beat });
+      p.person.animate(dt, now, { moving, speed: p.speed, seated, typing: seated && !zen && p.busy && !p.dance, beat, meditate: zen });
       p.keyMove = false;
     }
     if (this.npcRing) {

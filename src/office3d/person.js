@@ -21,7 +21,7 @@ export class Person {
     this.body = new THREE.Group();
     this.root.add(this.body);
     this.joint = {};
-    this.pose = { legL: 0, legR: 0, armLx: 0, armRx: 0, armLz: 0.08, armRz: -0.08, headY: 0, headX: 0, lean: 0, lift: 0 };
+    this.pose = { legL: 0, legR: 0, legLz: 0, legRz: 0, armLx: 0, armRx: 0, armLz: 0.08, armRz: -0.08, headY: 0, headX: 0, lean: 0, lift: 0 };
     this.phase = Math.random() * 10;
     this.blinkAt = performance.now() / 1000 + 1 + Math.random() * 3;
     this.talkUntil = 0;
@@ -183,11 +183,11 @@ export class Person {
   say(ms) { this.talkUntil = performance.now() / 1000 + ms / 1000; }
   doAction(name, ms) { this.action = name; this.actionUntil = performance.now() / 1000 + ms / 1000; }
 
-  // moving: tốc độ hiện tại (m/s); seated, typing: trạng thái ngồi/gõ
+  // moving: tốc độ hiện tại (m/s); seated, typing: trạng thái ngồi/gõ; meditate: ngồi thiền xếp bằng trên bồ đoàn
   // beat: nhịp chung (giây × số nhịp/giây, theo giờ Gateway) – ai nhảy cũng khớp nhịp với nhau
-  animate(dt, t, { moving, speed, seated, typing, beat }) {
+  animate(dt, t, { moving, speed, seated, typing, beat, meditate }) {
     const p = this.pose;
-    const T = { legL: 0, legR: 0, armLx: 0, armRx: 0, armLz: 0.1, armRz: -0.1, headY: 0, headX: 0, lean: 0, lift: 0 };
+    const T = { legL: 0, legR: 0, legLz: 0, legRz: 0, armLx: 0, armRx: 0, armLz: 0.1, armRz: -0.1, headY: 0, headX: 0, lean: 0, lift: 0 };
     if (this.action && t > this.actionUntil) this.action = null;
     if (moving) {
       this.phase += dt * (4 + speed * 3.2);
@@ -196,6 +196,12 @@ export class Person {
       T.armLx = -s * 0.55; T.armRx = s * 0.55;
       T.lift = Math.abs(Math.cos(this.phase)) * 0.04;
       T.lean = 0.06;
+    } else if (seated && meditate) {
+      // xếp bằng: 2 chân gần nằm ngang, bắt chéo trước bụng (chân trái nằm trên); tay đặt trong lòng; cúi nhẹ, thở chậm
+      T.legL = -1.47; T.legR = -1.33; T.legLz = 0.62; T.legRz = -0.62;
+      T.armLx = -0.48; T.armRx = -0.48; T.armLz = 0.36; T.armRz = -0.36;
+      T.headX = 0.14; T.lean = 0.04 + Math.sin(t * 0.9 + this.index) * 0.015;
+      T.lift = Math.sin(t * 0.9 + this.index) * 0.006;
     } else if (seated) {
       T.legL = T.legR = -1.48;
       T.lift = 0.06;
@@ -269,7 +275,7 @@ export class Person {
     const k = 1 - Math.exp(-dt * 11);
     for (const key of Object.keys(T)) p[key] = lerp(p[key], T[key], k);
     const J = this.joint;
-    J.legL.rotation.x = p.legL; J.legR.rotation.x = p.legR;
+    J.legL.rotation.set(p.legL, 0, p.legLz); J.legR.rotation.set(p.legR, 0, p.legRz);
     J.armL.rotation.set(p.armLx, 0, p.armLz); J.armR.rotation.set(p.armRx, 0, p.armRz);
     J.head.rotation.set(p.headX, p.headY, 0);
     this.body.rotation.x = p.lean;
@@ -278,6 +284,7 @@ export class Person {
     // chớp mắt
     let eyeY = 1.15;
     if (t > this.blinkAt) { eyeY = 0.15; if (t > this.blinkAt + 0.12) this.blinkAt = t + 2 + Math.random() * 4; }
+    if (meditate && seated && !moving && !talking && !this.action) eyeY = 0.15; // nhắm mắt khi thiền
     for (const e of this.eyes) e.scale.y = eyeY;
     // miệng khi nói
     this.mouth.scale.set(talking ? 0.8 : 1, talking ? 1 + Math.abs(Math.sin(t * 17)) * 2.6 : 1, 1);

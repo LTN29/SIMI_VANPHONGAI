@@ -1,5 +1,5 @@
 // SIMI BAR CHILL – sảnh online rộng 40 x 28 m, tông sáng: sàn gỗ sồi, tường kem, mảng tường xanh đậm sau quầy cho biển neon nổi bật.
-// Trong nhà (z ≤ 10): quầy bar + ghế cao, khu bàn ăn, lounge sofa, sàn nhảy, góc DJ, màn chiếu, cửa sổ, cây xanh, đèn thả.
+// Trong nhà (z ≤ 10): quầy bar + ghế cao, góc thiền dưỡng sinh, lounge sofa, sàn nhảy, góc DJ, màn chiếu, cửa sổ, cây xanh, đèn thả.
 // Khu Game (bên phải): 2 bàn bida chơi được, máy game thùng, phi tiêu, bi lắc, ghế lười, máy bán nước.
 // Sân vườn (z > 10): sàn gỗ ngoài trời, cổng vào, bàn dù, đài phun nước, ghế đá, đèn vườn, cây xanh.
 // Hiệu năng: đồ vật đứng yên được gộp theo vật liệu (vài chục lần vẽ thay vì hàng trăm), đèn dây + sàn nhảy dùng InstancedMesh,
@@ -248,37 +248,9 @@ export function buildBar(scene) {
     seat(`b${++sid}`, x, z, Math.PI, 0.78, { x, z: z + 0.55 });
   }
 
-  // ---------- khu bàn ăn (bên phải) ----------
-  const tableTop = std('#fbf7f0', 0.35), tableLeg = std('#b8875a', 0.5);
-  const chairMs = ['#5aa9f5', '#ffcf5a', '#4fd1b5', '#ff9a6b'].map((c) => std(c, 0.6));
-  const seatGeo = box(0.46, 0.07, 0.44, 0.03), backGeo = box(0.46, 0.46, 0.06, 0.03), legGeo = new THREE.CylinderGeometry(0.022, 0.018, 0.45, 8);
-  [[5.5, -1.5], [9.5, -1.5], [5.5, 3.2], [9.5, 3.2], [5.5, 7.6], [9.5, 7.6]].forEach(([tx, tz], ti) => {
-    add(new THREE.CylinderGeometry(0.64, 0.64, 0.05, 36), tableTop, tx, 0.76, tz);
-    add(new THREE.CylinderGeometry(0.66, 0.64, 0.02, 36), tableLeg, tx, 0.73, tz, scene, flat);
-    add(new THREE.CylinderGeometry(0.05, 0.07, 0.72, 12), tableLeg, tx, 0.37, tz);
-    add(new THREE.CylinderGeometry(0.3, 0.34, 0.03, 24), tableLeg, tx, 0.015, tz);
-    // bình hoa + đĩa bánh
-    add(new THREE.CylinderGeometry(0.06, 0.05, 0.16, 12), std('#ffffff', 0.3), tx - 0.1, 0.87, tz, scene, flat);
-    add(new THREE.SphereGeometry(0.08, 10, 8), std(['#ff7aa8', '#ffd34d', '#ff9a52'][ti % 3], 0.7), tx - 0.1, 1.0, tz, scene, flat);
-    add(new THREE.CylinderGeometry(0.16, 0.14, 0.025, 20), std('#ffffff', 0.3), tx + 0.28, 0.795, tz + 0.1, scene, flat);
-    add(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 12), std('#d99a5b', 0.7), tx + 0.28, 0.83, tz + 0.1, scene, flat);
-    block(tx - 0.7, tz - 0.7, tx + 0.7, tz + 0.7);
-    for (let k = 0; k < 4; k++) {
-      const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
-      const x = tx + Math.sin(a) * 1.0, z = tz + Math.cos(a) * 1.0;
-      const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = a + Math.PI; scene.add(g);
-      const cm = chairMs[(ti + k) % chairMs.length];
-      add(seatGeo, cm, 0, 0.45, 0, g);
-      add(backGeo, cm, 0, 0.72, -0.2, g);
-      for (const [lx, lz] of [[-0.19, -0.18], [0.19, -0.18], [-0.19, 0.18], [0.19, 0.18]]) add(legGeo, tableLeg, lx, 0.225, lz, g);
-      seat(`t${ti + 1}${'abcd'[k]}`, x, z, a + Math.PI, 0.47, { x: tx + Math.sin(a) * 1.6, z: tz + Math.cos(a) * 1.6 });
-    }
-    lightPool(scene, tx, tz, 1.9, '#ffe3b0', 0.22);
-    // đèn thả trên bàn
-    add(new THREE.CylinderGeometry(0.015, 0.015, 1.3, 8), std('#7c818d'), tx, BAR.wallH - 0.45, tz, scene, flat);
-    add(new THREE.SphereGeometry(0.22, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), std('#f3efe6', 0.5, { side: THREE.DoubleSide }), tx, BAR.wallH - 1.1, tz, scene, flat);
-    add(new THREE.SphereGeometry(0.07, 10, 8), glow('#ffd28a', 3), tx, BAR.wallH - 1.12, tz, scene, flat);
-  });
+  // ---------- góc Thiền · Dưỡng sinh (bên phải, thay khu bàn ăn cũ) ----------
+  const tableTop = std('#fbf7f0', 0.35), tableLeg = std('#b8875a', 0.5); // bàn đứng, sofa, bàn dù sân vườn dùng chung
+  buildZen({ scene, add, box, block, seat, out });
 
   // ---------- lounge sofa (bên trái) ----------
   const sofaMs = [std('#8fc9b0', 0.85), std('#a99be0', 0.85), std('#8cc3f5', 0.85)];
@@ -387,7 +359,7 @@ export function buildBar(scene) {
   const potMs = [std('#f6f1e8', 0.6), std('#d98b5f', 0.75)];
   const leafMs = [std('#5fb36f', 0.85, { flatShading: true }), std('#3f9a5a', 0.85, { flatShading: true })];
   const leafGeo = new THREE.IcosahedronGeometry(1, 1);
-  [[-13.3, -9.3], [13.3, -9.3], [-13.3, 9.3], [-6, -9.3], [12.8, -4.5], [-13.3, -3.6], [11.6, 5.3], [14.3, 9.2], [25.5, 6.8]].forEach(([x, z], i) => {
+  [[-13.3, -9.3], [13.3, -9.3], [-13.3, 9.3], [-6, -9.3], [12.8, -4.5], [-13.3, -3.6], [14.3, 9.2], [25.5, 6.8]].forEach(([x, z], i) => {
     add(new THREE.CylinderGeometry(0.26, 0.19, 0.5, 18), potMs[i % 2], x, 0.25, z);
     add(new THREE.CylinderGeometry(0.24, 0.24, 0.03, 18), std('#6b4a32', 0.9), x, 0.49, z, scene, flat);
     const RR = rng(30 + i);
@@ -457,8 +429,8 @@ export function buildBar(scene) {
   buildTerrace({ scene, add, box, block, seat, out, flat, glassM, tableTop });
 
   // ---------- chỗ ngồi ----------
-  function seat(id, x, z, face, h, approach) {
-    out.seats.push({ id, x, z, face, h, approach });
+  function seat(id, x, z, face, h, approach, kind) {
+    out.seats.push({ id, x, z, face, h, approach, kind });
     // vùng bấm vô hình phủ lên ghế
     const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, h + 0.1, 10), new THREE.MeshBasicMaterial({ visible: false }));
     hit.position.set(x, (h + 0.1) / 2, z); hit.userData.seatId = id; scene.add(hit); out.seatMeshes.push(hit);
@@ -492,6 +464,220 @@ function mergeStatics(scene, meshes) {
   }
   // xoá các group rỗng còn lại (ghế, sofa…)
   for (const o of [...scene.children]) if (o.isGroup && o.children.length === 0) scene.remove(o);
+}
+
+// ================= góc Thiền · Dưỡng sinh (bên phải quầy bar, thay khu bàn ăn) =================
+// Sàn chiếu tatami, vòng 8 bồ đoàn quanh bàn hương (khói trầm bay lên), đèn lồng giấy, góc trà dưỡng sinh,
+// vườn đá cát cào (karesansui), đèn đá, khóm trúc, chậu nước tsukubai nhỏ giọt, bảng gỗ "THIỀN · DƯỠNG SINH".
+// Ngồi lên bồ đoàn → nhân vật ngồi xếp bằng, nhắm mắt, thở chậm (seat kind 'zen').
+export const ZEN = { cx: 8.0, cz: 0.6, r: 1.75, x1: 4.9, x2: 13.1, z1: -2.3, z2: 3.5, gx1: 5.4, gx2: 10.6, gz1: 5.2, gz2: 8.4 };
+
+function tatamiTex() {
+  // 1 chiếu 0,9 × 1,8 m: nền cói xanh vàng, sợi cói ngang, viền vải 2 cạnh dài
+  return canvasTex(256, 512, (g, w, h) => {
+    const R = rng(7);
+    g.fillStyle = '#d5d3a2'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 4) {
+      const v = R();
+      g.fillStyle = `rgba(${150 + v * 40},${150 + v * 30},${80 + v * 20},.18)`; g.fillRect(0, y, w, 2);
+    }
+    g.fillStyle = '#2f3b2c'; g.fillRect(0, 0, 14, h); g.fillRect(w - 14, 0, 14, h);
+    g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(14, 0, 2, h); g.fillRect(w - 16, 0, 2, h);
+    g.fillStyle = 'rgba(90,80,40,.35)'; g.fillRect(0, 0, w, 2); g.fillRect(0, h - 2, w, 2);
+  });
+}
+
+function sandTex(rocks) {
+  // cát trắng cào thành vệt song song, quanh mỗi hòn đá là các vòng tròn đồng tâm
+  const W = 1040, H = 640, sx = W / (ZEN.gx2 - ZEN.gx1), sz = H / (ZEN.gz2 - ZEN.gz1);
+  return canvasTex(W, H, (g) => {
+    g.fillStyle = '#ece5d3'; g.fillRect(0, 0, W, H);
+    const rake = (draw) => { g.lineWidth = 3; g.strokeStyle = 'rgba(150,135,105,.38)'; draw(0); g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,.75)'; draw(3); };
+    rake((o) => { for (let y = 14; y < H; y += 18) { g.beginPath(); g.moveTo(0, y + o); g.lineTo(W, y + o); g.stroke(); } });
+    for (const [x, z, r] of rocks) {
+      const px = (x - ZEN.gx1) * sx, py = (z - ZEN.gz1) * sz, rr = r * sx;
+      g.fillStyle = '#ece5d3'; g.beginPath(); g.arc(px, py, rr + 6 * 18, 0, Math.PI * 2); g.fill();
+      rake((o) => { for (let k = 1; k <= 6; k++) { g.beginPath(); g.arc(px, py, rr + k * 18 + o, 0, Math.PI * 2); g.stroke(); } });
+    }
+  });
+}
+
+function zenSignTex() {
+  return canvasTex(768, 240, (g, w, h) => {
+    const grd = g.createLinearGradient(0, 0, 0, h); grd.addColorStop(0, '#5b3a22'); grd.addColorStop(1, '#3e2615');
+    g.fillStyle = grd; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 2;
+    for (let y = 12; y < h; y += 17) { g.beginPath(); g.moveTo(0, y); g.bezierCurveTo(w * 0.3, y + 6, w * 0.6, y - 6, w, y + 3); g.stroke(); }
+    g.strokeStyle = '#d9b46a'; g.lineWidth = 5; g.strokeRect(12, 12, w - 24, h - 24);
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#f3d58c';
+    g.font = 'bold 74px "Segoe UI", "Noto Sans", "Helvetica Neue", Arial, sans-serif';
+    g.fillText('THIỀN · DƯỠNG SINH'.normalize('NFC'), w / 2, h * 0.42);
+    g.fillStyle = '#ead9b0'; g.font = '600 34px "Segoe UI", "Noto Sans", "Helvetica Neue", Arial, sans-serif';
+    g.fillText('Tĩnh tâm · Hít thở · An nhiên'.normalize('NFC'), w / 2, h * 0.76);
+  });
+}
+
+function buildZen({ scene, add, box, block, seat, out }) {
+  const flat = { cast: false };
+  const { cx, cz } = ZEN;
+  const woodD = std('#6b4528', 0.6), woodL = std('#a77b4f', 0.6), stoneM = std('#a9a59b', 0.95, { flatShading: true });
+
+  // ---------- bục chiếu tatami ----------
+  const PW = ZEN.x2 - ZEN.x1, PD = ZEN.z2 - ZEN.z1, PX = (ZEN.x1 + ZEN.x2) / 2, PZ = (ZEN.z1 + ZEN.z2) / 2;
+  add(box(PW + 0.2, 0.03, PD + 0.2, 0.01), woodD, PX, 0.015, PZ, scene, flat);
+  const tt = tatamiTex(); tt.wrapS = tt.wrapT = THREE.RepeatWrapping; tt.repeat.set(PW / 0.9, PD / 1.8);
+  const tat = new THREE.Mesh(new THREE.PlaneGeometry(PW, PD), new THREE.MeshStandardMaterial({ map: tt, roughness: 0.9 }));
+  tat.rotation.x = -Math.PI / 2; tat.position.set(PX, 0.032, PZ); tat.receiveShadow = true; scene.add(tat);
+
+  // ---------- vòng bồ đoàn quanh bàn hương ----------
+  const matMs = [std('#34446e', 0.95), std('#6d3b30', 0.95)], zafuMs = [std('#d98a2b', 0.9), std('#46598a', 0.9)];
+  const zabGeo = box(0.74, 0.04, 0.74, 0.015), zafuGeo = new THREE.CylinderGeometry(0.22, 0.24, 0.14, 22);
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    const x = cx + Math.sin(a) * ZEN.r, z = cz + Math.cos(a) * ZEN.r;
+    const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = a; scene.add(g);
+    add(zabGeo, matMs[k % 2], 0, 0.052, 0.1, g, flat);
+    add(zafuGeo, zafuMs[k % 2], 0, 0.142, 0.05, g);
+    add(new THREE.TorusGeometry(0.23, 0.012, 6, 22), std('#f1e3c2', 0.8), 0, 0.142, 0.05, g, flat).rotation.x = Math.PI / 2;
+    seat(`z${k + 1}`, x + Math.sin(a) * 0.05, z + Math.cos(a) * 0.05, a + Math.PI, 0.21, { x: cx + Math.sin(a) * (ZEN.r + 0.8), z: cz + Math.cos(a) * (ZEN.r + 0.8) }, 'zen');
+  }
+  // bàn hương sơn mài thấp + lư hương, bình sen, nến
+  add(new THREE.CylinderGeometry(0.5, 0.5, 0.05, 32), std('#5a2219', 0.32), cx, 0.3, cz);
+  add(new THREE.CylinderGeometry(0.51, 0.51, 0.015, 32), std('#c9a14a', 0.4, { metalness: 0.5 }), cx, 0.27, cz, scene, flat);
+  for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + Math.PI / 4; add(box(0.06, 0.26, 0.06, 0.01), std('#3c1610', 0.4), cx + Math.sin(a) * 0.36, 0.14, cz + Math.cos(a) * 0.36); }
+  const bronze = std('#9a7432', 0.35, { metalness: 0.7 });
+  add(new THREE.CylinderGeometry(0.11, 0.09, 0.1, 18), bronze, cx, 0.38, cz);
+  add(new THREE.TorusGeometry(0.11, 0.015, 6, 18), bronze, cx, 0.43, cz, scene, flat).rotation.x = Math.PI / 2;
+  for (const dx of [-0.03, 0, 0.03]) add(new THREE.CylinderGeometry(0.004, 0.004, 0.2, 4), std('#7a3b22', 0.8), cx + dx, 0.53, cz, scene, flat);
+  for (const dx of [-0.03, 0, 0.03]) add(new THREE.SphereGeometry(0.01, 6, 4), glow('#ff6a2a', 3), cx + dx, 0.635, cz, scene, flat);
+  add(new THREE.CylinderGeometry(0.06, 0.08, 0.16, 14), std('#e9eef2', 0.25), cx - 0.27, 0.41, cz + 0.12, scene, flat);
+  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; add(new THREE.SphereGeometry(0.05, 8, 6), std('#f39bb8', 0.7), cx - 0.27 + Math.sin(a) * 0.05, 0.52, cz + 0.12 + Math.cos(a) * 0.05, scene, flat).scale.set(0.7, 1.3, 0.7); }
+  add(new THREE.SphereGeometry(0.035, 8, 6), std('#ffd84d', 0.6), cx - 0.27, 0.53, cz + 0.12, scene, flat);
+  add(new THREE.CylinderGeometry(0.035, 0.035, 0.09, 12), std('#fff6e4', 0.6), cx + 0.25, 0.37, cz - 0.15, scene, flat);
+  add(new THREE.SphereGeometry(0.018, 8, 6), glow('#ffcf6a', 3), cx + 0.25, 0.435, cz - 0.15, scene, flat).scale.set(1, 1.6, 1);
+  // chuông xoay (singing bowl) trên đệm nhỏ
+  add(new THREE.CylinderGeometry(0.11, 0.11, 0.05, 16), std('#6d3b30', 0.9), cx + 0.2, 0.355, cz + 0.22, scene, flat);
+  add(new THREE.SphereGeometry(0.1, 18, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), std('#c79b3c', 0.3, { metalness: 0.8, side: THREE.DoubleSide }), cx + 0.2, 0.47, cz + 0.22, scene, flat);
+  block(cx - 0.6, cz - 0.6, cx + 0.6, cz + 0.6);
+  // khói trầm: vài làn mỏng bay lên, lắc nhẹ rồi tan
+  const puffs = [];
+  for (let i = 0; i < 6; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), new THREE.MeshBasicMaterial({ color: '#f4f1ea', transparent: true, opacity: 0, depthWrite: false }));
+    m.renderOrder = 3; scene.add(m); puffs.push(m);
+  }
+  out.animated.push((t) => {
+    puffs.forEach((m, i) => {
+      const k = (t * 0.22 + i / puffs.length) % 1;
+      m.position.set(cx + Math.sin(t * 0.9 + i * 1.7) * 0.07 * k, 0.66 + k * 1.3, cz + Math.cos(t * 0.7 + i) * 0.05 * k);
+      m.scale.setScalar(1 + k * 3.2);
+      m.material.opacity = 0.32 * Math.sin(Math.PI * Math.min(1, k * 1.25));
+    });
+  });
+  lightPool(scene, cx, cz, 3.0, '#d9f3cf', 0.26);
+
+  // ---------- đèn lồng giấy treo trên vòng thiền (thở sáng chậm) ----------
+  const lampM = new THREE.MeshStandardMaterial({ color: '#fff1d6', roughness: 0.6, emissive: '#ffcf8a', emissiveIntensity: 1.1 });
+  const capM = std('#2c2420', 0.5), cordM = std('#5d5048', 0.8);
+  for (let k = 0; k < 4; k++) {
+    const a = k * Math.PI / 2 + Math.PI / 4, lx = cx + Math.sin(a) * 1.15, lz = cz + Math.cos(a) * 1.15, ly = 2.55 + (k % 2) * 0.15;
+    add(new THREE.CylinderGeometry(0.006, 0.006, BAR.wallH - ly - 0.22, 4), cordM, lx, (BAR.wallH + ly + 0.22) / 2, lz, scene, flat);
+    add(new THREE.CylinderGeometry(0.1, 0.12, 0.04, 16), capM, lx, ly + 0.23, lz, scene, flat);
+    add(new THREE.CylinderGeometry(0.1, 0.12, 0.04, 16), capM, lx, ly - 0.23, lz, scene, flat);
+    const l = new THREE.Mesh(new THREE.SphereGeometry(0.2, 18, 12), lampM); l.scale.set(1, 1.25, 1); l.position.set(lx, ly, lz); scene.add(l);
+    for (let r = -1; r <= 1; r++) add(new THREE.TorusGeometry(0.2 * Math.sqrt(1 - (r * 0.12 / 0.25) ** 2), 0.004, 4, 20), capM, lx, ly + r * 0.12, lz, scene, flat).rotation.x = Math.PI / 2;
+  }
+  out.animated.push((t) => { lampM.emissiveIntensity = 1.0 + Math.sin(t * 0.8) * 0.18; });
+
+  // ---------- góc trà dưỡng sinh ----------
+  const tx = 12.1, tz = 0.6;
+  add(box(0.8, 0.05, 0.55, 0.02), std('#4a2f1c', 0.45), tx, 0.28, tz);
+  for (const [lx, lz] of [[-0.34, -0.22], [0.34, -0.22], [-0.34, 0.22], [0.34, 0.22]]) add(box(0.05, 0.25, 0.05, 0.01), std('#3a2414', 0.5), tx + lx, 0.14, tz + lz);
+  add(box(0.42, 0.02, 0.26, 0.01), woodL, tx, 0.315, tz, scene, flat); // khay trà
+  const pot = add(new THREE.SphereGeometry(0.075, 16, 12), std('#7a3a24', 0.4), tx - 0.08, 0.39, tz, scene, flat); pot.scale.set(1, 0.85, 1);
+  add(new THREE.CylinderGeometry(0.012, 0.02, 0.09, 8), std('#7a3a24', 0.4), tx - 0.16, 0.4, tz, scene, flat).rotation.z = 0.9;
+  add(new THREE.TorusGeometry(0.04, 0.01, 6, 12), std('#7a3a24', 0.4), tx + 0.0, 0.4, tz, scene, flat);
+  add(new THREE.SphereGeometry(0.015, 8, 6), std('#7a3a24', 0.4), tx - 0.08, 0.455, tz, scene, flat);
+  for (const dx of [0.07, 0.14]) add(new THREE.CylinderGeometry(0.027, 0.02, 0.04, 12), std('#f3efe4', 0.3), tx + dx, 0.345, tz + (dx > 0.1 ? 0.06 : -0.05), scene, flat);
+  for (const [s, f] of [[-1, 0], [1, Math.PI]]) {
+    const sz = tz + s * 0.62;
+    const g = new THREE.Group(); g.position.set(tx, 0, sz); g.rotation.y = f; scene.add(g);
+    add(zabGeo, matMs[1], 0, 0.052, 0, g, flat);
+    add(zafuGeo, zafuMs[s < 0 ? 0 : 1], 0, 0.142, -0.04, g);
+    seat(`zt${s < 0 ? 1 : 2}`, tx, sz - s * 0.04, f, 0.21, { x: tx, z: tz + s * 1.35 }, 'zen');
+  }
+  block(tx - 0.45, tz - 0.32, tx + 0.45, tz + 0.32);
+  lightPool(scene, tx, tz, 1.4, '#ffe2b0', 0.2);
+
+  // ---------- vườn đá cát cào ----------
+  const rocks = [[6.5, 6.2, 0.38], [8.9, 7.4, 0.3], [9.7, 6.0, 0.22]];
+  const GW = ZEN.gx2 - ZEN.gx1, GD = ZEN.gz2 - ZEN.gz1, GX = (ZEN.gx1 + ZEN.gx2) / 2, GZ = (ZEN.gz1 + ZEN.gz2) / 2;
+  const sand = new THREE.Mesh(new THREE.PlaneGeometry(GW, GD), new THREE.MeshStandardMaterial({ map: sandTex(rocks), roughness: 1 }));
+  sand.rotation.x = -Math.PI / 2; sand.position.set(GX, 0.07, GZ); sand.receiveShadow = true; scene.add(sand);
+  add(box(GW, 0.06, GD), std('#d9d1bd', 1), GX, 0.03, GZ, scene, flat);
+  for (const [w, d, x, z] of [[GW + 0.24, 0.12, GX, ZEN.gz1 - 0.06], [GW + 0.24, 0.12, GX, ZEN.gz2 + 0.06], [0.12, GD, ZEN.gx1 - 0.06, GZ], [0.12, GD, ZEN.gx2 + 0.06, GZ]]) add(box(w, 0.13, d, 0.02), woodD, x, 0.065, z);
+  const rockMs = [std('#8f8a80', 0.95, { flatShading: true }), std('#76726b', 0.95, { flatShading: true })], mossM = std('#6f9a4a', 0.95, { flatShading: true });
+  rocks.forEach(([x, z, r], i) => {
+    const rk = add(new THREE.DodecahedronGeometry(r, 0), rockMs[i % 2], x, 0.07 + r * 0.45, z); rk.scale.set(1.15, 0.8 + (i === 0 ? 0.35 : 0), 0.9); rk.rotation.set(0.3 * i, 0.9 * i, 0.15);
+    const R = rng(40 + i);
+    for (let k = 0; k < 4; k++) { const a = R() * Math.PI * 2; const m = add(new THREE.IcosahedronGeometry(0.1 + R() * 0.07, 0), mossM, x + Math.sin(a) * r * 1.05, 0.08, z + Math.cos(a) * r * 1.05, scene, flat); m.scale.set(1.3, 0.45, 1.3); }
+  });
+  block(ZEN.gx1 - 0.15, ZEN.gz1 - 0.15, ZEN.gx2 + 0.15, ZEN.gz2 + 0.15);
+
+  // ---------- chậu nước tsukubai + ống trúc nhỏ giọt ----------
+  const bx = 11.15, bz = 7.6;
+  add(new THREE.CylinderGeometry(0.3, 0.34, 0.32, 9), stoneM, bx, 0.16, bz);
+  const water = new THREE.Mesh(new THREE.CircleGeometry(0.2, 20), new THREE.MeshStandardMaterial({ color: '#6fb6d8', roughness: 0.1, emissive: '#2a7fb0', emissiveIntensity: 0.25 }));
+  water.rotation.x = -Math.PI / 2; water.position.set(bx, 0.322, bz); scene.add(water);
+  for (const [dx, dz, r] of [[0.42, 0.1, 0.12], [-0.3, 0.38, 0.09], [0.15, 0.42, 0.1]]) add(new THREE.DodecahedronGeometry(r, 0), stoneM, bx + dx, r * 0.6, bz + dz, scene, flat);
+  const bambooM = std('#9cba5a', 0.55);
+  add(new THREE.CylinderGeometry(0.03, 0.03, 0.62, 10), bambooM, bx + 0.45, 0.31, bz - 0.25);
+  const spout = add(new THREE.CylinderGeometry(0.022, 0.022, 0.42, 10), bambooM, bx + 0.25, 0.55, bz - 0.14, scene, flat); spout.rotation.set(0, 0, Math.PI / 2 + 0.25); spout.rotation.y = -0.5;
+  const drop = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 4), new THREE.MeshBasicMaterial({ color: '#d6efff' })); scene.add(drop);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.03, 0.045, 20), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2; ring.position.set(bx + 0.07, 0.326, bz - 0.04); scene.add(ring);
+  out.animated.push((t) => {
+    const k = (t * 0.8) % 1;
+    drop.position.set(bx + 0.07, 0.5 - k * k * 0.17, bz - 0.04); drop.visible = k < 0.95;
+    const q = ((t * 0.8) % 1); ring.scale.setScalar(1 + q * 3); ring.material.opacity = 0.6 * (1 - q);
+  });
+  block(bx - 0.5, bz - 0.5, bx + 0.6, bz + 0.6);
+
+  // ---------- đèn đá (tōrō) ----------
+  const lightM = glow('#ffd28a', 1.5);
+  for (const [x, z] of [[4.5, 4.4], [11.4, 4.4]]) {
+    add(new THREE.CylinderGeometry(0.2, 0.24, 0.1, 6), stoneM, x, 0.05, z);
+    add(new THREE.CylinderGeometry(0.075, 0.09, 0.55, 8), stoneM, x, 0.37, z);
+    add(box(0.42, 0.07, 0.42, 0.02), stoneM, x, 0.68, z);
+    add(box(0.3, 0.26, 0.3, 0.02), stoneM, x, 0.85, z);
+    add(box(0.31, 0.15, 0.17), lightM, x, 0.86, z, scene, flat); add(box(0.17, 0.15, 0.31), lightM, x, 0.86, z, scene, flat);
+    const roof = add(new THREE.ConeGeometry(0.36, 0.22, 4), stoneM, x, 1.09, z); roof.rotation.y = Math.PI / 4;
+    add(new THREE.SphereGeometry(0.05, 8, 6), stoneM, x, 1.23, z, scene, flat);
+    lightPool(scene, x, z, 1.1, '#ffd9a0', 0.22);
+    block(x - 0.3, z - 0.3, x + 0.3, z + 0.3);
+  }
+
+  // ---------- khóm trúc ----------
+  const stalkM = std('#6fa64a', 0.55), nodeM = std('#4e7d33', 0.6), leafMs = [std('#5f9e45', 0.85, { flatShading: true }), std('#79b856', 0.85, { flatShading: true })];
+  [[5.0, -3.0, 1], [13.45, -2.6, 2], [13.5, 3.3, 3], [4.6, 8.7, 4]].forEach(([x, z, seed]) => {
+    const R = rng(seed * 13);
+    add(new THREE.CylinderGeometry(0.42, 0.46, 0.12, 14), std('#cfc6b4', 0.95), x, 0.06, z);
+    for (let k = 0; k < 6; k++) {
+      const a = R() * Math.PI * 2, d = 0.08 + R() * 0.24, sx = x + Math.sin(a) * d, sz = z + Math.cos(a) * d, hgt = 2.2 + R() * 0.9;
+      add(new THREE.CylinderGeometry(0.03, 0.036, hgt, 8), stalkM, sx, hgt / 2, sz);
+      for (let y = 0.4; y < hgt - 0.1; y += 0.38) add(new THREE.CylinderGeometry(0.04, 0.04, 0.025, 8), nodeM, sx, y, sz, scene, flat);
+      for (let l = 0; l < 3; l++) { const b = R() * Math.PI * 2; const lf = add(new THREE.IcosahedronGeometry(0.2 + R() * 0.1, 0), leafMs[l % 2], sx + Math.sin(b) * 0.18, hgt - 0.2 - l * 0.32, sz + Math.cos(b) * 0.18, scene, flat); lf.scale.set(1.4, 0.35, 0.8); lf.rotation.y = b; }
+    }
+    block(x - 0.5, z - 0.5, x + 0.5, z + 0.5);
+  });
+
+  // ---------- bảng gỗ tên góc (đứng cạnh lối vào, nghiêng về phía camera) ----------
+  const sg = new THREE.Group(); sg.position.set(4.55, 0, 3.45); sg.rotation.y = 0.6; scene.add(sg);
+  for (const lx of [-0.62, 0.62]) add(box(0.07, 1.45, 0.07, 0.015), woodD, lx, 0.725, 0, sg);
+  add(box(1.42, 0.08, 0.1, 0.02), woodD, 0, 1.47, 0, sg, flat);
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.375), new THREE.MeshStandardMaterial({ map: zenSignTex(), roughness: 0.6 }));
+  sign.position.set(0, 1.13, 0.04); sg.add(sign);
+  add(box(1.26, 0.42, 0.05, 0.015), woodD, 0, 1.13, 0, sg, flat);
+  block(4.55 - 0.7, 3.45 - 0.45, 4.55 + 0.7, 3.45 + 0.45);
 }
 
 // ================= khu Game (bên phải, trong nhà) =================
