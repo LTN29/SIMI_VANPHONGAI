@@ -127,6 +127,18 @@ function computerCheck() {
   return out;
 }
 
+async function syncSimiTools(version, delayMs) {
+  const r = await simi.updateToolsIfNeeded(version, { delayMs }).catch((e) => ({ error: e.message }));
+  if (!r || r.skipped) return;
+  const files = (r.updated || []).length;
+  if (r.error && !files) { emit({ type: 'log', level: 'info', text: 'Cập nhật công cụ SIMI chưa xong: ' + r.error }); return; }
+  if (files || (r.catalog && (r.catalog.updated || r.catalog.defaultModel))) {
+    // Codex chạy ngầm đọc công cụ / danh sách model lúc khởi động → đang rảnh thì tắt để lượt sau dùng bản mới
+    if (codexServer && !codexServer.active) codexServer.stop();
+    emit({ type: 'toast', text: `🧰 Đã cập nhật công cụ SIMI${files ? ` (${files} file)` : ''} – đoạn chat mới dùng bản mới ngay.` });
+  }
+}
+
 // AI đang cầm chuột → thu nhỏ app cho khỏi che màn hình; xong lượt thì hiện lại
 const computerRuns = new Set();
 let computerHid = false;
@@ -477,6 +489,9 @@ app.whenReady().then(() => {
       emit({ type: 'lobby', ev, data });
       // admin vừa đăng bản app mới trên Gateway → kiểm tra & tải sẵn ngay, không đợi lượt kiểm tra định kỳ
       if (ev === 'app-release' || (ev === 'hello' && data.app && newer(data.app.version, appVersion()))) updater.checkSoon(0);
+      // admin vừa cập nhật công cụ / skill SIMI trên Gateway → máy tự tải ngay (rải ngẫu nhiên vài giây cho khỏi dồn cùng lúc)
+      const tools = ev === 'tools-update' ? data.version : ev === 'hello' ? data.tools : null;
+      if (tools) syncSimiTools(tools, ev === 'tools-update' ? 3000 + Math.random() * 20000 : 5000);
       // tin nhắn riêng khi đang ở cửa sổ khác → thông báo
       if (ev === 'message' && lobby.me && data.from !== lobby.me.id && !lobbyDnd) {
         const body = (data.text || (data.images && data.images.length ? '📷 Đã gửi ảnh' : '')).slice(0, 140);

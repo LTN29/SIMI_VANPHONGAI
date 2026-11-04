@@ -587,7 +587,7 @@
       if (my !== seq) return;
       refresh.classList.remove('spinning'); sel.disabled = false; refresh.disabled = false;
       const ms = r.models || [];
-      sel.replaceChildren(...ms.map((m) => el('option', { value: m.id, text: m.label + (m.note ? `  —  ${m.note}` : '') })));
+      sel.replaceChildren(...ms.map((m) => el('option', { value: m.id, text: m.label + (m.speedTag ? `  ${m.speedTag}` : '') + (m.note ? `  —  ${m.note}` : '') })));
       if (cur && !ms.some((m) => m.id === cur)) sel.append(el('option', { value: cur, text: `${cur}  (đang dùng)` }));
       sel.append(el('option', { value: '__custom', text: '✎ Tự nhập tên model…' }));
       if (ms.some((m) => m.id === cur) || cur) sel.value = cur;
@@ -1054,6 +1054,8 @@
       loadTray();
     } else if (e.type === 'log') {
       addLog({ sys: true, level: e.level, text: e.text, time: nowHM() });
+    } else if (e.type === 'toast') {
+      toast(e.text, !!e.error);
     } else if (e.type === 'chat' && e.message && agentById(e.message.agentId)) {
       // tab Chat → văn phòng: người phụ trách ngồi vào bàn làm việc, xong thì báo trong nhật ký
       const id = e.message.agentId;

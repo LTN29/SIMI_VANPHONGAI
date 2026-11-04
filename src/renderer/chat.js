@@ -9,6 +9,8 @@
   };
   const ls = { get: (k, d) => U.store.get(k, d), set: (k, v) => U.store.set(k, v) }; // lưu tùy chọn nhỏ trên máy
   const EFFORTS = [['', 'Mặc định'], ['low', 'Nhanh'], ['medium', 'Vừa'], ['high', 'Kỹ'], ['xhigh', 'Rất kỹ']];
+  // ⚡ Tự động: việc chỉ cần chữ trả lời thẳng (nhanh như chat thường), cần công cụ thì tự chuyển sang Codex
+  const MODES = [['auto', '⚡ Tự động', 'Việc chỉ cần chữ (dịch, tóm tắt, viết, hỏi đáp) trả lời ngay; cần file / web / máy tính thì tự dùng công cụ'], ['tools', '🛠 Luôn dùng công cụ', 'Mọi tin nhắn đều chạy bằng Codex với đủ công cụ (chậm hơn)']];
   const SANDBOX = [['read-only', '🔒 Chỉ đọc', 'Chỉ đọc file, không sửa gì trên máy'], ['workspace-write', '📁 Sửa trong dự án', 'Được tạo/sửa file trong thư mục dự án (khuyên dùng)'], ['danger-full-access', '✅ Tự cho phép mọi lệnh', 'Chạy lệnh và sửa file ở bất kỳ đâu, không hỏi lại – chỉ dùng khi tin tưởng']];
   const SKILL_UI = {
     'simi-tao-anh': ['🎨', 'Tạo ảnh'], 'muse-tao-anh': ['🖼️', 'Tạo ảnh Muse'], 'simi-tao-video': ['🎬', 'Tạo video'], 'simi-doc-pdf': ['📄', 'Đọc PDF'],
@@ -65,6 +67,7 @@
           el('button', { class: 'cb tools', id: 'chTools', title: 'Computer Use, trình duyệt SIMI, plugin', onclick: (e) => openTools(e.currentTarget) }, '🧰 Công cụ'),
           el('select', { class: 'cs', id: 'chModel', title: 'Model (theo Combo của bạn)', onchange: (e) => setThreadOpt('model', e.target.value) }),
           el('select', { class: 'cs small', id: 'chEffort', title: 'Mức suy nghĩ', onchange: (e) => setThreadOpt('effort', e.target.value) }, EFFORTS.map(([v, l]) => el('option', { value: v, text: '🧠 ' + l }))),
+          el('select', { class: 'cs small', id: 'chMode', title: 'Cách trả lời', onchange: (e) => setThreadOpt('mode', e.target.value) }, MODES.map(([v, l, d]) => el('option', { value: v, text: l, title: d }))),
           el('select', { class: 'cs small', id: 'chSandbox', title: 'Quyền trên máy', onchange: (e) => setThreadOpt('sandbox', e.target.value) }, SANDBOX.map(([v, l, d]) => el('option', { value: v, text: l, title: d }))),
           el('span', { class: 'grow' }),
           el('button', { class: 'ch-send', id: 'chSend', title: 'Gửi (Enter)', onclick: sendOrStop }, icon('send')))));
@@ -328,7 +331,7 @@
     const last = ls.get('vp.chatPrefs', {});
     const t = await window.vp.chat.create({
       project: o.project !== undefined ? o.project : (C.cur ? C.cur.project : ''),
-      model: o.model !== undefined ? o.model : (last.model || C.defaultModel || ''), effort: last.effort || '', sandbox: last.sandbox || 'workspace-write',
+      model: o.model !== undefined ? o.model : (last.model || C.defaultModel || ''), effort: last.effort || '', sandbox: last.sandbox || 'workspace-write', mode: last.mode || 'auto',
       agentId: o.agentId || curAgent()?.id || null, title: o.title,
     });
     C.atts = [];
@@ -407,7 +410,7 @@
     if (who) $('#chWho').replaceChildren(U.avatar(who, 22), el('span', { text: who.name }), el('i', { class: 'caret', text: '▾' }));
     const cur = C.cur ? C.cur.model : (ls.get('vp.chatPrefs', {}).model || C.defaultModel || '');
     sel.replaceChildren(el('option', { value: '', text: '✨ ' + (C.defaultModel ? `Mặc định (${modelLabel(C.defaultModel)})` : 'Mặc định của Codex') }),
-      ...C.models.map((m) => el('option', { value: m.id, text: '✨ ' + m.label, title: m.note || m.id })));
+      ...C.models.map((m) => el('option', { value: m.id, text: '✨ ' + m.label + (m.speedTag ? '  ' + m.speedTag : ''), title: (m.note || m.id) + (m.speedTag ? ' · tốc độ đo thật trên Gateway 6 giờ qua (thời gian tới chữ đầu tiên)' : '') })));
     if (cur && !C.models.some((m) => m.id === cur)) sel.append(el('option', { value: cur, text: '✨ ' + cur }));
     sel.value = cur;
     const m = C.models.find((x) => x.id === (cur || C.defaultModel));
@@ -415,6 +418,7 @@
     [...eff.options].forEach((o) => { o.hidden = !!(o.value && m && m.efforts && m.efforts.length && !m.efforts.includes(o.value)); });
     eff.value = C.cur ? (C.cur.effort || '') : (ls.get('vp.chatPrefs', {}).effort || '');
     $('#chSandbox').value = C.cur ? (C.cur.sandbox || 'workspace-write') : (ls.get('vp.chatPrefs', {}).sandbox || 'workspace-write');
+    $('#chMode').value = C.cur ? (C.cur.mode || 'auto') : (ls.get('vp.chatPrefs', {}).mode || 'auto');
     const busy = C.cur && C.running.has(C.cur.id);
     const send = $('#chSend'); send.classList.toggle('stop', !!busy); send.title = busy ? 'Dừng' : 'Gửi (Enter)';
     if (!busy) delete send.dataset.stopping;
@@ -561,7 +565,7 @@
     const txt = blocks.filter((b) => b.kind === 'text').map((b) => b.text).join('\n\n');
     const foot = el('div', { class: 'mfoot' },
       el('span', { text: modelLabel(m.model) }),
-      m.ms ? el('span', { text: (m.ms / 1000).toFixed(1) + ' giây' }) : null,
+      m.ms ? el('span', { text: (m.fast ? '⚡ ' : '') + (m.ms / 1000).toFixed(1) + ' giây', title: m.fast ? 'Trả lời nhanh: gửi thẳng tới model, không qua các bước công cụ' : '' }) : null,
       txt ? el('button', { class: 'linkbtn small', onclick: () => { navigator.clipboard.writeText(txt); U.toast('Đã chép câu trả lời'); } }, icon('copy'), 'Chép') : null);
     return el('div', { class: 'cmsg bot' + (m.status === 'running' ? ' running' : '') },
       a ? U.avatar(a, 32) : el('img', { class: 'bav', src: 'icon.png', alt: '' }),

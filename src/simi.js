@@ -120,6 +120,16 @@ function mapModels(list) {
     });
 }
 
+// nhãn tốc độ đo thật trên Gateway (6 giờ gần nhất, mọi user) – chỉ để tham khảo, user vẫn tự chọn model
+function speedTag(sp) {
+  if (!sp || typeof sp !== 'object') return '';
+  const sec = Number.isFinite(sp.medianMs) ? Math.max(1, Math.round(sp.medianMs / 1000)) : null;
+  if (sp.label === 'unstable') return `⚠ hay lỗi (${Math.round((sp.errorRate || 0) * 100)}%)`;
+  if (sp.label === 'fast') return `⚡ nhanh${sec ? ` ~${sec}s` : ''}`;
+  if (sp.label === 'slow') return `🐢 chậm${sec ? ` ~${sec}s` : ''}`;
+  return sec ? `~${sec}s` : '';
+}
+
 function readCatalog(cfg) {
   try { const j = JSON.parse(fs.readFileSync(cfg.catalogPath, 'utf8')); return mapModels(j.models || j.data || j); } catch { return []; }
 }
@@ -137,9 +147,12 @@ async function listModels() {
       if (cid) headers['x-ltn-client-id'] = cid;
       const j = await fetchJson(`${cfg.baseUrl}/models`, { headers, name: 'Gateway' });
       // gateway chỉ trả ID → bổ sung tên hiển thị / mức suy nghĩ từ catalog đã lưu trên máy
+      const speeds = new Map((Array.isArray(j.data) ? j.data : []).filter((x) => x && x.id && x.speed).map((x) => [x.id, x.speed]));
       const models = mapModels(j.models && j.models.length ? j.models : j.data).map((m) => {
         const l = local.find((x) => x.id === m.id);
-        return l ? { ...l, ...m, label: m.label !== m.id ? m.label : l.label, efforts: m.efforts.length ? m.efforts : l.efforts, image: m.image ?? l.image, note: m.note || l.note } : m;
+        const out = l ? { ...l, ...m, label: m.label !== m.id ? m.label : l.label, efforts: m.efforts.length ? m.efforts : l.efforts, image: m.image ?? l.image, note: m.note || l.note } : m;
+        const speed = speeds.get(m.id);
+        return speed ? { ...out, speed, speedTag: speedTag(speed) } : out;
       });
       if (models.length) return { models, live: true, defaultModel: cfg.defaultModel };
     } catch (e) { liveErr = e.message; }
@@ -319,6 +332,43 @@ function runUpdate(gateway, onLine) {
   });
 }
 
+// ---------- cập nhật công cụ SIMI ngay khi Gateway đổi (không đợi lịch 6 tiếng của máy) ----------
+// Sảnh báo phiên bản bộ công cụ (lời chào + sự kiện "tools-update") → so với bản máy đã đồng bộ → chạy auto-update.mjs
+// của bộ cài ở chế độ chỉ tải file (không chạy lại bộ cài, không bật thông báo của Windows), bằng chính Node của app.
+let toolsRun = null; let toolsLastAt = 0;
+function toolsSyncedVersion() {
+  try { return JSON.parse(fs.readFileSync(path.join(codexHome(), 'logs', 'auto-update.json'), 'utf8')).syncedBundle || ''; } catch { return ''; }
+}
+function updateToolsIfNeeded(version, { delayMs = 0 } = {}) {
+  const script = path.join(codexHome(), 'auto-update.mjs');
+  if (!version || !/^[a-f0-9]{8,64}$/.test(version) || !fs.existsSync(script)) return Promise.resolve({ skipped: true });
+  if (toolsSyncedVersion() === version) return Promise.resolve({ skipped: 'up-to-date' });
+  if (toolsRun) return toolsRun;
+  if (Date.now() - toolsLastAt < 90_000) return Promise.resolve({ skipped: 'recent' });
+  const { spawn } = require('child_process');
+  toolsRun = new Promise((resolve) => setTimeout(resolve, delayMs)).then(() => new Promise((resolve) => {
+    toolsLastAt = Date.now();
+    refreshEnv();
+    const base = readCodexConfig().baseUrl || DEFAULT_GATEWAY;
+    let child;
+    try {
+      child = spawn(process.execPath, [script, '--codex-home', codexHome(), '--gateway', gatewayOrigin(base), '--files-only', '--no-notify', '--no-hide-task'],
+        { windowsHide: true, cwd: codexHome(), env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch (e) { return resolve({ error: e.message }); }
+    let out = '';
+    child.stdout.on('data', (d) => { out = (out + d).slice(-20000); });
+    const timer = setTimeout(() => killTree(child), 5 * 60 * 1000);
+    child.on('error', (e) => { clearTimeout(timer); resolve({ error: e.message }); });
+    child.on('close', () => {
+      clearTimeout(timer);
+      let status = {};
+      try { status = JSON.parse(out.trim().split('\n').pop()); } catch { /* không đọc được */ }
+      resolve({ updated: Array.isArray(status.updated) ? status.updated : [], catalog: status.catalog || null, error: status.error || null });
+    });
+  })).finally(() => { toolsRun = null; });
+  return toolsRun;
+}
+
 // thông tin gọi Gateway trực tiếp (Sảnh online): base URL từ config Codex + key team + client id của máy
 function gatewayAuth() {
   refreshEnv();
@@ -326,4 +376,4 @@ function gatewayAuth() {
   return { baseUrl: cfg.baseUrl || '', key: readKey(), clientId: readClientId() };
 }
 
-module.exports = { readCodexConfig, refreshEnv, listSkills, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };
+module.exports = { updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };

@@ -17,6 +17,8 @@ const NOISE = /Model metadata for|was recorded with model|Consider switching bac
 const BLOCKED = /CreateRestrictedToken|sandbox (denied|error)|blocked by sandbox|Access is denied|Operation not permitted|EACCES|network (access )?(is )?(blocked|disabled|denied)|getaddrinfo|ENOTFOUND/i;
 const CHAT_GUIDE = [
   'Bạn đang chạy trong app Văn Phòng AI. Thao tác máy tính diễn ra trên máy người dùng, không phải máy Gateway.',
+  'Ưu tiên tốc độ: việc chỉ cần chữ (dịch, tóm tắt, viết lại, soạn thảo, giải thích, trả lời câu hỏi) thì trả lời thẳng ngay trong chat ở 1 lượt – không mở skill, không chạy lệnh, không tìm file, không tạo file trừ khi người dùng yêu cầu file. Ảnh và PDF đính kèm: đọc trực tiếp, không chạy OCR bằng script.',
+  'Tìm web, đọc trang công khai, tạo / sửa ảnh: gọi thẳng công cụ MCP simi_browser web_search / web_fetch / image_generate (mỗi việc 1 lần gọi, chạy ngoài sandbox) thay cho tự chạy khối lệnh trong skill; chỉ dùng khối lệnh khi phiên không có các công cụ này.',
   'Việc trên trang web (đọc, điền form, sửa / đăng nội dung, bấm nút): ưu tiên MCP simi_browser khi có – browser_snapshot rồi browser_act gộp nhiều bước trong 1 lần gọi; nhanh hơn nhiều so với điều khiển bằng ảnh chụp màn hình. Chỉ dùng vp_computer / Computer Use cho ứng dụng ngoài trình duyệt, hoặc khi simi_browser không làm được (trang vẽ bằng canvas, kéo thả phức tạp). Không nhầm lỗi browser access host của công cụ trình duyệt với runtime @oai/sky điều khiển Windows.',
 ].join('\n');
 // thư mục nháp: file trung gian của AI (ảnh ghép khung hình, ảnh thử, script tạm…) để ngoài thư mục làm việc của người dùng
@@ -169,6 +171,59 @@ function titleFrom(text) {
   const skill = (text.match(/\$([\w-]+)/) || [])[1];
   const t = (plain || (skill ? 'Skill ' + skill : 'Đoạn chat')).slice(0, 60);
   return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+// ---------- ⚡ trả lời nhanh ----------
+const ESCALATE = Symbol('escalate');
+const ESCALATE_MARK = '[[CAN_CONG_CU]]';
+const FAST_GUIDE = [
+  'Bạn là trợ lý AI SIMI trong app Văn Phòng AI. Trả lời bằng tiếng Việt (trừ khi người dùng yêu cầu khác), rõ ràng, đi thẳng vào việc, dùng Markdown khi hợp.',
+  'Ở chế độ này bạn KHÔNG có công cụ: không đọc / ghi file trên máy, không mở web, không chạy lệnh, không điều khiển máy tính hay trình duyệt, không tạo ảnh / video.',
+  `Nếu muốn làm đúng yêu cầu mà cần một trong các việc đó – tạo, sửa, lưu hoặc xuất file (Word, Excel, PDF, ảnh…), đọc file chưa được đính kèm, mở trang web hay link, tra thông tin mới / thời sự / giá cả hiện tại, chạy lệnh, điều khiển máy, tạo ảnh / video, hoặc người dùng gọi skill – thì chỉ trả lời đúng một dòng: ${ESCALATE_MARK} và không viết gì thêm.`,
+  'Ảnh đính kèm: đọc trực tiếp. Dịch, tóm tắt, viết lại, soạn thảo, giải thích, tính toán, trả lời câu hỏi: trả lời luôn.',
+].join('\n');
+const FAST_FILE_OK = /\.(png|jpe?g|webp|gif)$/i;
+// gọi skill: $simi-tao-anh (cách app chèn) hoặc /simi-tao-anh
+const SKILL_CALL = /(^|\s)[/$][a-z][a-z0-9-]{1,40}(\s|$)/i;
+
+// đủ điều kiện trả lời nhanh: đoạn chat không đặt "luôn dùng công cụ", không gọi skill / @công cụ, chỉ đính kèm ảnh
+function fastEligible(t, text, atts, ments) {
+  if ((t.mode || 'auto') !== 'auto') return false;
+  if (t.origin === 'codex') return false; // đoạn chat mở từ ChatGPT Work: luôn ghi vào cùng phiên Codex để hai bên khớp nhau
+  if (ments.length || SKILL_CALL.test(text) || text.length > 20000) return false;
+  if (atts.some((a) => !FAST_FILE_OK.test(a.path))) return false;
+  return atts.filter((a) => a.image).every((a) => { try { return fs.statSync(a.path).size < 8e6; } catch { return false; } });
+}
+
+const blockText = (m) => (m.role === 'user' ? m.text || '' : (m.blocks || []).filter((b) => b.kind === 'text').map((b) => b.text).join('\n')).trim();
+
+function fastRequest(t, model, text, atts, persona) {
+  const input = []; let budget = 60000;
+  const past = t.messages.slice(0, -2).filter((m) => m.role === 'user' || m.status === 'done').slice(-24);
+  for (const m of past.reverse()) {
+    const txt = blockText(m).slice(0, 8000);
+    if (!txt) continue;
+    if ((budget -= txt.length) < 0) break;
+    input.unshift(m.role === 'user' ? { role: 'user', content: [{ type: 'input_text', text: txt }] } : { role: 'assistant', content: [{ type: 'output_text', text: txt }] });
+  }
+  const content = [{ type: 'input_text', text }];
+  for (const a of atts.filter((x) => x.image).slice(0, 4)) {
+    const ext = path.extname(a.path).slice(1).toLowerCase().replace('jpg', 'jpeg');
+    content.push({ type: 'input_image', image_url: `data:image/${ext};base64,${fs.readFileSync(a.path).toString('base64')}` });
+  }
+  input.push({ role: 'user', content });
+  return { model, instructions: FAST_GUIDE + (persona ? `\n\n${persona}` : ''), input, stream: true, store: false, prompt_cache_key: `vp-fast-${t.id}`, ...(t.effort ? { reasoning: { effort: t.effort } } : {}) };
+}
+
+// trao đổi nhanh sau lượt Codex cuối cùng → kèm vào lời nhắn gửi Codex
+function withFastHistory(t, prompt) {
+  const msgs = t.messages.slice(0, -2);
+  let lastCodex = -1;
+  msgs.forEach((m, i) => { if (m.role === 'assistant' && !m.fast) lastCodex = i; });
+  const extra = msgs.slice(lastCodex + 1).filter((m) => m.role === 'user' || m.fast);
+  if (!extra.some((m) => m.fast)) return prompt;
+  const lines = extra.map((m) => `${m.role === 'user' ? 'Người dùng' : 'Trợ lý'}: ${blockText(m).slice(0, 3000)}`).join('\n\n').slice(-12000);
+  return `(Trao đổi gần đây trong đoạn chat này, trả lời nhanh không qua công cụ:)\n${lines}\n\n---\n\n${prompt}`;
 }
 
 function buildPrompt(t, text, atts, persona) {
@@ -526,18 +581,18 @@ class ChatEngine {
     return this.saveUpload(threadId, 'anh.' + m[1].replace('jpeg', 'jpg'), Buffer.from(m[2], 'base64'));
   }
 
-  create({ project, model, agentId, title, effort, sandbox }) {
+  create({ project, model, agentId, title, effort, sandbox, mode }) {
     const t = {
       id: 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       title: title || 'Đoạn chat mới', project: project || '', model: model || '', effort: effort || '', sandbox: sandbox || 'workspace-write',
-      agentId: agentId || null, codexThread: null, createdAt: Date.now(), messages: [],
+      agentId: agentId || null, codexThread: null, createdAt: Date.now(), messages: [], mode: mode === 'tools' ? 'tools' : 'auto',
     };
     return this.store.save(t);
   }
 
   update(id, patch) {
     const t = this.store.get(id); if (!t) throw new Error('Không tìm thấy đoạn chat');
-    for (const k of ['title', 'model', 'effort', 'sandbox', 'pinned', 'project', 'agentId']) if (k in patch) t[k] = patch[k];
+    for (const k of ['title', 'model', 'effort', 'sandbox', 'pinned', 'project', 'agentId', 'mode']) if (k in patch) t[k] = patch[k];
     if ('project' in patch) t.codexThread = null; // đổi thư mục → bắt đầu phiên Codex mới
     return this.store.save(t);
   }
@@ -703,13 +758,31 @@ class ChatEngine {
 
     const needPersona = !!persona && t.personaFor !== (t.agentId || null);
     const hints = ments.map((m) => (m.kind === 'tool' ? TOOL_HINT[m.id] : PLUGIN_HINT(m))).filter(Boolean);
-    const prompt = buildPrompt(t, hints.length ? `${text}\n\n(${hints.join(' ')})` : text, atts, needPersona ? persona : '');
+    // trao đổi "trả lời nhanh" trước đó chưa có trong phiên Codex → kèm vào để AI không mất mạch
+    const prompt = withFastHistory(t, buildPrompt(t, hints.length ? `${text}\n\n(${hints.join(' ')})` : text, atts, needPersona ? persona : ''));
     if (needPersona) t.personaFor = t.agentId || null;
     simi.refreshEnv();
-    const before = snapshot(dir);
     const t0 = Date.now();
     const emit = (ev) => this.emit({ type: 'chat', threadId: id, ...ev });
     emit({ ev: 'start', message: msg, user });
+    // giữ chỗ ngay từ đầu: bấm Dừng thật nhanh (trước khi lượt kịp bắt đầu) vẫn ăn
+    const pre = { threadId: id, t, msg, stopped: false, pending: true };
+    pre.abort = () => { pre.stopped = true; };
+    this.running.set(id, pre);
+
+    // ⚡ Trả lời nhanh: việc không cần công cụ gửi thẳng tới model qua Gateway (chữ hiện dần, 1 lần gọi),
+    // không qua vòng lặp nhiều bước của Codex. Model báo cần công cụ → chuyển sang Codex ngay, người dùng không phải làm gì.
+    if (fastEligible(t, text, atts, ments)) {
+      const r = await this._sendFast({ t, msg, text, atts, persona: needPersona ? persona : '', emit, t0, pre }).catch(() => ESCALATE);
+      if (r !== ESCALATE) return r;
+      msg.blocks = []; msg.fast = false;
+      emit({ ev: 'blocks', blocks: msg.blocks });
+    }
+    if (pre.stopped) {
+      this.running.delete(id);
+      return new Promise((resolve) => this._finish(t, msg, { error: STOPPED, ms: Date.now() - t0 }, emit, resolve));
+    }
+    const before = snapshot(dir);
 
     const srv = this.codex;
     return new Promise((resolve) => {
@@ -828,6 +901,80 @@ class ChatEngine {
         if (run.stopped && run.turnId) srv.request('turn/interrupt', { threadId: run.codexId, turnId: run.turnId }).catch(() => finish(STOPPED));
       })().catch((e) => finish(/Không tìm thấy Codex|ENOENT/.test(e.message) ? NO_CODEX : e.message));
     });
+  }
+
+  // ---------- ⚡ trả lời nhanh: gọi thẳng /v1/responses của Gateway, stream chữ ----------
+  async _sendFast({ t, msg, text, atts, persona, emit, t0, pre = null }) {
+    const auth = simi.gatewayAuth();
+    const model = t.model || simi.readCodexConfig().defaultModel;
+    if (!auth.baseUrl || !auth.key || !model) return ESCALATE;
+    const run = { threadId: t.id, t, msg, stopped: false, fast: true };
+    const ac = new AbortController();
+    let stopReason = '';
+    run.abort = (reason) => { stopReason = reason || STOPPED; ac.abort(); };
+    this.running.set(t.id, run);
+    let full = ''; let shown = false; let lastSave = 0; let emitTimer = null; let usage = null; let failure = '';
+    const show = (now) => {
+      msg.blocks = [{ kind: 'text', id: 'fast', text: full }];
+      const go = () => { emitTimer = null; emit({ ev: 'blocks', blocks: msg.blocks }); if (Date.now() - lastSave > 1500) { lastSave = Date.now(); this.store.save(t); } };
+      if (now) { clearTimeout(emitTimer); go(); } else if (!emitTimer) emitTimer = setTimeout(go, 50);
+    };
+    try {
+      const body = fastRequest(t, model, text, atts, persona);
+      const headers = { authorization: `Bearer ${auth.key}`, 'content-type': 'application/json', accept: 'text/event-stream' };
+      if (auth.clientId) headers['x-ltn-client-id'] = auth.clientId;
+      const firstByte = setTimeout(() => { failure = 'Model chưa trả lời sau 120 giây'; ac.abort(); }, 120_000);
+      let res;
+      try { res = await fetch(`${auth.baseUrl}/responses`, { method: 'POST', headers, body: JSON.stringify(body), signal: ac.signal }); } finally { clearTimeout(firstByte); }
+      if (!res.ok) {
+        const raw = await res.text().catch(() => '');
+        let m = ''; try { m = JSON.parse(raw).error.message; } catch { m = raw.slice(0, 300); }
+        throw new Error(m || `Gateway trả HTTP ${res.status}`);
+      }
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.search(/\r?\n\r?\n/)) >= 0) {
+          const block = buf.slice(0, i); buf = buf.slice(i).replace(/^\r?\n\r?\n/, '');
+          const data = block.split(/\r?\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join('');
+          if (!data || data === '[DONE]') continue;
+          let ev; try { ev = JSON.parse(data); } catch { continue; }
+          if (ev.type === 'response.output_text.delta' && typeof ev.delta === 'string') {
+            full += ev.delta;
+            // đầu câu trả lời có thể là dấu hiệu "cần công cụ" → chưa hiện cho tới khi chắc chắn không phải
+            if (!shown && (full.length >= ESCALATE_MARK.length || !ESCALATE_MARK.startsWith(full.trimStart()))) shown = !full.trimStart().startsWith(ESCALATE_MARK);
+            if (shown) show();
+            if (!shown && full.trimStart().startsWith(ESCALATE_MARK)) { ac.abort(); break; }
+          } else if (ev.type === 'response.completed' || ev.type === 'response.incomplete') {
+            const r = ev.response || {}; usage = r.usage || null;
+            if (!full && Array.isArray(r.output)) full = r.output.flatMap((o) => (o.content || [])).filter((c) => c.type === 'output_text').map((c) => c.text).join('');
+          } else if (ev.type === 'response.failed' || ev.type === 'error') {
+            failure = (ev.response && ev.response.error && ev.response.error.message) || (ev.error && ev.error.message) || ev.message || 'Lượt trả lời thất bại';
+          }
+        }
+        if (ac.signal.aborted) break;
+      }
+    } catch (e) {
+      if (!stopReason && !failure && !(full.trimStart().startsWith(ESCALATE_MARK))) failure = e.message || String(e);
+    } finally {
+      clearTimeout(emitTimer);
+      // chuyển sang Codex thì giữ chỗ (bấm Dừng lúc đang chuyển vẫn ăn); xong / dừng thì nhả
+      if (pre) this.running.set(t.id, pre); else this.running.delete(t.id);
+    }
+    if (stopReason) { this.running.delete(t.id); if (full && !full.trimStart().startsWith(ESCALATE_MARK)) show(true); return new Promise((resolve) => this._finish(t, msg, { error: stopReason, ms: Date.now() - t0 }, emit, resolve)); }
+    // cần công cụ, hoặc lỗi trước khi kịp trả lời → chạy bằng Codex như thường
+    // model không viết chữ nào (ví dụ định gọi công cụ) cũng coi là cần công cụ
+    if (full.trimStart().startsWith(ESCALATE_MARK) || (failure && !shown) || (!failure && !full.trim())) {
+      if (failure) this.emit({ type: 'log', level: 'info', text: 'Trả lời nhanh không được (' + failure + ') → chuyển sang chế độ công cụ' });
+      return ESCALATE;
+    }
+    this.running.delete(t.id);
+    show(true);
+    msg.fast = true; msg.usage = usage ? { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens } : null;
+    return new Promise((resolve) => this._finish(t, msg, { error: failure || '', ms: Date.now() - t0 }, emit, resolve));
   }
 
   // ảnh chụp màn hình (Computer Use, trình duyệt) trong kết quả công cụ → lưu file để xem lại trong đoạn chat
