@@ -417,6 +417,7 @@
     $('#chSandbox').value = C.cur ? (C.cur.sandbox || 'workspace-write') : (ls.get('vp.chatPrefs', {}).sandbox || 'workspace-write');
     const busy = C.cur && C.running.has(C.cur.id);
     const send = $('#chSend'); send.classList.toggle('stop', !!busy); send.title = busy ? 'Dừng' : 'Gửi (Enter)';
+    if (!busy) delete send.dataset.stopping;
     send.replaceChildren(U.icon(busy ? 'stop' : 'send'));
   }
 
@@ -810,7 +811,13 @@
     return `Bạn là ${a.name}, ${a.title} trong Văn Phòng AI. Vai trò: ${a.role} Hãy trò chuyện thân thiện, xưng "em" và gọi người dùng là "sếp".`;
   }
   async function sendOrStop() {
-    if (C.cur && C.running.has(C.cur.id)) { await window.vp.chat.stop(C.cur.id); return; }
+    if (C.cur && C.running.has(C.cur.id)) {
+      // Codex có thể mất vài giây mới ngắt được (đang chờ công cụ / mạng) → báo rõ, bấm lần nữa là dừng ngay
+      const btn = $('#chSend'); const again = btn.dataset.stopping === C.cur.id;
+      btn.dataset.stopping = C.cur.id; btn.title = 'Đang dừng… bấm lần nữa để dừng ngay';
+      if (!again) U.toast('⏹ Đang dừng… (bấm Dừng lần nữa để dừng ngay)');
+      await window.vp.chat.stop(C.cur.id); return;
+    }
     const ta = $('#chInput'); const text = ta.value.trim();
     if (!text && !C.atts.length) return;
     if (C.status && !C.status.loggedIn) { U.toast('Chưa kết nối SIMI Gateway – làm theo hướng dẫn trên màn hình', true); return; }

@@ -51,6 +51,7 @@ const PLUGIN_HINT = (m) => (/computer-use/.test(m.id) ? 'Người dùng chọn p
 const BROWSER_HOST = /browser access host|browser[- ]host is unavailable/i;
 const NO_CODEX = 'Không tìm thấy Codex trên máy. Bấm "Cài đặt SIMI" ở mục Kết nối.';
 const STOPPED = 'Đã dừng';
+const STOP_GRACE_MS = 4000; // bấm Dừng mà Codex chưa ngắt được lượt sau chừng này → app tự kết thúc lượt
 
 class ChatStore {
   constructor(dir) {
@@ -581,11 +582,18 @@ class ChatEngine {
     return set;
   }
 
+  // Dừng: xin Codex ngắt lượt; Codex đang kẹt (chờ công cụ điều khiển máy, chờ mạng thử lại, chờ người dùng cho phép…)
+  // thì không bao giờ báo "đã ngắt" → trước đây nút Dừng không ăn, phải tắt app. Giờ: trả lời từ chối mọi câu hỏi quyền
+  // đang treo, chờ tối đa STOP_GRACE_MS rồi tự kết thúc lượt; bấm Dừng lần 2 là dừng ngay.
   stop(id) {
     const r = this.running.get(id); if (!r) return false;
+    const again = r.stopped;
     r.stopped = true;
-    if (r.turnId) this.codex.request('turn/interrupt', { threadId: r.codexId, turnId: r.turnId }).catch(() => r.abort('Đã dừng'));
-    else r.abort(STOPPED);
+    this._expireAsks(r);
+    if (again || !r.turnId) { r.abort(STOPPED); return true; }
+    this.codex.request('turn/interrupt', { threadId: r.codexId, turnId: r.turnId }, STOP_GRACE_MS).catch(() => r.abort(STOPPED));
+    clearTimeout(r.stopTimer);
+    r.stopTimer = setTimeout(() => r.abort(STOPPED), STOP_GRACE_MS);
     return true;
   }
 
@@ -660,8 +668,15 @@ class ChatEngine {
     }
   }
 
+  // lượt kết thúc / bị dừng: câu hỏi quyền còn treo → trả lời "từ chối" cho Codex (không trả lời là Codex chờ mãi, lượt kẹt)
   _expireAsks(run) {
-    for (const [rid, a] of this.asks) if (a.run === run) { this.asks.delete(rid); if (!a.block.answer) a.block.answer = 'Đã hủy'; }
+    for (const [rid, a] of this.asks) {
+      if (a.run !== run) continue;
+      this.asks.delete(rid);
+      if (a.block.answer) continue;
+      a.block.answer = 'Đã hủy';
+      try { const d = declineFor(a.method); if (d) this.codex.respond(a.srvId, d); else this.codex.respondError(a.srvId, 'Đã dừng'); } catch { /* Codex đã tắt */ }
+    }
   }
 
   // agentId + persona: nhân sự phụ trách đoạn chat (vai trò được nhắc lại mỗi khi đổi người)
@@ -708,7 +723,7 @@ class ChatEngine {
       run.emitBlocks = emitBlocks;
       const finish = (error) => {
         if (done) return; done = true;
-        clearTimeout(emitTimer);
+        clearTimeout(emitTimer); clearTimeout(run.stopTimer);
         srv.off('notification', onNote); srv.off('exit', onExit);
         // nhả phiên sau mỗi lượt để ChatGPT Work chat tiếp được ngay trên cùng phiên (Codex chỉ cho 1 nơi ghi 1 lúc);
         // lần sau app đọc lại bản mới nhất từ đĩa
