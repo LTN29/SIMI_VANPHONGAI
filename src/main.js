@@ -340,7 +340,7 @@ function registerIpc() {
     const cfg = store.getConfig();
     const tools = [
       { id: 'vp_computer', name: 'Máy tính', icon: '🖱️', desc: 'Điều khiển chuột, bàn phím – mọi app trên máy, kể cả trình duyệt', enabled: cfg.computerControl !== false },
-      { id: 'simi_browser', name: 'Trình duyệt SIMI', icon: '🧭', desc: 'Đọc trang web cần đăng nhập (Shopee, Facebook…)', enabled: !!simi.readCodexConfig().browserMcp },
+      { id: 'simi_browser', name: 'Trình duyệt SIMI', icon: '🧭', desc: 'Đọc & thao tác trang web (điền form, sửa / đăng bài) – nhanh, giữ đăng nhập', enabled: !!simi.readCodexConfig().browserMcp },
     ];
     let plugins = [];
     try { plugins = (await codexServer.plugins()).plugins.filter((p) => p.installed && p.enabled).map((p) => ({ id: p.id, name: p.name, title: /computer-use/.test(p.name) ? 'Computer Use (ChatGPT)' : p.title, description: p.description })); } catch { /* Codex chưa sẵn sàng */ }

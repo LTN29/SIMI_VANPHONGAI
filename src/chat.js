@@ -17,7 +17,7 @@ const NOISE = /Model metadata for|was recorded with model|Consider switching bac
 const BLOCKED = /CreateRestrictedToken|sandbox (denied|error)|blocked by sandbox|Access is denied|Operation not permitted|EACCES|network (access )?(is )?(blocked|disabled|denied)|getaddrinfo|ENOTFOUND/i;
 const CHAT_GUIDE = [
   'Bạn đang chạy trong app Văn Phòng AI. Thao tác máy tính diễn ra trên máy người dùng, không phải máy Gateway.',
-  'Chỉ đọc trang web thì ưu tiên MCP simi_browser khi có. Không nhầm lỗi browser access host của công cụ trình duyệt với runtime @oai/sky điều khiển Windows.',
+  'Việc trên trang web (đọc, điền form, sửa / đăng nội dung, bấm nút): ưu tiên MCP simi_browser khi có – browser_snapshot rồi browser_act gộp nhiều bước trong 1 lần gọi; nhanh hơn nhiều so với điều khiển bằng ảnh chụp màn hình. Chỉ dùng vp_computer / Computer Use cho ứng dụng ngoài trình duyệt, hoặc khi simi_browser không làm được (trang vẽ bằng canvas, kéo thả phức tạp). Không nhầm lỗi browser access host của công cụ trình duyệt với runtime @oai/sky điều khiển Windows.',
 ].join('\n');
 // thư mục nháp: file trung gian của AI (ảnh ghép khung hình, ảnh thử, script tạm…) để ngoài thư mục làm việc của người dùng
 const SCRATCH = path.join(os.tmpdir(), 'vanphong-ai-nhap');
@@ -45,7 +45,7 @@ function docGuide(f = {}) {
 // gợi ý kèm tin nhắn khi người dùng gọi @ (người dùng đã chọn rõ công cụ → ưu tiên đúng công cụ đó)
 const TOOL_HINT = {
   vp_computer: 'Người dùng chọn @Máy tính: dùng công cụ điều khiển máy tính vp_computer của Văn Phòng AI cho yêu cầu này (screenshot trước, rồi bấm / gõ / cuộn theo toạ độ trên ảnh).',
-  simi_browser: 'Người dùng chọn @Trình duyệt SIMI: dùng MCP simi_browser cho yêu cầu này.',
+  simi_browser: 'Người dùng chọn @Trình duyệt SIMI: dùng MCP simi_browser cho yêu cầu này (browser_snapshot + browser_act để thao tác trên trang).',
 };
 const PLUGIN_HINT = (m) => (/computer-use/.test(m.id) ? 'Người dùng chọn plugin Computer Use OpenAI: dùng node_repl + @oai/sky theo skill computer-use cho yêu cầu này.' : `Người dùng gọi plugin ${m.name}: dùng plugin này cho yêu cầu.`);
 const BROWSER_HOST = /browser access host|browser[- ]host is unavailable/i;

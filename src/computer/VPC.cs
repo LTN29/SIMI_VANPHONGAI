@@ -84,7 +84,10 @@ public static class VPC {
       using (var outBmp = new Bitmap(tw, th, PixelFormat.Format24bppRgb)) {
         using (var g = Graphics.FromImage(outBmp)) { g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.DrawImage(bmp, 0, 0, tw, th); }
         using (var ms = new MemoryStream()) {
-          outBmp.Save(ms, ImageFormat.Png);
+          // JPEG thay PNG: ảnh nhỏ hơn ~5 lần → gửi lên mô hình nhanh hơn ở mỗi bước điều khiển máy
+          var jpeg = Array.Find(ImageCodecInfo.GetImageEncoders(), c => c.FormatID == ImageFormat.Jpeg.Guid);
+          var ep = new EncoderParameters(1); ep.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 80L);
+          outBmp.Save(ms, jpeg, ep);
           return "OK " + tw + " " + th + " " + w + " " + h + " " + Convert.ToBase64String(ms.ToArray());
         }
       }

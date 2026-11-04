@@ -199,7 +199,8 @@ function openInstaller(gateway) {
   });
 }
 
-// trình duyệt SIMI (MCP simi_browser do bộ cài SIMI cài) chỉ đọc trang → cho chạy không cần hỏi từng lần
+// trình duyệt SIMI (MCP simi_browser do bộ cài SIMI cài): đọc + thao tác trang → cho chạy không cần hỏi từng lần;
+// nút gửi / đăng / thanh toán / xoá do chính công cụ chặn lại, AI phải hỏi người dùng rồi mới đặt confirmed: true
 const BROWSER_MCP = 'simi_browser';
 const browserApprove = () => (readCodexConfig().browserMcp ? { [`mcp_servers.${BROWSER_MCP}.default_tools_approval_mode`]: 'approve' } : {});
 

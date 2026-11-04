@@ -21,7 +21,8 @@ const run = (cmd, args, { input, encoding = 'utf8', timeout = 20000, env } = {})
   });
   if (input !== undefined) c.stdin.end(input); else c.stdin.end();
 });
-const pngSize = (buf) => ({ w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) });
+// ảnh chụp màn hình gửi dạng JPEG (nhỏ hơn PNG ~5 lần) → mỗi bước điều khiển máy gửi lên mô hình nhanh hơn
+const JPEG_QUALITY = Number(process.env.VPC_JPEG_QUALITY || 80);
 const fit = (w, h) => { const s = Math.min(1, MAX_W / w, MAX_H / h); return { w: Math.round(w * s), h: Math.round(h * s) }; };
 
 // ---------------- Windows ----------------
@@ -147,13 +148,12 @@ class MacDriver {
   async shot() {
     const pts = await this.size();
     const f = path.join(os.tmpdir(), `vp-shot-${process.pid}.png`);
-    const g = path.join(os.tmpdir(), `vp-shot-${process.pid}-s.png`);
+    const g = path.join(os.tmpdir(), `vp-shot-${process.pid}-s.jpg`);
     await run('screencapture', ['-x', '-C', '-m', '-t', 'png', f]);
     const t = fit(pts.w, pts.h);
-    await run('sips', ['-z', String(t.h), String(t.w), f, '--out', g]);
+    await run('sips', ['-s', 'format', 'jpeg', '-s', 'formatOptions', String(JPEG_QUALITY), '-z', String(t.h), String(t.w), f, '--out', g]);
     const png = fs.readFileSync(g); try { fs.unlinkSync(f); fs.unlinkSync(g); } catch { /* bỏ qua */ }
-    const s = pngSize(png);
-    return { png, w: s.w, h: s.h, sw: pts.w, sh: pts.h };
+    return { png, w: t.w, h: t.h, sw: pts.w, sh: pts.h };
   }
   async move(x, y) { await this.check(); return this.js('move', x, y); }
   async click(x, y, b, n) { await this.check(); return this.js('click', x, y, b, n); }
@@ -190,7 +190,7 @@ class LinuxDriver {
   async shot() {
     const s = await this.size(); const t = fit(s.w, s.h);
     let png;
-    try { png = await run('import', ['-silent', '-window', 'root', '-resize', `${t.w}x${t.h}!`, 'png:-'], { encoding: 'buffer' }); } catch (e) {
+    try { png = await run('import', ['-silent', '-window', 'root', '-resize', `${t.w}x${t.h}!`, '-quality', String(JPEG_QUALITY), 'jpg:-'], { encoding: 'buffer' }); } catch (e) {
       throw new Error(/ENOENT/.test(e.message) ? 'Thiếu ImageMagick – chạy: sudo apt install imagemagick' : e.message);
     }
     return { png, w: t.w, h: t.h, sw: s.w, sh: s.h };
@@ -267,7 +267,7 @@ async function screenshot(note) {
   geo = { w: s.w, h: s.h, sw: s.sw, sh: s.sh };
   const win = await Promise.resolve(driver.active()).catch(() => '');
   const text = `${note ? note + '\n' : ''}Ảnh màn hình ${s.w}x${s.h} (màn hình thật ${s.sw}x${s.sh}, ${OS_NAME}). Cửa sổ đang mở phía trước: ${win || 'không rõ'}. Mọi toạ độ x, y dùng theo ảnh này (gốc 0,0 ở góc trên trái).`;
-  return [{ type: 'text', text }, { type: 'image', data: s.png.toString('base64'), mimeType: 'image/png' }];
+  return [{ type: 'text', text }, { type: 'image', data: s.png.toString('base64'), mimeType: 'image/jpeg' }];
 }
 
 // sau mỗi thao tác chụp lại màn hình để AI thấy kết quả ngay (đỡ một lượt gọi)
