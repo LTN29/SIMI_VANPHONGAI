@@ -63,7 +63,7 @@
       { view: 'lobby', place: 'fortune', text: 'Ống xin quẻ cạnh bàn thờ: bấm vào để lắc quẻ đầu ngày – mỗi ngày một thông điệp may mắn, đầy năng lượng dành cho bạn 🎋' },
       { view: 'lobby', place: 'zen', text: 'Góc Thiền · Dưỡng sinh: bấm vào bồ đoàn để ngồi xếp bằng, nhắm mắt thở chậm – nghỉ mắt vài phút giữa giờ. Bên cạnh có bàn trà và vườn đá.' },
       { view: 'lobby', place: 'garden', text: 'Sân vườn: bàn dù, ghế đá quanh đài phun nước – ngồi nói chuyện với đồng nghiệp.' },
-      { view: 'lobby', text: 'Muốn nhìn cả quán: bấm 🗺 Toàn cảnh. Muốn quay về nhân vật của mình: 🎯 Về chỗ mình.', target: '.lb-top .btn[title="Nhìn toàn bộ quán"]' },
+      { view: 'lobby', text: 'Muốn nhìn cả quán: bấm 🗺 Toàn cảnh. Muốn quay về nhân vật của mình: 🎯 Về chỗ mình.', target: '#lbOverview' },
     ] },
     { id: 'pool', icon: '🎱', title: 'Chơi bida với đồng nghiệp', steps: [
       { view: 'lobby', place: 'game', text: 'Bấm vào một bàn bida trống ở khu Game rồi chọn người để mời. Hoặc bấm vào đồng nghiệp → 🎱 Mời chơi bida.' },

@@ -55,6 +55,15 @@ function debError(code, out, file) {
   return `Không cài được tự động${last ? ` (${last.slice(0, 160)})` : ''} – mở Terminal và chạy: ${cmd}`;
 }
 
+// mở file để ghi; lỗi mở (EPERM, EBUSY…) trả về Promise bị từ chối thay vì phát 'error' không ai nghe (làm sập tiến trình chính)
+function openWrite(file) {
+  return new Promise((resolve, reject) => {
+    const out = fs.createWriteStream(file);
+    out.once('open', () => { out.removeListener('error', reject); resolve(out); });
+    out.once('error', reject);
+  });
+}
+
 class Updater {
   constructor({ app, getGateway, emit, dir, enabled = () => true, autoDownload = () => true, current = '', shell = global.vpShell, hotRoot = '',
     autoApply = () => false, isBusy = () => false, idle = () => false, restartEveryMs = 60 * 1000 }) {
@@ -167,7 +176,9 @@ class Updater {
     fs.mkdirSync(this.dir, { recursive: true });
     for (const f of fs.readdirSync(this.dir)) if (f !== file.name) try { fs.rmSync(path.join(this.dir, f), { force: true, recursive: true }); } catch { /* đang dùng */ }
     const dest = path.join(this.dir, file.name);
-    const part = dest + '.part';
+    // tên file tạm riêng cho mỗi lần tải: file .part cũ có thể còn bị khoá (bản app cũ chưa tắt hẳn, phần mềm diệt virus đang quét)
+    // → trước đây mở lại đúng tên đó báo EPERM và làm sập cả app
+    let part = `${dest}.${process.pid}-${Date.now()}.part`;
     // đã tải từ lần mở app trước và còn nguyên → dùng luôn
     if (fs.existsSync(dest) && await sha256File(dest).catch(() => '') === file.sha256.toLowerCase()) return this._ready(dest, version);
     this.ac = new AbortController();
@@ -177,11 +188,20 @@ class Updater {
       if (!res.ok || !res.body) throw new Error(`Không tải được bản cập nhật (mã ${res.status})`);
       const total = Number(res.headers.get('content-length')) || file.size || 0;
       const hash = crypto.createHash('sha256');
-      const out = fs.createWriteStream(part);
+      let out;
+      for (let attempt = 0; ; attempt++) {
+        try { out = await openWrite(part); break; } catch (e) {
+          if (attempt >= 2 || !/EPERM|EBUSY|EACCES/.test(e.code || e.message)) throw new Error('Không ghi được file cập nhật (' + (e.code || e.message) + ') – thử lại sau ít phút');
+          await new Promise((r) => setTimeout(r, 1500));
+          part = `${dest}.${process.pid}-${Date.now()}-${attempt + 1}.part`;
+        }
+      }
+      let streamErr = null; out.on('error', (e) => { streamErr = e; });
       let got = 0; let last = 0;
       for await (const chunk of res.body) {
+        if (streamErr) throw streamErr;
         hash.update(chunk); got += chunk.length;
-        if (!out.write(chunk)) await new Promise((r) => out.once('drain', r));
+        if (!out.write(chunk)) await new Promise((r, j) => { out.once('drain', r); out.once('error', j); });
         if (total && Date.now() - last > 250) { last = Date.now(); this._set({ progress: Math.min(0.99, got / total) }); }
       }
       await new Promise((r, j) => out.end((err) => (err ? j(err) : r())));

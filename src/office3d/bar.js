@@ -849,18 +849,24 @@ function thanTaiFigure(kind, x, y, z, k, scene, add, out) {
 
 // bảng gỗ "XIN QUẺ ĐẦU NGÀY"
 function fortuneSignTex() {
-  return canvasTex(720, 520, (g, w, h) => {
-    const bg = g.createLinearGradient(0, 0, 0, h); bg.addColorStop(0, '#6b3a1f'); bg.addColorStop(1, '#4a2614');
+  return canvasTex(960, 640, (g, w, h) => {
+    const bg = g.createLinearGradient(0, 0, 0, h); bg.addColorStop(0, '#7a1712'); bg.addColorStop(1, '#4e0c09');
     g.fillStyle = bg; g.fillRect(0, 0, w, h);
-    g.strokeStyle = '#e8b84a'; g.lineWidth = 12; g.strokeRect(10, 10, w - 20, h - 20);
-    g.lineWidth = 3; g.strokeRect(28, 28, w - 56, h - 56);
+    g.strokeStyle = '#f2c14e'; g.lineWidth = 16; g.strokeRect(12, 12, w - 24, h - 24);
+    g.lineWidth = 4; g.strokeRect(36, 36, w - 72, h - 72);
     g.textAlign = 'center'; g.textBaseline = 'middle';
     const F = (wt, px) => `${wt} ${px}px "Segoe UI", "Noto Sans", Arial, sans-serif`;
-    const fit = (text, wt, px, max) => { g.font = F(wt, px); while (px > 20 && g.measureText(text).width > max) { px -= 2; g.font = F(wt, px); } };
-    g.fillStyle = '#ffd56a'; fit('XIN QUẺ ĐẦU NGÀY'.normalize('NFC'), 900, 84, w - 90); g.fillText('XIN QUẺ ĐẦU NGÀY'.normalize('NFC'), w / 2, 130);
-    g.fillStyle = '#ffe9b0'; fit('Mỗi ngày 1 quẻ · Lắc 3 lần'.normalize('NFC'), 700, 42, w - 110); g.fillText('Mỗi ngày 1 quẻ · Lắc 3 lần'.normalize('NFC'), w / 2, 250);
-    g.fillStyle = '#f5c518'; fit('👉 Bấm vào ống quẻ'.normalize('NFC'), 800, 46, w - 110); g.fillText('👉 Bấm vào ống quẻ'.normalize('NFC'), w / 2, 350);
-    g.fillStyle = 'rgba(255,233,176,.85)'; fit('Thông điệp may mắn mỗi ngày ✨'.normalize('NFC'), 600, 34, w - 110); g.fillText('Thông điệp may mắn mỗi ngày ✨'.normalize('NFC'), w / 2, 440);
+    const line = (text, wt, px, y, color) => {
+      text = text.normalize('NFC'); g.font = F(wt, px);
+      while (px > 24 && g.measureText(text).width > w - 120) { px -= 2; g.font = F(wt, px); }
+      g.fillStyle = color; g.fillText(text, w / 2, y);
+    };
+    g.shadowColor = 'rgba(255,190,60,.7)'; g.shadowBlur = 18;
+    line('🎋 XIN QUẺ', 900, 150, 170, '#ffd56a');
+    g.shadowBlur = 0;
+    line('ĐẦU NGÀY', 900, 96, 300, '#ffe9b0');
+    line('Mỗi ngày 1 quẻ may mắn ✨', 800, 54, 420, '#fff3cf');
+    line('👉 Bấm vào ống quẻ', 900, 58, 530, '#f5c518');
   });
 }
 
@@ -895,12 +901,13 @@ function buildFortune({ scene, add, box, block, out }) {
   add(new THREE.CylinderGeometry(0.05, 0.04, 0.06, 14), std('#9a7432', 0.35, { metalness: 0.7 }), X + 0.5, 0.86, Z - 0.18, scene, flat);
   for (const dx of [-0.012, 0.012]) add(new THREE.SphereGeometry(0.007, 6, 4), glow('#ff6a2a', 3), X + 0.5 + dx, 0.98, Z - 0.18, scene, flat);
   // bảng gỗ trên tường
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 0.9), new THREE.MeshStandardMaterial({ map: fortuneSignTex(), roughness: 0.75 }));
-  sign.position.set(X, 1.85, WZ + 0.1); scene.add(sign);
-  add(box(1.33, 0.98, 0.05, 0.02), wood, X, 1.85, WZ + 0.07, scene, flat);
+  // bảng to, chữ lớn – nhìn từ xa trong Sảnh vẫn đọc được
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.2), new THREE.MeshStandardMaterial({ map: fortuneSignTex(), roughness: 0.75, emissive: '#2a0604', emissiveIntensity: 0.25 }));
+  sign.position.set(X, 2.12, WZ + 0.1); scene.add(sign);
+  add(box(1.9, 1.3, 0.05, 0.02), wood, X, 2.12, WZ + 0.07, scene, flat);
   // tua rua đỏ lắc nhẹ cho dễ thấy là chỗ bấm được
   const tassel = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.22, 10), glow('#e2261b', 0.6));
-  tassel.position.set(X - 0.62, 1.35, WZ + 0.12); scene.add(tassel);
+  tassel.position.set(X - 0.92, 1.38, WZ + 0.12); scene.add(tassel);
   out.animated.push((t) => { tassel.rotation.z = Math.sin(t * 2.2) * 0.18; });
   lightPool(scene, X, Z + 0.7, 1.1, '#ffd9a0', 0.26);
   block(X - 0.7, WZ, X + 0.7, Z + 0.35);

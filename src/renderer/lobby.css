@@ -472,3 +472,28 @@
 .fq-lv.fq-3 { background: #2f8a4a; color: #f2ffe9; }
 .fq-big b { font-size: 22px; display: flex; align-items: center; gap: 8px; }
 .fq-dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(0, 0, 0, .15); display: inline-block; flex: none; }
+
+/* thanh trên Sảnh gọn: các nút gom trong 2 cụm bo tròn thay vì 10 nút rời */
+.lb-top { gap: 10px; }
+.lb-bar { display: flex; align-items: center; gap: 2px; padding: 4px; border: 1.5px solid var(--line2); border-radius: 16px; box-shadow: var(--shadow);
+  background: color-mix(in srgb, var(--panel) 95%, transparent); min-width: 0; }
+.lb-bar .btn, .lb-bar .lb-me { border: 0; box-shadow: none; background: transparent; height: 34px; border-radius: 11px; }
+.lb-bar .btn:hover, .lb-bar .lb-me:hover { background: var(--hover); transform: none; }
+.lb-bar .lb-me { padding: 2px 8px 2px 3px; gap: 7px; }
+.lb-bar .lb-me b { font-size: 13px; line-height: 1.1; }
+.lb-bar .lb-me small { font-size: 10.5px; line-height: 1.1; white-space: nowrap; }
+.lb-bar .lb-me .avimg { border-radius: 9px; }
+.lb-bar .lb-ic { width: 34px; padding: 0; justify-content: center; font-size: 16px; }
+.lb-bar .lb-ic.armed { background: var(--panel3); }
+.lb-bar .lb-stbtn { padding: 0 10px; }
+.lb-bar .lb-stbtn.set, .lb-bar .lb-stbtn.dnd { border: 0; }
+.lb-bar .lb-stbtn.set { background: var(--accentSoft); }
+.lb-bar .lb-stbtn.dnd { background: rgba(245, 181, 27, .16); }
+.lb-bar .lb-cine-btn { padding: 0 10px; }
+.lb-bar .lb-cine-btn.live { background: rgba(255, 90, 95, .1); }
+.lb-sep { width: 1.5px; height: 22px; background: var(--line2); margin: 0 4px; border-radius: 2px; }
+/* chấm kết nối cạnh tên: xanh = đã vào Sảnh; trạng thái khác hiện chữ ngắn */
+.lb-bar .lb-conn { box-shadow: none; border: 0; background: transparent; height: auto; padding: 0 6px 0 0; font-size: 11.5px; }
+.lb-bar .lb-conn.online { width: 9px; height: 9px; padding: 0; margin: 0 4px 0 -2px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.lb-top .btn.lb-npcbtn { height: 42px; border-radius: 14px; padding: 0 14px; }
+@media (max-width: 1360px) { .lb-bar .lb-me small { display: none; } .lb-bar .lb-cine-btn { font-size: 0; width: 34px; padding: 0; justify-content: center; } .lb-bar .lb-cine-btn::before { content: "🎬"; font-size: 16px; } }

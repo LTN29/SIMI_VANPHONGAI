@@ -107,8 +107,8 @@ run(async () => {
     check((await win.locator('#lbMe').textContent()).includes('Ngọc'), 'tên mình lấy từ Gateway (users.json)');
     check(await win.evaluate(() => window.__lobby.people.size) === 30, 'quán có đủ 30 nhân vật');
     check(await win.evaluate(() => [...window.__lobby.people.values()].filter((p) => p.sitting).length) >= 16, 'đồng nghiệp đang ngồi ở quầy / bàn / sofa');
-    await win.click('.lb-top .btn >> text=Toàn cảnh'); await win.waitForTimeout(1500); await shot('00-overview');
-    await win.click('.lb-top .btn >> text=Về chỗ mình');
+    await win.click('#lbOverview'); await win.waitForTimeout(1500); await shot('00-overview');
+    await win.click('#lbFocus');
     const joined = await bao.waitFor('member', (d) => d.name === 'Ngọc');
     check(joined.teamName === 'Sales', 'đồng nghiệp thấy mình vào Sảnh kèm team');
     await bao.waitFor('member', (d) => d.name === 'Ngọc' && d.status && d.status.activity === 'idle');
@@ -138,7 +138,7 @@ run(async () => {
     await shot('02-chat');
 
     // tủ đồ
-    await win.click('.lb-top .btn >> text=Tủ đồ');
+    await win.click('#lbWardrobe');
     await win.waitForSelector('.wardrobe canvas', { timeout: 10000 });
     await win.click('.wd-chips button[data-v="curly"]');
     await win.click('.wd-chips button[data-v="cap"]');
@@ -148,7 +148,7 @@ run(async () => {
     const dressed = await bao.waitFor('member', (d) => d.name === 'Ngọc' && d.avatar && d.avatar.hairStyle === 'curly');
     check(dressed.avatar.accessory === 'cap' && dressed.avatar.shirt === '#ff9ec4', 'đổi tóc + phụ kiện + màu áo, đồng nghiệp thấy ngay');
     // áo cà sa SIMI + đầu trọc
-    await win.click('.lb-top .btn >> text=Tủ đồ');
+    await win.click('#lbWardrobe');
     await win.waitForSelector('.wardrobe canvas', { timeout: 10000 });
     await win.click('.wd-chips button[data-v="bald"]');
     await win.click('.wd-chips button[data-v="kasaya"]');

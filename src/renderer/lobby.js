@@ -53,18 +53,22 @@
     const view = el('main', { class: 'lobbyview hidden', id: 'lobbyView' },
       el('section', { class: 'lb-stage' },
         el('div', { class: 'lb-3d', id: 'lobby3d' }),
+        // thanh trên gọn 2 cụm: trái = mình (nhân vật, trạng thái, tủ đồ, ẩn/hiện, màn chiếu) · phải = Trợ lý + camera
         el('div', { class: 'lb-top' },
-          el('button', { class: 'lb-me', id: 'lbMe', title: 'Tủ đồ – đổi nhân vật của bạn', onclick: openWardrobe }),
-          el('button', { class: 'btn small lb-stbtn', id: 'lbStatusBtn', title: 'Đặt trạng thái: tập trung, đang họp, đi ăn…', onclick: (e) => openStatusMenu(e) }),
-          el('button', { class: 'btn small', onclick: openWardrobe }, '👕 Tủ đồ'),
-          el('button', { class: 'btn small', id: 'lbHide', onclick: toggleHidden }),
-          el('button', { class: 'btn small lb-cine-btn', id: 'lbCineBtn', title: 'Chiếu video YouTube cho cả quán cùng xem', onclick: toggleCinema }, '🎬 Màn chiếu'),
+          el('div', { class: 'lb-bar lb-bar-me' },
+            el('button', { class: 'lb-me', id: 'lbMe', title: 'Tủ đồ – đổi nhân vật của bạn', onclick: openWardrobe }),
+            el('span', { class: 'lb-conn', id: 'lbConn' }),
+            el('i', { class: 'lb-sep' }),
+            el('button', { class: 'btn small lb-stbtn', id: 'lbStatusBtn', title: 'Đặt trạng thái: tập trung, đang họp, đi ăn…', onclick: (e) => openStatusMenu(e) }),
+            el('button', { class: 'btn small lb-ic', id: 'lbWardrobe', title: 'Tủ đồ – đổi kiểu tóc, áo, phụ kiện', 'aria-label': 'Tủ đồ', onclick: openWardrobe }, '👕'),
+            el('button', { class: 'btn small lb-ic', id: 'lbHide', onclick: toggleHidden }),
+            el('button', { class: 'btn small lb-cine-btn', id: 'lbCineBtn', title: 'Chiếu video YouTube cho cả quán cùng xem', onclick: toggleCinema }, '🎬 Màn chiếu')),
           el('span', { class: 'grow' }),
           el('button', { class: 'btn small lb-npcbtn', id: 'lbNpcBtn', title: 'Đi tới quầy lễ tân hỏi Trợ lý SIMI: hướng dẫn từng bước, mẹo dùng AI (phím F1)', onclick: () => goNpc() }, el('span', { class: 'q', 'aria-hidden': 'true', text: '?' }), 'Trợ lý SIMI'),
-          el('button', { class: 'btn small lb-phone', id: 'lbPhone', title: 'Dùng Sảnh trên điện thoại: quét mã QR để đăng nhập', onclick: openPhone }, el('span', { 'aria-hidden': 'true', text: '📱' }), el('span', { class: 'lb-phone-t', text: ' Điện thoại' })),
-          el('button', { class: 'btn small', title: 'Nhìn toàn bộ quán', onclick: () => L.scene && L.scene.overview() }, '🗺 Toàn cảnh'),
-          el('button', { class: 'btn small', title: 'Camera đi theo nhân vật của bạn', onclick: () => L.scene && L.scene.focusSelf() }, '🎯 Về chỗ mình'),
-          el('span', { class: 'lb-conn', id: 'lbConn' }),
+          el('div', { class: 'lb-bar' },
+            el('button', { class: 'btn small lb-ic lb-phone', id: 'lbPhone', title: 'Dùng Sảnh trên điện thoại: quét mã QR để đăng nhập', 'aria-label': 'Điện thoại', onclick: openPhone }, '📱'),
+            el('button', { class: 'btn small lb-ic', id: 'lbOverview', title: 'Nhìn toàn bộ quán', 'aria-label': 'Toàn cảnh', onclick: () => L.scene && L.scene.overview() }, '🗺'),
+            el('button', { class: 'btn small lb-ic', id: 'lbFocus', title: 'Về chỗ mình – camera đi theo nhân vật của bạn', 'aria-label': 'Về chỗ mình', onclick: () => L.scene && L.scene.focusSelf() }, '🎯')),
           el('button', { class: 'lb-unfold', id: 'lbUnfold', title: 'Mở khung chat', 'aria-label': 'Mở khung chat', onclick: () => showSide(true) },
             icon('sideOpen'), el('span', { text: 'Chat' }), el('em', { class: 'badge hidden', id: 'lbUnfoldN' }))),
         el('div', { class: 'lb-emotes' }, EMOTES.map((e) => el('button', { title: 'Biểu cảm', onclick: () => sendEmote(e) }, e)),
@@ -118,7 +122,8 @@
     const st = L.status.state;
     const c = $('#lbConn');
     const label = { online: '🟢 Đã vào Sảnh', connecting: '🟡 Đang kết nối…', error: '🔴 Mất kết nối – đang thử lại', disabled: '⚪ Gateway chưa bật Sảnh', nokey: '⚪ Chưa cài SIMI', off: '⚪ Đã tắt Sảnh' }[st] || st;
-    c.textContent = label; c.title = L.status.error || '';
+    // đã vào Sảnh: chỉ 1 chấm xanh cạnh tên (đỡ chiếm chỗ); trạng thái khác mới hiện chữ
+    c.textContent = st === 'online' ? '' : label; c.title = label.replace(/^\S+ /, '') + (L.status.error ? ` – ${L.status.error}` : '');
     c.className = 'lb-conn ' + st;
     const ov = $('#lbOverlay');
     const { el, icon } = U;
@@ -159,7 +164,7 @@
     const me = L.me || { id: 'me', name: 'Bạn', avatar: myAvatar() };
     const devices = (L.me && L.me.devices) || 1;
     const sub = me.teamName ? `Team ${me.teamName}${devices > 1 ? ` · đang mở trên ${devices} máy` : ''}` : 'Chưa vào Sảnh';
-    $('#lbMe').replaceChildren(face({ ...me, avatar: myAvatar() }, 34), el('div', {}, el('b', { text: me.name }), el('small', { text: sub })));
+    $('#lbMe').replaceChildren(face({ ...me, avatar: myAvatar() }, 28), el('div', {}, el('b', { text: me.name }), el('small', { text: sub })));
     $('#lbMe').title = devices > 1 ? `Tài khoản này đang mở app trên ${devices} máy. Các máy đó là cùng một người nên không thấy nhau trong Sảnh.` : 'Tủ đồ – đổi nhân vật của bạn';
     const st = myStatus();
     const sb = $('#lbStatusBtn');
@@ -168,7 +173,7 @@
     const hidden = !!(L.me && L.me.hidden);
     $('#lbHiddenBar').classList.toggle('hidden', !hidden);
     const hb = $('#lbHide');
-    hb.textContent = hidden ? '🙈 Đang ẩn' : '👁 Đang hiện';
+    hb.textContent = hidden ? '🙈' : '👁';
     hb.title = hidden ? 'Người khác không thấy bạn online. Bấm để hiện.' : 'Mọi người thấy bạn online và đang làm gì. Bấm để ẩn.';
     hb.classList.toggle('armed', hidden);
   }
