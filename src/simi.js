@@ -95,7 +95,9 @@ function listSkills() {
         const s = parseSkill(path.join(dir, 'SKILL.md'));
         if (!s || seen.has(s.name)) continue;
         seen.add(s.name);
-        out.push({ ...s, simi: /^(simi|muse|updatesimi)/i.test(s.name), system, origin });
+        const isSimi = /^(simi|muse|updatesimi)/i.test(s.name);
+        // mine: skill người dùng tự thêm trong CODEX_HOME/skills – sửa / xoá được trong app
+        out.push({ ...s, simi: isSimi, system, origin, mine: origin === 'codex' && !system && !isSimi && path.basename(dir) === s.name });
       }
     }
   }

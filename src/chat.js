@@ -182,15 +182,27 @@ const FAST_GUIDE = [
   `Nếu muốn làm đúng yêu cầu mà cần một trong các việc đó – tạo, sửa, lưu hoặc xuất file (Word, Excel, PDF, ảnh…), đọc file chưa được đính kèm, mở trang web hay link, tra thông tin mới / thời sự / giá cả hiện tại, chạy lệnh, điều khiển máy, tạo ảnh / video, hoặc người dùng gọi skill – thì chỉ trả lời đúng một dòng: ${ESCALATE_MARK} và không viết gì thêm.`,
   'Ảnh đính kèm: đọc trực tiếp. Dịch, tóm tắt, viết lại, soạn thảo, giải thích, tính toán, trả lời câu hỏi: trả lời luôn.',
 ].join('\n');
+const FAST_FIRST_BYTE_MS = Number(process.env.VP_FAST_FIRST_BYTE_MS) || 45000; // chờ Gateway / model bắt đầu phản hồi
+const FAST_IDLE_MS = Number(process.env.VP_FAST_IDLE_MS) || 60000; // đang trả lời mà im lặng quá lâu
 const FAST_FILE_OK = /\.(png|jpe?g|webp|gif)$/i;
 // gọi skill: $simi-tao-anh (cách app chèn) hoặc /simi-tao-anh
 const SKILL_CALL = /(^|\s)[/$][a-z][a-z0-9-]{1,40}(\s|$)/i;
 
-// đủ điều kiện trả lời nhanh: đoạn chat không đặt "luôn dùng công cụ", không gọi skill / @công cụ, chỉ đính kèm ảnh
+// việc rõ ràng cần công cụ (file, web, ảnh, máy tính, tin mới) → đi Codex ngay, không chờ model tự báo
+const TOOL_INTENT = /https?:\/\/|www\.|\.(com|vn|net|org)\b|\b(file|tệp|thư mục|folder|excel|word|docx|xlsx|pptx|powerpoint|pdf|csv|slide)\b|(tạo|vẽ|thiết kế|sửa|chỉnh|xóa phông|tách nền)\s+(cái |một |1 )?(ảnh|hình|logo|banner|poster|video|clip)|(mở|vào|truy cập|đọc)\s+(trang|web|link|website|trình duyệt|gmail|facebook|zalo)|tìm (trên|kiếm trên|trên) (mạng|google|web|internet)|tra cứu|tin tức|mới nhất|thời tiết|tỷ giá|giá (vàng|xăng|usd|đô|bitcoin|cổ phiếu)|chạy (lệnh|code|script)|cài (đặt|app|phần mềm)|điều khiển|màn hình|(gửi|soạn và gửi) (email|mail|tin)|lưu (lại|vào|thành)|xuất (ra|file|thành)|tải (về|xuống|lên)|đăng (bài|lên)/i;
+// lượt trước vừa làm việc bằng công cụ mà tin mới ngắn ("làm tiếp", "sửa lại chỗ đó", "ok") → tiếp tục bằng Codex
+const toolFollowUp = (t, text) => {
+  const prev = t.messages.slice(0, -2).filter((m) => m.role === 'assistant').pop();
+  return !!prev && !prev.fast && (prev.blocks || []).some((b) => b.kind === 'step') && text.length < 160;
+};
+const intentText = (text) => (text.length > 500 ? text.slice(0, 300) + '\n' + text.slice(-200) : text); // lệnh thường ở đầu / cuối, giữa là nội dung dán vào
+
+// đủ điều kiện trả lời nhanh – tự quyết định, user không phải chỉnh gì: không gọi skill / @công cụ, chỉ đính kèm ảnh,
+// không phải việc rõ ràng cần công cụ, không phải câu nối tiếp một việc đang làm bằng công cụ
 function fastEligible(t, text, atts, ments) {
-  if ((t.mode || 'auto') !== 'auto') return false;
   if (t.origin === 'codex') return false; // đoạn chat mở từ ChatGPT Work: luôn ghi vào cùng phiên Codex để hai bên khớp nhau
   if (ments.length || SKILL_CALL.test(text) || text.length > 20000) return false;
+  if (TOOL_INTENT.test(intentText(text)) || toolFollowUp(t, text)) return false;
   if (atts.some((a) => !FAST_FILE_OK.test(a.path))) return false;
   return atts.filter((a) => a.image).every((a) => { try { return fs.statSync(a.path).size < 8e6; } catch { return false; } });
 }
@@ -914,6 +926,7 @@ class ChatEngine {
     run.abort = (reason) => { stopReason = reason || STOPPED; ac.abort(); };
     this.running.set(t.id, run);
     let full = ''; let shown = false; let lastSave = 0; let emitTimer = null; let usage = null; let failure = '';
+    let stalled = 0; let firstByteMs = null; let firstTextMs = null; let idle = null;
     const show = (now) => {
       msg.blocks = [{ kind: 'text', id: 'fast', text: full }];
       const go = () => { emitTimer = null; emit({ ev: 'blocks', blocks: msg.blocks }); if (Date.now() - lastSave > 1500) { lastSave = Date.now(); this.store.save(t); } };
@@ -923,9 +936,12 @@ class ChatEngine {
       const body = fastRequest(t, model, text, atts, persona);
       const headers = { authorization: `Bearer ${auth.key}`, 'content-type': 'application/json', accept: 'text/event-stream' };
       if (auth.clientId) headers['x-ltn-client-id'] = auth.clientId;
-      const firstByte = setTimeout(() => { failure = 'Model chưa trả lời sau 120 giây'; ac.abort(); }, 120_000);
+      // chờ quá lâu mà không có dữ liệu gì → báo rõ cho user (chuyển sang Codex lúc này chỉ làm chờ gấp đôi vì cùng model, cùng máy chủ)
+      const watch = (ms) => { clearTimeout(idle); idle = setTimeout(() => { stalled = Math.max(1, Math.round((Date.now() - t0) / 1000)); ac.abort(); }, ms); };
+      watch(FAST_FIRST_BYTE_MS);
       let res;
-      try { res = await fetch(`${auth.baseUrl}/responses`, { method: 'POST', headers, body: JSON.stringify(body), signal: ac.signal }); } finally { clearTimeout(firstByte); }
+      try { res = await fetch(`${auth.baseUrl}/responses`, { method: 'POST', headers, body: JSON.stringify(body), signal: ac.signal }); } catch (e) { clearTimeout(idle); throw e; }
+      firstByteMs = Date.now() - t0;
       if (!res.ok) {
         const raw = await res.text().catch(() => '');
         let m = ''; try { m = JSON.parse(raw).error.message; } catch { m = raw.slice(0, 300); }
@@ -933,6 +949,7 @@ class ChatEngine {
       }
       const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
       for (;;) {
+        watch(FAST_IDLE_MS);
         const { value, done } = await reader.read();
         if (done) break;
         buf += dec.decode(value, { stream: true });
@@ -943,6 +960,7 @@ class ChatEngine {
           if (!data || data === '[DONE]') continue;
           let ev; try { ev = JSON.parse(data); } catch { continue; }
           if (ev.type === 'response.output_text.delta' && typeof ev.delta === 'string') {
+            if (firstTextMs === null) firstTextMs = Date.now() - t0;
             full += ev.delta;
             // đầu câu trả lời có thể là dấu hiệu "cần công cụ" → chưa hiện cho tới khi chắc chắn không phải
             if (!shown && (full.length >= ESCALATE_MARK.length || !ESCALATE_MARK.startsWith(full.trimStart()))) shown = !full.trimStart().startsWith(ESCALATE_MARK);
@@ -958,11 +976,21 @@ class ChatEngine {
         if (ac.signal.aborted) break;
       }
     } catch (e) {
-      if (!stopReason && !failure && !(full.trimStart().startsWith(ESCALATE_MARK))) failure = e.message || String(e);
+      if (!stopReason && !failure && !stalled && !(full.trimStart().startsWith(ESCALATE_MARK))) failure = e.message || String(e);
     } finally {
-      clearTimeout(emitTimer);
+      clearTimeout(emitTimer); clearTimeout(idle);
       // chuyển sang Codex thì giữ chỗ (bấm Dừng lúc đang chuyển vẫn ăn); xong / dừng thì nhả
       if (pre) this.running.set(t.id, pre); else this.running.delete(t.id);
+    }
+    const sec = (ms) => (ms === null ? '–' : (ms / 1000).toFixed(1) + 's');
+    this.emit({ type: 'log', level: 'info', text: `⚡ Trả lời nhanh (${model}): Gateway phản hồi sau ${sec(firstByteMs)}, chữ đầu tiên sau ${sec(firstTextMs)}, tổng ${sec(Date.now() - t0)}` });
+    if (stalled && !stopReason) {
+      this.running.delete(t.id);
+      if (shown) show(true);
+      const err = shown
+        ? `Model ${model} ngừng trả lời giữa chừng (không có dữ liệu ${Math.round(FAST_IDLE_MS / 1000)} giây). Bấm gửi lại nếu cần phần còn lại.`
+        : `Model ${model} chưa trả lời sau ${stalled} giây – máy chủ AI đang chậm hoặc model đang quá tải. Bấm gửi lại, hoặc chọn model khác (model có nhãn ⚡ nhanh).`;
+      return new Promise((resolve) => this._finish(t, msg, { error: err, ms: Date.now() - t0 }, emit, resolve));
     }
     if (stopReason) { this.running.delete(t.id); if (full && !full.trimStart().startsWith(ESCALATE_MARK)) show(true); return new Promise((resolve) => this._finish(t, msg, { error: stopReason, ms: Date.now() - t0 }, emit, resolve)); }
     // cần công cụ, hoặc lỗi trước khi kịp trả lời → chạy bằng Codex như thường

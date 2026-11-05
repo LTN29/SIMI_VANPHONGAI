@@ -1,7 +1,7 @@
 {
   "name": "vanphong-ai",
   "productName": "VanPhongAI",
-  "version": "0.9.28",
+  "version": "0.9.29",
   "description": "Văn phòng AI - giao việc cho các agent như một trò chơi",
   "main": "src/boot.js",
   "author": "LTN",
@@ -11,7 +11,7 @@
     "build:mobile": "node build/mobile-lobby.js",
     "build:office": "esbuild src/office3d/office3d.js --bundle --format=iife --minify --target=chrome120 --outfile=src/renderer/office3d.bundle.js",
     "lint": "eslint .",
-    "test": "node test/orch.test.js && node --test test/computer-use.test.js test/computer-use-setup.test.js test/computer.test.js test/updater.test.js test/simi-task.test.js test/pool-engine.test.js test/accounts-gemini.test.js test/hot-update.test.js test/chat-approval.test.js test/chat-history.test.js test/chat-files.test.js test/chat-stop.test.js test/simi-tools-update.test.js test/chat-fast.test.js test/simi-models-speed.test.js",
+    "test": "node test/orch.test.js && node --test test/computer-use.test.js test/computer-use-setup.test.js test/computer.test.js test/updater.test.js test/simi-task.test.js test/pool-engine.test.js test/accounts-gemini.test.js test/hot-update.test.js test/chat-approval.test.js test/chat-history.test.js test/chat-files.test.js test/chat-stop.test.js test/simi-tools-update.test.js test/chat-fast.test.js test/simi-models-speed.test.js test/skills.test.js",
     "test:office": "node test/ui-office.test.js",
     "test:chat": "node test/ui-chat.test.js",
     "test:history": "node test/ui-history.test.js",

@@ -8,6 +8,7 @@ const { SOURCES, callAgent } = require('./providers');
 const { runTask } = require('./orchestrator');
 const accounts = require('./accounts');
 const simi = require('./simi');
+const skillsAdmin = require('./skills');
 const { ChatEngine } = require('./chat');
 const { CodexAppServer } = require('./codex-server');
 const { Updater, newer } = require('./updater');
@@ -296,6 +297,24 @@ function registerIpc() {
   // SIMI Gateway
   handle('simi:status', () => simi.status(store.getConfig().cli.codex.cmd || 'codex'));
   handle('simi:skills', () => simi.listSkills());
+  // 📚 thêm / sửa / xoá skill của người dùng ngay trong app
+  const skillsChanged = () => { if (codexServer && !codexServer.active) codexServer.stop(); }; // Codex nạp lại skill ở lượt sau
+  const trash = (dir) => shell.trashItem(dir).catch(() => fs.rmSync(dir, { recursive: true, force: true }));
+  handle('skills:read', (name) => skillsAdmin.readSkill(name));
+  handle('skills:save', (p) => { const r = skillsAdmin.saveSkill(p || {}); skillsChanged(); return r; });
+  handle('skills:remove', async (name) => { const r = await skillsAdmin.removeSkill(name, trash); skillsChanged(); return r; });
+  handle('skills:import', async (paths, overwrite) => {
+    const r = await skillsAdmin.importSkills((Array.isArray(paths) ? paths : []).filter((x) => typeof x === 'string').slice(0, 20), { overwrite: !!overwrite, trash });
+    if (r.imported.length) skillsChanged();
+    return r;
+  });
+  handle('skills:pick', async (kind) => {
+    const opts = kind === 'folder' ? { properties: ['openDirectory', 'multiSelections'], title: 'Chọn thư mục skill (có file SKILL.md)' }
+      : { properties: ['openFile', 'multiSelections'], title: 'Chọn file skill', filters: [{ name: 'Skill (.zip, .skill, SKILL.md)', extensions: ['zip', 'skill', 'md'] }] };
+    const r = await dialog.showOpenDialog(win, opts);
+    return r.canceled ? [] : r.filePaths;
+  });
+  handle('skills:openDir', () => { const d = skillsAdmin.skillsDir(); fs.mkdirSync(d, { recursive: true }); return shell.openPath(d); });
   handle('simi:install', () => simi.openInstaller(store.getConfig().simiGateway));
   // cập nhật skill, công cụ, plugin, danh sách model của SIMI – chạy ngầm, hiện tiến độ trong app
   handle('simi:update', async () => {

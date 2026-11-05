@@ -10,7 +10,6 @@
   const ls = { get: (k, d) => U.store.get(k, d), set: (k, v) => U.store.set(k, v) }; // lưu tùy chọn nhỏ trên máy
   const EFFORTS = [['', 'Mặc định'], ['low', 'Nhanh'], ['medium', 'Vừa'], ['high', 'Kỹ'], ['xhigh', 'Rất kỹ']];
   // ⚡ Tự động: việc chỉ cần chữ trả lời thẳng (nhanh như chat thường), cần công cụ thì tự chuyển sang Codex
-  const MODES = [['auto', '⚡ Tự động', 'Việc chỉ cần chữ (dịch, tóm tắt, viết, hỏi đáp) trả lời ngay; cần file / web / máy tính thì tự dùng công cụ'], ['tools', '🛠 Luôn dùng công cụ', 'Mọi tin nhắn đều chạy bằng Codex với đủ công cụ (chậm hơn)']];
   const SANDBOX = [['read-only', '🔒 Chỉ đọc', 'Chỉ đọc file, không sửa gì trên máy'], ['workspace-write', '📁 Sửa trong dự án', 'Được tạo/sửa file trong thư mục dự án (khuyên dùng)'], ['danger-full-access', '✅ Tự cho phép mọi lệnh', 'Chạy lệnh và sửa file ở bất kỳ đâu, không hỏi lại – chỉ dùng khi tin tưởng']];
   const SKILL_UI = {
     'simi-tao-anh': ['🎨', 'Tạo ảnh'], 'muse-tao-anh': ['🖼️', 'Tạo ảnh Muse'], 'simi-tao-video': ['🎬', 'Tạo video'], 'simi-doc-pdf': ['📄', 'Đọc PDF'],
@@ -67,7 +66,6 @@
           el('button', { class: 'cb tools', id: 'chTools', title: 'Computer Use, trình duyệt SIMI, plugin', onclick: (e) => openTools(e.currentTarget) }, '🧰 Công cụ'),
           el('select', { class: 'cs', id: 'chModel', title: 'Model (theo Combo của bạn)', onchange: (e) => setThreadOpt('model', e.target.value) }),
           el('select', { class: 'cs small', id: 'chEffort', title: 'Mức suy nghĩ', onchange: (e) => setThreadOpt('effort', e.target.value) }, EFFORTS.map(([v, l]) => el('option', { value: v, text: '🧠 ' + l }))),
-          el('select', { class: 'cs small', id: 'chMode', title: 'Cách trả lời', onchange: (e) => setThreadOpt('mode', e.target.value) }, MODES.map(([v, l, d]) => el('option', { value: v, text: l, title: d }))),
           el('select', { class: 'cs small', id: 'chSandbox', title: 'Quyền trên máy', onchange: (e) => setThreadOpt('sandbox', e.target.value) }, SANDBOX.map(([v, l, d]) => el('option', { value: v, text: l, title: d }))),
           el('span', { class: 'grow' }),
           el('button', { class: 'ch-send', id: 'chSend', title: 'Gửi (Enter)', onclick: sendOrStop }, icon('send')))));
@@ -331,7 +329,7 @@
     const last = ls.get('vp.chatPrefs', {});
     const t = await window.vp.chat.create({
       project: o.project !== undefined ? o.project : (C.cur ? C.cur.project : ''),
-      model: o.model !== undefined ? o.model : (last.model || C.defaultModel || ''), effort: last.effort || '', sandbox: last.sandbox || 'workspace-write', mode: last.mode || 'auto',
+      model: o.model !== undefined ? o.model : (last.model || C.defaultModel || ''), effort: last.effort || '', sandbox: last.sandbox || 'workspace-write',
       agentId: o.agentId || curAgent()?.id || null, title: o.title,
     });
     C.atts = [];
@@ -418,7 +416,6 @@
     [...eff.options].forEach((o) => { o.hidden = !!(o.value && m && m.efforts && m.efforts.length && !m.efforts.includes(o.value)); });
     eff.value = C.cur ? (C.cur.effort || '') : (ls.get('vp.chatPrefs', {}).effort || '');
     $('#chSandbox').value = C.cur ? (C.cur.sandbox || 'workspace-write') : (ls.get('vp.chatPrefs', {}).sandbox || 'workspace-write');
-    $('#chMode').value = C.cur ? (C.cur.mode || 'auto') : (ls.get('vp.chatPrefs', {}).mode || 'auto');
     const busy = C.cur && C.running.has(C.cur.id);
     const send = $('#chSend'); send.classList.toggle('stop', !!busy); send.title = busy ? 'Dừng' : 'Gửi (Enter)';
     if (!busy) delete send.dataset.stopping;
@@ -462,6 +459,7 @@
       el('h2', { text: a ? `Chào sếp! ${a.name} đây 👋` : 'Hôm nay mình làm gì nhỉ? ✨' }),
       el('p', { text: a ? `${a.title} · ${a.role}` : 'Hỏi gì cũng được, dán ảnh, kéo file vào, hoặc chọn một skill bên dưới.' }),
       sk.length ? el('div', { class: 'qskills' }, sk.map((s) => { const [e, l] = skillUi(s); return el('button', { class: 'qs', title: s.description, onclick: () => insertSkill(s.name) }, el('span', { class: 'qe', text: e }), el('b', { text: l }), el('small', { text: s.description.slice(0, 70) })); })) : null,
+      el('button', { class: 'linkbtn qs-add', onclick: () => openSkillManager(C.skills.some((s) => s.mine) ? 'mine' : 'new') }, '📚 Thêm skill của riêng bạn / quản lý skill'),
       el('div', { class: 'qtips' },
         el('span', {}, '⌨️ ', el('b', { text: '/' }), ' chọn skill'), el('span', {}, '🖱️ ', el('b', { text: '@' }), ' gọi Máy tính, plugin'), el('span', {}, '📋 ', el('b', { text: 'Ctrl+V' }), ' dán ảnh'),
         el('span', {}, '📁 ', el('b', { text: projName(C.cur ? C.cur.project : '') }), ' là thư mục làm việc')));
@@ -679,9 +677,110 @@
       info.error ? el('div', { class: 'tp-err', text: info.error }) : null,
       el('div', { class: 'tp-foot' },
         el('small', { class: 'dim', title: eng.cmd || '', text: eng.desktop ? '⚙️ Đang dùng Codex của ChatGPT Work' : '⚙️ Đang dùng Codex CLI' }),
+        el('button', { class: 'linkbtn small', onclick: () => { pop.remove(); openSkillManager(); } }, '📚 Quản lý skill'),
         el('button', { class: 'linkbtn small', onclick: () => { pop.remove(); runSimiUpdate(); } }, '🔄 Cập nhật SIMI'))].filter(Boolean));
     place();
   }
+
+  // ================= 📚 Quản lý skill: tạo mới, sửa, nhập từ file / thư mục / zip, xoá =================
+  const SKILL_TEMPLATE = '## Mục tiêu\nSkill này giúp …\n\n## Các bước\n1. Hỏi lại người dùng nếu thiếu thông tin cần thiết (…)\n2. …\n3. …\n\n## Kết quả\n- Trả lời bằng tiếng Việt, ngắn gọn.\n- Nếu tạo file: lưu vào thư mục làm việc và báo tên file.\n';
+  async function openSkillManager(tab = 'mine', edit = null) {
+    const { el } = U;
+    const S = { tab, edit };
+    const put = (node, ...kids) => node.replaceChildren(...kids.filter(Boolean)); // bỏ các mục rỗng (null) thay vì hiện chữ "null"
+    const body = el('div', { class: 'skm' });
+    const tabs = el('div', { class: 'skm-tabs' });
+    const pane = el('div', { class: 'skm-pane' });
+    body.append(tabs, pane);
+    // chỉ nạp lại danh sách skill (không gọi lại Gateway lấy model)
+    const refresh = async () => { const fresh = await window.vp.chat.skills().catch(() => null); if (fresh) { C.skills = fresh; renderStatus(); if (!C.cur) renderMain(); } };
+    const go = (t, e = null) => { S.tab = t; S.edit = e; render(); };
+    const useSkill = (name) => { U.closeModal(); if (C.view !== 'chat') setView('chat'); insertSkill(name); $('#chInput').focus(); onInput(); };
+    const row = (sk, actions) => { const [e, l] = skillUi(sk); return el('div', { class: 'skm-row' }, el('span', { class: 'qe', text: e }), el('div', { class: 'skm-info' }, el('b', {}, l, el('code', { text: ' $' + sk.name })), el('small', { text: sk.description || '' })), el('div', { class: 'skm-act' }, ...actions)); };
+
+    function renderMine() {
+      const mine = C.skills.filter((x) => x.mine);
+      const others = C.skills.filter((x) => !x.mine);
+      const del = (sk) => el('button', { class: 'btn danger mini', title: 'Chuyển vào Thùng rác', onclick: async (ev) => {
+        const b = ev.currentTarget;
+        if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = 'Xoá thật?'; setTimeout(() => { b.classList.remove('armed'); b.textContent = '🗑'; }, 3000); return; }
+        try { await window.vp.skills.remove(sk.name); U.toast(`Đã xoá skill ${sk.name} (vào Thùng rác)`); await refresh(); render(); } catch (er) { U.toast(U.cleanErr(er), true); }
+      } }, '🗑');
+      put(pane, 
+        el('div', { class: 'skm-h' }, el('b', { text: `Skill của bạn (${mine.length})` }), el('small', { text: 'Bạn tự tạo hoặc nhập – sửa, xoá được. Gõ / trong ô chat để gọi.' })),
+        mine.length ? el('div', { class: 'skm-list' }, mine.map((sk) => row(sk, [
+          el('button', { class: 'btn mini', onclick: () => useSkill(sk.name) }, '▶ Dùng'),
+          el('button', { class: 'btn mini', onclick: async () => { try { go('new', await window.vp.skills.read(sk.name)); } catch (er) { U.toast(U.cleanErr(er), true); } } }, '✏️ Sửa'),
+          del(sk)])))
+          : el('div', { class: 'skm-empty' }, el('p', { text: 'Chưa có skill riêng. Skill là “bí kíp” bạn dạy AI một lần – ví dụ cách viết báo cáo tuần của phòng, mẫu báo giá, quy trình kiểm tra hợp đồng – rồi lần sau chỉ cần gọi tên.' }),
+            el('div', { class: 'skm-cta' }, el('button', { class: 'btn primary', onclick: () => go('new') }, '＋ Tạo skill mới'), el('button', { class: 'btn', onclick: () => go('import') }, '📦 Nhập từ file'))),
+        others.length ? el('details', { class: 'skm-more' }, el('summary', { text: `Skill SIMI & hệ thống (${others.length}) – có sẵn, cập nhật tự động` }),
+          el('div', { class: 'skm-list' }, others.map((sk) => row(sk, [el('button', { class: 'btn mini', onclick: () => useSkill(sk.name) }, '▶ Dùng')])))) : null);
+    }
+
+    function renderNew() {
+      const e = S.edit;
+      const title = el('input', { placeholder: 'Ví dụ: Báo cáo tuần phòng Kinh doanh', value: e ? e.name : '', disabled: !!e });
+      const slug = el('code', { class: 'skm-slug' });
+      const desc = el('textarea', { rows: 2, placeholder: 'Ví dụ: Viết báo cáo tuần của phòng Kinh doanh theo mẫu công ty. Dùng khi người dùng nhờ làm báo cáo tuần, tổng kết tuần, báo cáo doanh số.' });
+      desc.value = e ? e.description : '';
+      const guide = el('textarea', { rows: 12, class: 'skm-guide' });
+      guide.value = e ? e.body : SKILL_TEMPLATE;
+      const nameOf = () => (e ? e.name : slugify(title.value));
+      const sync = () => { const n = nameOf(); slug.textContent = n ? '$' + n : ''; slug.classList.toggle('bad', !!n && /^(simi|muse|updatesimi)/.test(n)); };
+      title.addEventListener('input', sync); sync();
+      const err = el('div', { class: 'tp-err', hidden: true });
+      const save = el('button', { class: 'btn primary', onclick: async () => {
+        err.hidden = true; save.disabled = true;
+        try {
+          const name = nameOf();
+          if (!name) throw new Error('Chưa đặt tên skill');
+          await window.vp.skills.save({ name, description: desc.value, body: guide.value, overwrite: !!e });
+          U.toast(e ? `Đã lưu thay đổi skill ${name}` : `Đã tạo skill ${name} – gõ / trong ô chat để dùng`);
+          await refresh(); go('mine');
+        } catch (er) { err.textContent = U.cleanErr(er); err.hidden = false; } finally { save.disabled = false; }
+      } }, e ? '💾 Lưu thay đổi' : '💾 Tạo skill');
+      put(pane, 
+        el('div', { class: 'field' }, el('label', { text: e ? 'Tên skill' : 'Tên skill' }), el('div', { class: 'skm-name' }, title, slug), el('small', { text: e ? 'Không đổi được tên – muốn đổi thì tạo skill mới.' : 'Tên gọi trong ô chat được tạo tự động (chữ không dấu).' })),
+        el('div', { class: 'field' }, el('label', { text: 'Khi nào dùng skill này?' }), desc, el('small', { text: 'Quan trọng nhất: AI đọc dòng này để tự biết lúc nào nên dùng skill. Ghi rõ việc gì + các cách người dùng hay nói.' })),
+        el('div', { class: 'field' }, el('label', { text: 'Hướng dẫn cho AI' }), guide, el('small', { text: 'Viết như dặn một nhân viên mới: mục tiêu, các bước, mẫu kết quả. Hỗ trợ Markdown.' + (e && e.files.length ? ` · Skill có thêm ${e.files.length} file đi kèm (giữ nguyên).` : '') })),
+        err, el('div', { class: 'skm-cta' }, save, el('button', { class: 'btn ghost', onclick: () => go('mine') }, 'Huỷ')));
+      (e ? desc : title).focus();
+    }
+
+    function renderImport() {
+      const out = el('div', { class: 'skm-result' });
+      const run = async (paths, overwrite = false) => {
+        if (!paths.length) return;
+        put(out, el('div', { class: 'tp-load' }, el('span', { class: 'spin' }), ' Đang nhập skill…'));
+        let r; try { r = await window.vp.skills.import(paths, overwrite); } catch (er) { r = { imported: [], conflicts: [], errors: [{ error: U.cleanErr(er) }] }; }
+        if (r.imported.length) await refresh();
+        put(out, 
+          ...r.imported.map((x) => el('div', { class: 'skm-ok' }, `✓ ${x.name}`, el('small', { text: ` · ${x.files} file` + (x.scripts ? ` · có ${x.scripts} script chạy trên máy – chỉ dùng nếu bạn tin nguồn này` : '') }))),
+          r.conflicts.length ? el('div', { class: 'skm-warn' }, `Đã có skill trùng tên: ${r.conflicts.join(', ')}. `, el('button', { class: 'btn mini', onclick: () => run(paths, true) }, 'Ghi đè (bản cũ vào Thùng rác)')) : null,
+          ...r.errors.map((x) => el('div', { class: 'tp-err', text: `${x.source || ''}${x.name ? ' (' + x.name + ')' : ''}: ${x.error}` })),
+          r.imported.length ? el('div', { class: 'skm-cta' }, el('button', { class: 'btn primary', onclick: () => useSkill(r.imported[0].name) }, '▶ Dùng ngay'), el('button', { class: 'btn', onclick: () => go('mine') }, 'Xem danh sách')) : null);
+      };
+      const drop = el('div', { class: 'skm-drop' }, el('div', { class: 'skm-drop-ic', text: '📦' }), el('b', { text: 'Kéo thả skill vào đây' }),
+        el('small', { text: 'Thư mục có SKILL.md, file .zip / .skill (gói skill của Claude, Codex…) hoặc một file SKILL.md' }),
+        el('div', { class: 'skm-cta' }, el('button', { class: 'btn', onclick: async () => run(await window.vp.skills.pick('file')) }, '📄 Chọn file…'), el('button', { class: 'btn', onclick: async () => run(await window.vp.skills.pick('folder')) }, '📁 Chọn thư mục…')));
+      drop.addEventListener('dragover', (ev) => { ev.preventDefault(); drop.classList.add('over'); });
+      drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+      drop.addEventListener('drop', (ev) => { ev.preventDefault(); ev.stopPropagation(); drop.classList.remove('over'); run([...ev.dataTransfer.files].map((f) => window.vp.skills.pathOf(f)).filter(Boolean)); });
+      put(pane, drop, el('small', { class: 'skm-note', text: '⚠️ Skill có thể kèm script chạy trên máy bạn – chỉ nhập skill từ nguồn tin cậy (đồng nghiệp, nhà cung cấp chính thức).' }), out);
+    }
+
+    function render() {
+      const t = (id, label) => el('button', { class: 'skm-tab' + (S.tab === id ? ' on' : ''), onclick: () => go(id) }, label);
+      tabs.replaceChildren(t('mine', '📚 Skill của bạn'), t('new', S.edit ? '✏️ Sửa skill' : '＋ Tạo mới'), t('import', '📦 Nhập từ file'));
+      if (S.tab === 'new') renderNew(); else if (S.tab === 'import') renderImport(); else renderMine();
+    }
+    U.openModal('📚 Skill', body, [el('button', { class: 'btn ghost', title: 'Mở thư mục chứa skill trên máy', onclick: () => window.vp.skills.openDir() }, '📂 Mở thư mục skill'), el('button', { class: 'btn primary', text: 'Xong', onclick: U.closeModal })], 'wide');
+    render();
+    await refresh(); // có thể vừa chép skill vào thư mục bằng tay
+    if (S.tab === 'mine') render();
+  }
+  const slugify = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64).replace(/-+$/, '');
 
   // cập nhật skill / công cụ / plugin SIMI ngay trong app (không cần chọn menu trong Terminal)
   let simiUpd = null;
@@ -769,7 +868,8 @@
     C.pop = pq.mode; C.skillIdx = Math.min(C.skillIdx, Math.max(0, list.length - 1));
     const { el } = U;
     if (pq.mode === 'skill') {
-      pop.replaceChildren(el('div', { class: 'sph' }, `Skill trên máy (${C.skills.length})`, el('small', { text: '↑↓ chọn · Enter chèn · Esc đóng' })),
+      pop.replaceChildren(el('div', { class: 'sph' }, `Skill trên máy (${C.skills.length})`, el('small', { text: '↑↓ chọn · Enter chèn · Esc đóng' }),
+        el('button', { class: 'linkbtn small sp-add', onmousedown: (ev) => { ev.preventDefault(); closePop(); openSkillManager('new'); } }, '＋ Thêm skill')),
         ...(list.length ? list.map((s, i) => { const [e, l] = skillUi(s); return el('button', { class: 'sp' + (i === C.skillIdx ? ' on' : ''), onmousedown: (ev) => { ev.preventDefault(); insertSkill(s.name); } }, el('span', { class: 'qe', text: e }), el('div', {}, el('b', {}, l, el('code', { text: ' $' + s.name })), el('small', { text: s.description || '' }))); })
           : [el('div', { class: 'ch-empty', text: C.skills.length ? 'Không tìm thấy skill' : 'Chưa có skill nào – cài SIMI để có bộ skill đầy đủ' })]));
     } else {

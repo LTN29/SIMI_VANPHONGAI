@@ -1,5 +1,5 @@
 // ⚡ Trả lời nhanh trong tab Chat: việc chỉ cần chữ gửi thẳng /v1/responses của Gateway (chữ hiện dần, không qua Codex);
-// model báo cần công cụ → tự chuyển sang Codex; file đính kèm / skill / "Luôn dùng công cụ" → đi Codex ngay;
+// model báo cần công cụ → tự chuyển sang Codex; file đính kèm / skill / việc rõ ràng cần công cụ → đi Codex ngay (không có nút chọn chế độ);
 // lượt Codex sau đó được kèm phần trao đổi nhanh để không mất mạch.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -79,15 +79,15 @@ test('việc chỉ cần chữ → trả lời nhanh, không qua Codex; lượt 
     assert.equal(seen.at(-1).body.input.filter((m) => m.role === 'assistant').length, 1, 'kèm lịch sử trao đổi trước');
 
     // model báo cần công cụ → tự chuyển sang Codex, kèm trao đổi nhanh trước đó
-    const r2 = await e.send(t.id, { text: 'Lưu bản dịch vào bảng tính Excel' });
+    const r2 = await e.send(t.id, { text: 'Đối chiếu bản dịch với bảng tính của phòng' });
     assert.equal(r2.message.fast, false);
     assert.equal(r2.message.blocks.find((b) => b.kind === 'text').text, 'Codex đã làm xong.');
     const turn = codex.calls.find(([m]) => m === 'turn/start')[1];
-    assert.match(turn.input[0].text, /Trao đổi gần đây[\s\S]*dịch sang tiếng Việt[\s\S]*Đây là bản dịch[\s\S]*Lưu bản dịch vào bảng tính Excel/);
+    assert.match(turn.input[0].text, /Trao đổi gần đây[\s\S]*dịch sang tiếng Việt[\s\S]*Đây là bản dịch[\s\S]*Đối chiếu bản dịch với bảng tính của phòng/);
   } finally { close(); }
 });
 
-test('file đính kèm, gọi skill hoặc "Luôn dùng công cụ" → đi Codex ngay', async () => {
+test('file đính kèm, gọi skill, việc rõ ràng cần công cụ → đi Codex ngay (user không phải chỉnh gì)', async () => {
   const { e, codex, seen, ud, close } = await setup(() => 'không được gọi');
   try {
     const doc = path.join(ud, 'bao-cao.docx'); fs.writeFileSync(doc, 'x');
@@ -95,10 +95,11 @@ test('file đính kèm, gọi skill hoặc "Luôn dùng công cụ" → đi Code
     await e.send(t.id, { text: 'Tóm tắt file này', attachments: [{ path: doc }] });
     await e.send(t.id, { text: '/simi-tao-anh vẽ con mèo' });
     await e.send(t.id, { text: '$simi-tao-anh vẽ con chó' });
-    const t2 = e.create({ title: 'Công cụ', mode: 'tools' });
-    await e.send(t2.id, { text: 'Xin chào' });
+    for (const text of ['Tạo file Excel danh sách khách hàng tháng này', 'Tóm tắt giúp https://vnexpress.net/abc', 'Vẽ ảnh con mèo đội nón lá', 'Giá vàng hôm nay bao nhiêu?', 'Mở trang Facebook của công ty đăng bài này']) {
+      await e.send(t.id, { text });
+    }
     assert.equal(seen.length, 0, 'không gửi lượt nhanh nào');
-    assert.equal(codex.calls.filter(([m]) => m === 'turn/start').length, 4);
+    assert.equal(codex.calls.filter(([m]) => m === 'turn/start').length, 8);
   } finally { close(); }
 });
 
@@ -123,4 +124,28 @@ test('bấm Dừng khi đang trả lời nhanh → dừng ngay', async () => {
   assert.equal(r.message.status, 'stopped');
   assert.equal(r.message.blocks[0].text, 'Đang viết rất dài…', 'giữ phần đã viết');
   gw.close(); gw.closeAllConnections();
+});
+
+test('model im lặng quá lâu → báo rõ ngay, không âm thầm chờ thêm bằng Codex', async () => {
+  process.env.VP_FAST_IDLE_MS = '400'; process.env.VP_FAST_FIRST_BYTE_MS = '400';
+  const gw = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(': ping\n\n'); });
+  await new Promise((r) => gw.listen(0, '127.0.0.1', r));
+  try {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'vpai-fast-'));
+    fs.writeFileSync(path.join(home, 'config.toml'), `model = "cx/gpt-6.1-sol"\nmodel_provider = "ltn_gateway"\n\n[model_providers.ltn_gateway]\nbase_url = "http://127.0.0.1:${gw.address().port}/v1"\nenv_key = "LTN_TEAM_API_KEY"\n`);
+    process.env.CODEX_HOME = home; process.env.LTN_TEAM_API_KEY = 'k-fast';
+    delete require.cache[require.resolve('../src/simi')]; delete require.cache[require.resolve('../src/chat')];
+    const { ChatEngine } = require('../src/chat');
+    const ud = fs.mkdtempSync(path.join(os.tmpdir(), 'vpai-fast-ud-'));
+    const codex = new FakeCodex(); const events = [];
+    const e = new ChatEngine({ userData: ud, getConfig: () => ({}), emit: (x) => events.push(x), defaultDir: () => ud, codex });
+    const t = e.create({ title: 'Kẹt' });
+    const t0 = Date.now();
+    const r = await e.send(t.id, { text: 'xin chào' });
+    assert.ok(Date.now() - t0 < 3000);
+    assert.equal(r.message.status, 'error');
+    assert.match(r.message.error, /chưa trả lời sau \d+ giây/);
+    assert.equal(codex.calls.length, 0);
+    assert.ok(events.some((x) => x.type === 'log' && /Trả lời nhanh \(cx\/gpt-6.1-sol\)/.test(x.text)), 'ghi thời gian vào nhật ký');
+  } finally { delete process.env.VP_FAST_IDLE_MS; delete process.env.VP_FAST_FIRST_BYTE_MS; gw.close(); gw.closeAllConnections(); }
 });

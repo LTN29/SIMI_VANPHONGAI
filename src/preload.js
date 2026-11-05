@@ -53,6 +53,15 @@ contextBridge.exposeInMainWorld('vp', {
     install: () => ipcRenderer.invoke('simi:install'),
     update: () => ipcRenderer.invoke('simi:update'),
   },
+  skills: {
+    read: (name) => ipcRenderer.invoke('skills:read', name),
+    save: (p) => ipcRenderer.invoke('skills:save', p),
+    remove: (name) => ipcRenderer.invoke('skills:remove', name),
+    import: (paths, overwrite) => ipcRenderer.invoke('skills:import', paths, overwrite),
+    pick: (kind) => ipcRenderer.invoke('skills:pick', kind),
+    openDir: () => ipcRenderer.invoke('skills:openDir'),
+    pathOf: (file) => { try { return webUtils.getPathForFile(file) || ''; } catch { return ''; } },
+  },
   computer: {
     check: () => ipcRenderer.invoke('computer:check'),
     grant: () => ipcRenderer.invoke('computer:grant'),
