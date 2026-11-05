@@ -54,6 +54,11 @@ contextBridge.exposeInMainWorld('vp', {
     update: () => ipcRenderer.invoke('simi:update'),
   },
   fortune: { ask: (p) => ipcRenderer.invoke('fortune:ask', p) },
+  browser: {
+    bounds: (b, visible, covered) => ipcRenderer.send('browser:bounds', b, visible, covered),
+    ui: (cmd) => ipcRenderer.invoke('browser:ui', cmd),
+    state: () => ipcRenderer.invoke('browser:state'),
+  },
   skills: {
     read: (name) => ipcRenderer.invoke('skills:read', name),
     save: (p) => ipcRenderer.invoke('skills:save', p),

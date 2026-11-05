@@ -52,10 +52,10 @@ run(async () => {
   await win.waitForSelector('.tools-pop .tp-card', { timeout: 60000 });
   const pop = await win.locator('.tools-pop').innerText();
   check(/Computer Use/.test(pop) && /Trình duyệt SIMI/.test(pop), 'bảng Công cụ có Computer Use và trình duyệt SIMI');
-  check(/Sẵn sàng|Đã cài/.test(await win.locator('.tools-pop .tp-card').nth(1).innerText()), 'trình duyệt SIMI sẵn sàng');
+  check(/Sẵn sàng|Đã cài/.test(await win.locator('.tools-pop .tp-card', { hasText: 'Trình duyệt SIMI' }).innerText()), 'trình duyệt SIMI sẵn sàng');
   check(/Codex CLI/.test(pop), 'ghi rõ động cơ Codex đang dùng');
   await shot('01-tools');
-  await win.locator('.tools-pop .tp-card').nth(1).locator('button', { hasText: 'Mở để đăng nhập' }).click();
+  await win.locator('.tools-pop .tp-card', { hasText: 'Trình duyệt SIMI' }).locator('button', { hasText: 'Mở để đăng nhập' }).click();
   const toastTxt = await win.waitForFunction(() => { const t = document.body.innerText.match(/Đã mở Chrome SIMI[^\n]*|Không mở được[^\n]*/); return t && t[0]; }, null, { timeout: 30000 }).then((h) => h.jsonValue());
   check(/^Đã mở Chrome SIMI/.test(toastTxt), 'nút mở Chrome SIMI để đăng nhập' + (/^Đã/.test(toastTxt) ? '' : ': ' + toastTxt));
   await win.mouse.click(5, 300);

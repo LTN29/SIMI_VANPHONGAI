@@ -10,6 +10,7 @@ const accounts = require('./accounts');
 const simi = require('./simi');
 const skillsAdmin = require('./skills');
 const { askFortune } = require('./fortune-ai');
+const { BrowserPane } = require('./browser/pane');
 const { ChatEngine } = require('./chat');
 const { CodexAppServer } = require('./codex-server');
 const { Updater, newer } = require('./updater');
@@ -34,6 +35,7 @@ const MAX_PREVIEW = 15 * 1024 * 1024;
 let win = null;
 let store = null;
 let chat = null;
+let browserPane = null;   // 🌐 trình duyệt cạnh khung Chat (AI điều khiển qua MCP vp_browser)
 let codexServer = null;   // `codex app-server`: chạy chat, hỏi quyền, plugin, đọc lịch sử ChatGPT Work
 let updater = null;       // tự cập nhật app qua SIMI Gateway
 let notifiedUpdate = '';  // phiên bản đã báo
@@ -107,6 +109,18 @@ function computerMcp() {
       ...Object.fromEntries(['DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'XDG_SESSION_TYPE', 'DBUS_SESSION_BUS_ADDRESS', 'PATH', 'Path', 'SystemRoot', 'windir', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'HOME', 'LANG']
         .filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
     },
+  };
+}
+
+// 🌐 MCP "vp_browser": trình duyệt cạnh khung Chat – script chạy bằng app ở chế độ Node, gọi về app qua HTTP cục bộ có token
+const browserScript = () => path.join(__dirname, 'browser', 'mcp.js').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+function browserMcp() {
+  if (!browserPane || store.getConfig().builtinBrowser === false) return {};
+  return {
+    'mcp_servers.vp_browser.command': process.execPath,
+    'mcp_servers.vp_browser.args': [browserScript()],
+    'mcp_servers.vp_browser.env': { ELECTRON_RUN_AS_NODE: '1', VPB_CONN: browserPane.connFile, ...Object.fromEntries(['SystemRoot', 'windir', 'PATH', 'Path', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'HOME', 'LANG'].filter((k) => process.env[k]).map((k) => [k, process.env[k]])) },
+    'mcp_servers.vp_browser.tool_timeout_sec': 180,
   };
 }
 
@@ -303,6 +317,10 @@ function registerIpc() {
   const trash = (dir) => shell.trashItem(dir).catch(() => fs.rmSync(dir, { recursive: true, force: true }));
   handle('skills:read', (name) => skillsAdmin.readSkill(name));
   handle('fortune:ask', (p) => askFortune(p || {})); // 🎋 AI viết quẻ đầu ngày
+  // 🌐 trình duyệt cạnh khung Chat: renderer báo vị trí ô trống, người dùng bấm thanh công cụ
+  ipcMain.on('browser:bounds', (_e, b, visible, covered) => { if (browserPane) browserPane.setBounds(b, visible, covered); });
+  handle('browser:ui', (cmd) => (browserPane ? browserPane.ui(cmd || {}) : null));
+  handle('browser:state', () => (browserPane ? browserPane.state() : null));
   handle('skills:save', (p) => { const r = skillsAdmin.saveSkill(p || {}); skillsChanged(); return r; });
   handle('skills:remove', async (name) => { const r = await skillsAdmin.removeSkill(name, trash); skillsChanged(); return r; });
   handle('skills:import', async (paths, overwrite) => {
@@ -372,6 +390,7 @@ function registerIpc() {
     if (mentionCache && Date.now() - mentionCache.t < 5 * 60 * 1000) return mentionCache.v;
     const cfg = store.getConfig();
     const tools = [
+      { id: 'vp_browser', name: 'Trình duyệt', icon: '🌐', desc: 'Trình duyệt hiện cạnh khung chat – AI mở trang, bấm, gõ; bạn xem trực tiếp', enabled: !!browserPane && cfg.builtinBrowser !== false },
       { id: 'vp_computer', name: 'Máy tính', icon: '🖱️', desc: 'Điều khiển chuột, bàn phím – mọi app trên máy, kể cả trình duyệt', enabled: cfg.computerControl !== false },
       { id: 'simi_browser', name: 'Trình duyệt SIMI', icon: '🧭', desc: 'Đọc & thao tác trang web (điền form, sửa / đăng bài) – nhanh, giữ đăng nhập', enabled: !!simi.readCodexConfig().browserMcp },
     ];
@@ -502,7 +521,7 @@ app.whenReady().then(() => {
     idle: () => powerMonitor.getSystemIdleTime() >= 180,
   });
   updater.start();
-  chat = new ChatEngine({ userData: app.getPath('userData'), getConfig: () => store.getConfig(), emit, defaultDir: chatDir, hiddenDirs: () => [workDir()], codex: codexServer, extraConfig: computerMcp });
+  chat = new ChatEngine({ userData: app.getPath('userData'), getConfig: () => store.getConfig(), emit, defaultDir: chatDir, hiddenDirs: () => [workDir()], codex: codexServer, extraConfig: () => ({ ...computerMcp(), ...browserMcp() }) });
   lobby = new LobbyClient({
     getAuth: () => simi.gatewayAuth(),
     appInfo: { version: appVersion(), os: `${process.platform}-${process.arch}` },
@@ -546,10 +565,13 @@ app.whenReady().then(() => {
   registerIpc();
   youtubeReferer();
   createWindow();
+  browserPane = new BrowserPane({ getWindow: () => win, emit, connFile: path.join(app.getPath('userData'), 'browser-pane.json') });
+  browserPane.listen().catch((e) => { console.warn('Trình duyệt cạnh chat không mở được cổng điều khiển:', e.message); browserPane = null; });
 });
 
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0 && store) createWindow(); });
 
+app.on('will-quit', () => { if (browserPane) browserPane.stop(); });
 app.on('window-all-closed', () => {
   if (running) running.ac.abort();
   if (chat) for (const id of [...chat.running.keys()]) chat.stop(id);

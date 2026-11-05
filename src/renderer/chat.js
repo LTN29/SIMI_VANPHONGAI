@@ -63,7 +63,8 @@
           el('button', { class: 'cb who', id: 'chWho', title: 'Nhân sự phụ trách đoạn chat này', onclick: (e) => openWhoMenu(e.currentTarget) }),
           el('button', { class: 'cb', title: 'Đính kèm ảnh / file', onclick: pickFiles }, icon('plus')),
           el('button', { class: 'cb skill', title: 'Gọi skill', onclick: () => { const ta = $('#chInput'); if (!/(^|\s)\/\S*$/.test(ta.value)) ta.value += (ta.value && !/\s$/.test(ta.value) ? ' ' : '') + '/'; ta.focus(); onInput(); } }, '/ Skill'),
-          el('button', { class: 'cb tools', id: 'chTools', title: 'Computer Use, trình duyệt SIMI, plugin', onclick: (e) => openTools(e.currentTarget) }, '🧰 Công cụ'),
+          el('button', { class: 'cb web', id: 'chBrowserBtn', title: 'Mở / đóng trình duyệt cạnh khung chat (AI thao tác ngay tại đây)', onclick: () => window.VPBrowser && window.VPBrowser.toggle() }, '🌐', el('span', { class: 'cbl', text: ' Trình duyệt' })),
+          el('button', { class: 'cb tools', id: 'chTools', title: 'Computer Use, trình duyệt SIMI, plugin', onclick: (e) => openTools(e.currentTarget) }, '🧰', el('span', { class: 'cbl', text: ' Công cụ' })),
           el('select', { class: 'cs', id: 'chModel', title: 'Model (theo Combo của bạn)', onchange: (e) => setThreadOpt('model', e.target.value) }),
           el('select', { class: 'cs small', id: 'chEffort', title: 'Mức suy nghĩ', onchange: (e) => setThreadOpt('effort', e.target.value) }, EFFORTS.map(([v, l]) => el('option', { value: v, text: '🧠 ' + l }))),
           el('select', { class: 'cs small', id: 'chSandbox', title: 'Quyền trên máy', onchange: (e) => setThreadOpt('sandbox', e.target.value) }, SANDBOX.map(([v, l, d]) => el('option', { value: v, text: l, title: d }))),
@@ -97,6 +98,7 @@
       if (!C.cur) { const last = ls.get('vp.chatCur', ''); if (last && C.threads.some((t) => t.id === last)) openThread(last); else renderMain(); }
       setTimeout(() => $('#chInput').focus(), 50);
     }
+    if (window.VPBrowser) window.VPBrowser.sync();
   }
 
   // ================= dữ liệu =================
@@ -475,7 +477,7 @@
       if (m.index > last) out.push(text.slice(last, m.index));
       if (m[2]) {
         const x = mentions.find((y) => y.name.toLowerCase() === m[2].toLowerCase());
-        out.push(el('span', { class: 'skchip mention', title: x.kind === 'plugin' ? 'Plugin ' + x.id : 'Công cụ của Văn Phòng AI' }, (x.kind === 'tool' ? (x.id === 'vp_computer' ? '🖱️ ' : '🧭 ') : /computer/i.test(x.id) ? '🖥️ ' : '🧩 ') + x.name));
+        out.push(el('span', { class: 'skchip mention', title: x.kind === 'plugin' ? 'Plugin ' + x.id : 'Công cụ của Văn Phòng AI' }, (x.kind === 'tool' ? (x.id === 'vp_computer' ? '🖱️ ' : x.id === 'vp_browser' ? '🌐 ' : '🧭 ') : /computer/i.test(x.id) ? '🖥️ ' : '🧩 ') + x.name));
       } else {
         const s = C.skills.find((x) => x.name === m[1]);
         out.push(s ? el('span', { class: 'skchip', title: s.description }, skillUi(s)[0] + ' ' + skillUi(s)[1]) : m[0]);
@@ -506,7 +508,7 @@
   }
 
   const STEP_IC = { cmd: '⌘', tool: '🧩', web: '🔎', file: '📝', think: '💭', plan: '🗒️' };
-  const TOOL_IC = { 'computer-use': '🖥️', cua_repl: '🖥️', simi_browser: '🧭', vp_computer: '🖱️' };
+  const TOOL_IC = { vp_browser: '🌐', 'computer-use': '🖥️', cua_repl: '🖥️', simi_browser: '🧭', vp_computer: '🖱️' };
   const STEP_NAME = { cmd: 'Chạy lệnh', tool: 'Công cụ', web: 'Tìm web', file: 'Sửa file', think: 'Suy nghĩ', plan: 'Kế hoạch' };
 
   function stepEl(s) {
@@ -670,10 +672,16 @@
           b.disabled = false;
         } }, '🔑 Mở để đăng nhập') : el('small', { class: 'dim', text: 'Chưa cài – bấm Cập nhật SIMI để cài trình duyệt SIMI.' }),
         br.configured ? el('button', { class: 'btn mini', onclick: () => tryIt(C.skills.some((s) => s.name === 'simi-trinh-duyet') ? '$simi-trinh-duyet Đọc trang ' : 'Dùng trình duyệt SIMI đọc trang ') }, '▶ Dùng thử') : null));
+    const wbRow = window.VPBrowser ? el('div', { class: 'tp-card main' },
+      el('div', { class: 'tp-h' }, el('span', { class: 'tp-ic', text: '🌐' }), el('div', {}, el('b', { text: 'Trình duyệt cạnh chat' }),
+        el('small', { text: 'Giống Claude Desktop: trang web hiện ngay bên phải, AI tự mở trang, bấm, gõ, điền form – bạn xem trực tiếp và bấm tiếp được. Đăng nhập 1 lần trong khung, lần sau tự nhớ.' })), badge('ready')),
+      el('div', { class: 'tp-act' },
+        el('button', { class: 'btn mini', onclick: () => { pop.remove(); window.VPBrowser.toggle(true); } }, '🌐 Mở khung'),
+        el('button', { class: 'btn mini', onclick: () => { C.mentions = [{ kind: 'tool', id: 'vp_browser', name: 'Trình duyệt', icon: '🌐' }]; tryIt('@Trình duyệt mở google.com tìm "giá vàng hôm nay" rồi tóm tắt 3 dòng'); } }, '▶ Dùng thử'))) : null;
     const others = (info.plugins || []).filter((p) => p.installed && p.name !== 'computer-use');
     const plRow = others.length ? el('div', { class: 'tp-list' }, el('small', { class: 'dim', text: 'Plugin đã cài: ' }), ...others.map((p) => el('span', { class: 'tp-chip', title: p.description, text: p.title }))) : null;
     const eng = info.engine || {};
-    pop.replaceChildren(...[el('div', { class: 'sph', text: '🧰 Công cụ cho đoạn chat' }), pcRow, brRow, cuRow, plRow,
+    pop.replaceChildren(...[el('div', { class: 'sph', text: '🧰 Công cụ cho đoạn chat' }), wbRow, pcRow, brRow, cuRow, plRow,
       info.error ? el('div', { class: 'tp-err', text: info.error }) : null,
       el('div', { class: 'tp-foot' },
         el('small', { class: 'dim', title: eng.cmd || '', text: eng.desktop ? '⚙️ Đang dùng Codex của ChatGPT Work' : '⚙️ Đang dùng Codex CLI' }),
@@ -996,5 +1004,5 @@
     });
   }
 
-  window.VPChat = { init, openAgent, setView, refresh: () => loadMeta(true), newThread, runSimiUpdate };
+  window.VPChat = { init, openAgent, setView, view: () => C.view, refresh: () => loadMeta(true), newThread, runSimiUpdate };
 })();

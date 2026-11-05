@@ -21,7 +21,8 @@ const CHAT_GUIDE = [
   'Tìm web, đọc trang công khai, tạo / sửa ảnh, chép lời file ghi âm / video: gọi thẳng công cụ MCP simi_browser web_search / web_fetch / image_generate / audio_transcribe (mỗi việc 1 lần gọi, chạy ngoài sandbox) thay cho tự chạy khối lệnh trong skill hay tự viết code; chỉ dùng khối lệnh khi phiên không có các công cụ này.',
   'Chỉnh ảnh có sẵn mà phải giữ đúng chi tiết (làm nét, chỉnh sáng / màu, cắt, xoay, xoá / viết lại chữ, logo bị mờ, che vùng, chèn logo): dùng simi_browser image_retouch (vài giây, chạy trên máy), không dùng model tạo ảnh (vẽ lại cả ảnh, chậm, sai chi tiết) và không tự viết script Python.',
   'Tạo ảnh: viết prompt tiếng Anh chi tiết (chủ thể, bố cục, phong cách, ánh sáng, màu; chữ trong ảnh giữ tiếng Việt trong ngoặc kép, thật ngắn) – yêu cầu chung chung thì tự bổ sung chi tiết cho đẹp, không chuyển nguyên câu ngắn của người dùng.',
-  'Việc trên trang web (đọc, điền form, sửa / đăng nội dung, bấm nút): ưu tiên MCP simi_browser khi có – browser_snapshot rồi browser_act gộp nhiều bước trong 1 lần gọi; nhanh hơn nhiều so với điều khiển bằng ảnh chụp màn hình. Chỉ dùng vp_computer / Computer Use cho ứng dụng ngoài trình duyệt, hoặc khi simi_browser không làm được (trang vẽ bằng canvas, kéo thả phức tạp). Không nhầm lỗi browser access host của công cụ trình duyệt với runtime @oai/sky điều khiển Windows.',
+  'Thao tác trên trang web (mở trang cho người dùng xem, điền form, đăng / sửa nội dung, bấm nút, trang cần đăng nhập): ưu tiên MCP vp_browser khi có – trình duyệt hiện ngay cạnh khung chat, người dùng nhìn thấy và đã đăng nhập sẵn. Quy trình: browser_open → đọc danh sách [eN] → browser_act gộp nhiều bước (gõ, chọn, bấm) trong 1 lần gọi → xem trang trả về; chỉ browser_screenshot khi cần nhìn hình. Trang đòi đăng nhập / mã OTP / captcha: dừng lại nhờ người dùng tự làm trong khung trình duyệt rồi làm tiếp, không tự nhập mật khẩu. Trước khi bấm nút gửi / đăng / thanh toán / xoá thật: hỏi người dùng xác nhận trừ khi họ đã yêu cầu rõ.',
+  'Khi không có vp_browser: việc trên trang web dùng MCP simi_browser khi có – browser_snapshot rồi browser_act gộp nhiều bước trong 1 lần gọi; nhanh hơn nhiều so với điều khiển bằng ảnh chụp màn hình. Chỉ dùng vp_computer / Computer Use cho ứng dụng ngoài trình duyệt, hoặc khi simi_browser không làm được (trang vẽ bằng canvas, kéo thả phức tạp). Không nhầm lỗi browser access host của công cụ trình duyệt với runtime @oai/sky điều khiển Windows.',
 ].join('\n');
 // thư mục nháp: file trung gian của AI (ảnh ghép khung hình, ảnh thử, script tạm…) để ngoài thư mục làm việc của người dùng
 const SCRATCH = path.join(os.tmpdir(), 'vanphong-ai-nhap');
@@ -49,6 +50,7 @@ function docGuide(f = {}) {
 // gợi ý kèm tin nhắn khi người dùng gọi @ (người dùng đã chọn rõ công cụ → ưu tiên đúng công cụ đó)
 const TOOL_HINT = {
   vp_computer: 'Người dùng chọn @Máy tính: dùng công cụ điều khiển máy tính vp_computer của Văn Phòng AI cho yêu cầu này (screenshot trước, rồi bấm / gõ / cuộn theo toạ độ trên ảnh).',
+  vp_browser: 'Người dùng chọn @Trình duyệt: dùng MCP vp_browser (trình duyệt cạnh khung chat) cho yêu cầu này – browser_open rồi browser_act gộp nhiều bước.',
   simi_browser: 'Người dùng chọn @Trình duyệt SIMI: dùng MCP simi_browser cho yêu cầu này (browser_snapshot + browser_act để thao tác trên trang).',
 };
 const PLUGIN_HINT = (m) => (/computer-use/.test(m.id) ? 'Người dùng chọn plugin Computer Use OpenAI: dùng node_repl + @oai/sky theo skill computer-use cho yêu cầu này.' : `Người dùng gọi plugin ${m.name}: dùng plugin này cho yêu cầu.`);
@@ -191,7 +193,7 @@ const FAST_FILE_OK = /\.(png|jpe?g|webp|gif)$/i;
 const SKILL_CALL = /(^|\s)[/$][a-z][a-z0-9-]{1,40}(\s|$)/i;
 
 // việc rõ ràng cần công cụ (file, web, ảnh, máy tính, tin mới) → đi Codex ngay, không chờ model tự báo
-const TOOL_INTENT = /https?:\/\/|www\.|\.(com|vn|net|org)\b|\b(file|tệp|thư mục|folder|excel|word|docx|xlsx|pptx|powerpoint|pdf|csv|slide)\b|(tạo|vẽ|thiết kế|sửa|chỉnh|xóa phông|tách nền)\s+(cái |một |1 )?(ảnh|hình|logo|banner|poster|video|clip)|(mở|vào|truy cập|đọc)\s+(trang|web|link|website|trình duyệt|gmail|facebook|zalo)|tìm (trên|kiếm trên|trên) (mạng|google|web|internet)|tra cứu|tin tức|mới nhất|thời tiết|tỷ giá|giá (vàng|xăng|usd|đô|bitcoin|cổ phiếu)|chạy (lệnh|code|script)|cài (đặt|app|phần mềm)|điều khiển|màn hình|(gửi|soạn và gửi) (email|mail|tin)|lưu (lại|vào|thành)|xuất (ra|file|thành)|tải (về|xuống|lên)|đăng (bài|lên)|(^|\s)vẽ(\s|$)|\b(logo|poster|banner|thumbnail|mp3|m4a|wav|audio)\b|ghi âm|chép lời|gỡ băng|phụ đề|thu âm|file âm thanh|(làm|cho)( cho)? (nét|rõ|sáng|đẹp)|nét hơn|xo[áa] (chữ|logo|phông|nền|vết)|ghép (ảnh|logo)|cắt (ảnh|hình)|chỉnh màu/i;
+const TOOL_INTENT = /https?:\/\/|www\.|\.(com|vn|net|org)\b|\b(file|tệp|thư mục|folder|excel|word|docx|xlsx|pptx|powerpoint|pdf|csv|slide)\b|(tạo|vẽ|thiết kế|sửa|chỉnh|xóa phông|tách nền)\s+(cái |một |1 )?(ảnh|hình|logo|banner|poster|video|clip)|(mở|vào|truy cập|đọc)\s+(trang|web|link|website|trình duyệt|gmail|facebook|zalo)|tìm (trên|kiếm trên|trên) (mạng|google|web|internet)|tra cứu|tin tức|mới nhất|thời tiết|tỷ giá|giá (vàng|xăng|usd|đô|bitcoin|cổ phiếu)|chạy (lệnh|code|script)|cài (đặt|app|phần mềm)|điều khiển|màn hình|(gửi|soạn và gửi) (email|mail|tin)|lưu (lại|vào|thành)|xuất (ra|file|thành)|tải (về|xuống|lên)|đăng (bài|lên)|(^|\s)vẽ(\s|$)|\b(logo|poster|banner|thumbnail|mp3|m4a|wav|audio)\b|ghi âm|chép lời|gỡ băng|phụ đề|thu âm|file âm thanh|(làm|cho)( cho)? (nét|rõ|sáng|đẹp)|nét hơn|xo[áa] (chữ|logo|phông|nền|vết)|ghép (ảnh|logo)|cắt (ảnh|hình)|chỉnh màu|trang (này|đang mở)|(bấm|nhấn|click|điền|chọn) (vào |nút|ô |form|link|đường dẫn)|đăng nhập|trình duyệt/i;
 // lượt trước vừa làm việc bằng công cụ mà tin mới ngắn ("làm tiếp", "sửa lại chỗ đó", "ok") → tiếp tục bằng Codex
 const toolFollowUp = (t, text) => {
   const prev = t.messages.slice(0, -2).filter((m) => m.role === 'assistant').pop();
@@ -332,8 +334,8 @@ function wasBlocked(stderr, blocks) {
 const isCU = (n) => /^(computer[-_]use|cua[-_]repl)$/i.test(String(n || ''));
 const VPC = 'vp_computer'; // công cụ điều khiển máy tính của Văn Phòng AI (src/computer/mcp.js)
 const VPC_READONLY = new Set(['screenshot', 'wait', 'list_windows']);
-const TOOL_SHORT = { 'computer-use': 'Computer Use', cua_repl: 'Computer Use', simi_browser: 'Trình duyệt SIMI', vp_computer: 'Điều khiển máy' };
-const SERVER_NAME = { 'computer-use': 'Computer Use (điều khiển máy tính)', cua_repl: 'Computer Use (điều khiển máy tính)', simi_browser: 'Trình duyệt SIMI', vp_computer: 'Điều khiển máy tính' };
+const TOOL_SHORT = { vp_browser: 'Trình duyệt', 'computer-use': 'Computer Use', cua_repl: 'Computer Use', simi_browser: 'Trình duyệt SIMI', vp_computer: 'Điều khiển máy' };
+const SERVER_NAME = { vp_browser: 'Trình duyệt cạnh chat', 'computer-use': 'Computer Use (điều khiển máy tính)', cua_repl: 'Computer Use (điều khiển máy tính)', simi_browser: 'Trình duyệt SIMI', vp_computer: 'Điều khiển máy tính' };
 const serverName = (n) => SERVER_NAME[n] || n || 'Công cụ';
 const ALLOW = { id: 'accept', label: 'Cho phép', done: '✓ Đã cho phép', style: 'primary' };
 const DECLINE = { id: 'decline', label: 'Từ chối', done: '✕ Đã từ chối', style: 'ghost' };

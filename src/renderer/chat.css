@@ -361,3 +361,38 @@ body.in-chat .status { display: none; }
 .ch-skillpop .sph .sp-add { margin-left: auto; padding-left: 10px; }
 .qs-add { margin-top: 12px; }
 @media (max-width: 640px) { .skm-row { flex-wrap: wrap; } .skm-act { width: 100%; justify-content: flex-end; } }
+
+/* 🌐 Trình duyệt cạnh khung chat (trang web là lớp riêng của app, đặt khít vào .cbw-host) */
+.chatview.with-browser { --cbw-w: 46vw; grid-template-columns: 286px minmax(360px, 1fr) 6px var(--cbw-w); }
+.chatview.with-browser > .ch-main { min-width: 0; }
+.chatview.with-browser .ch-bar .cb .cbl { display: none; }
+@media (max-width: 1280px) { .chatview.with-browser { grid-template-columns: minmax(340px, 1fr) 6px var(--cbw-w); } .chatview.with-browser > .ch-side { display: none; } }
+.cbw-split { cursor: col-resize; background: var(--line); position: relative; }
+.cbw-split::after { content: ''; position: absolute; left: 2px; top: 50%; width: 2px; height: 34px; margin-top: -17px; border-radius: 2px; background: var(--line2); }
+.cbw-split:hover, body.cbw-dragging .cbw-split { background: var(--accent2); }
+body.cbw-dragging { cursor: col-resize; user-select: none; }
+.cbw { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--panel); }
+.cbw-bar { display: flex; align-items: center; gap: 4px; padding: 7px 8px; border-bottom: 1px solid var(--line); background: var(--panel2); }
+.cbw-ic { flex: none; width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.cbw-ic:hover:not(:disabled) { background: var(--hover); color: var(--accent); }
+.cbw-ic:disabled { opacity: .35; cursor: default; }
+.cbw-url { flex: 1; min-width: 0; height: 30px; border: 1.5px solid var(--line); border-radius: 999px; background: var(--input); color: var(--text); padding: 0 13px; font-size: 12.5px; outline: none; }
+.cbw-url:focus { border-color: var(--accent2); }
+.cbw-tabs { display: flex; gap: 4px; padding: 5px 8px 0; background: var(--panel2); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.cbw-tab { flex: 0 1 180px; min-width: 70px; display: flex; align-items: center; gap: 4px; padding: 5px 6px 6px 10px; border-radius: 9px 9px 0 0; font-size: 12px; color: var(--muted); cursor: pointer; border: 1px solid transparent; border-bottom: 0; }
+.cbw-tab:hover { background: var(--hover); }
+.cbw-tab.on { background: var(--panel); color: var(--text); border-color: var(--line); font-weight: 700; margin-bottom: -1px; }
+.cbw-tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cbw-x { flex: none; border: 0; background: transparent; color: var(--dim); width: 18px; height: 18px; border-radius: 5px; cursor: pointer; line-height: 1; }
+.cbw-x:hover { background: var(--line); color: var(--err); }
+.cbw-new { flex: none; border: 0; background: transparent; color: var(--muted); width: 26px; border-radius: 7px; cursor: pointer; }
+.cbw-new:hover { background: var(--hover); color: var(--accent); }
+.cbw-ai { display: flex; align-items: center; gap: 8px; padding: 5px 12px; font-size: 12px; font-weight: 700; color: var(--accent); background: var(--accentSoft); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cbw-ai.hidden { display: none; }
+.cbw-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: cbwPulse 1s ease-in-out infinite; }
+@keyframes cbwPulse { 50% { opacity: .3; transform: scale(.7); } }
+.cbw-host { flex: 1; min-height: 0; position: relative; background: var(--bg2); }
+.cbw-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--muted); text-align: center; padding: 20px; }
+.cbw-empty b { font-size: 15px; color: var(--text); }
+.ch-bar .cb.web.on { color: var(--accent); border-color: var(--accent2); background: var(--accentSoft); }
+.chatview.with-browser .ch-bar .cs { max-width: 140px; } .chatview.with-browser .ch-bar .cs.small { max-width: 92px; }

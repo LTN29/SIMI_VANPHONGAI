@@ -1054,6 +1054,8 @@
       loadTray();
     } else if (e.type === 'log') {
       addLog({ sys: true, level: e.level, text: e.text, time: nowHM() });
+    } else if (e.type === 'browser') {
+      if (window.VPBrowser) window.VPBrowser.onEvent(e);
     } else if (e.type === 'toast') {
       toast(e.text, !!e.error);
     } else if (e.type === 'chat' && e.message && agentById(e.message.agentId)) {
@@ -1168,7 +1170,7 @@
     // tiện ích dùng chung cho tab Chat (chat.js)
     window.VP = { el, $, icon, toast, avatar, store, S, sfx, cleanErr, agentById, connected, openAccounts, refreshAccounts, openModal, closeModal };
     if (window.VPUpdate) window.VPUpdate.init(window.VP).catch((e) => console.warn('cập nhật', e));
-    if (window.VPChat) window.VPChat.init(window.VP).then(() => { if (window.VPAdmin) window.VPAdmin.init(window.VP); }).then(() => window.VPLobby && window.VPLobby.init(window.VP)).catch((e) => console.warn('chat/sảnh', e));
+    if (window.VPChat) window.VPChat.init(window.VP).then(() => { if (window.VPBrowser) window.VPBrowser.init(window.VP); }).then(() => { if (window.VPAdmin) window.VPAdmin.init(window.VP); }).then(() => window.VPLobby && window.VPLobby.init(window.VP)).catch((e) => console.warn('chat/sảnh', e));
   }
   init().catch((e) => { document.body.innerHTML = `<pre style="padding:20px;color:#ffb3b3">Lỗi khởi động: ${String(e && e.stack || e)}</pre>`; });
 })();

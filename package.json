@@ -1,7 +1,7 @@
 {
   "name": "vanphong-ai",
   "productName": "VanPhongAI",
-  "version": "0.9.35",
+  "version": "0.9.36",
   "description": "Văn phòng AI - giao việc cho các agent như một trò chơi",
   "main": "src/boot.js",
   "author": "LTN",
@@ -16,6 +16,7 @@
     "test:chat": "node test/ui-chat.test.js",
     "test:history": "node test/ui-history.test.js",
     "test:lobby": "node test/ui-lobby.test.js",
+    "test:browser": "node test/ui-browser.test.js",
     "test:lobby-chat": "node test/ui-lobby-chat.test.js",
     "test:lobby-play": "node test/ui-lobby-play.test.js",
     "test:npc": "node test/ui-lobby-npc.test.js",
@@ -118,7 +119,8 @@
       "afterRemove": "build/linux-after-remove.sh"
     },
     "asarUnpack": [
-      "src/computer/**"
+      "src/computer/**",
+      "src/browser/mcp.js"
     ]
   },
   "devDependencies": {
