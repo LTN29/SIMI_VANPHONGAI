@@ -21,7 +21,7 @@
     "test:npc": "node test/ui-lobby-npc.test.js",
     "test:pool": "node test/ui-lobby-pool.test.js",
     "dist": "npm run build:office && electron-builder --win nsis --x64",
-    "dist:mac": "npm run build:office && electron-builder --mac zip dmg --arm64 --x64",
+    "dist:mac": "npm run build:office && electron-builder --mac zip dmg --arm64 && electron-builder --mac zip dmg --x64",
     "dist:linux": "npm run build:office && electron-builder --linux AppImage deb --x64",
     "test:tools": "node test/ui-tools.test.js",
     "test:computer-setup": "node test/ui-computer-setup.test.js",
