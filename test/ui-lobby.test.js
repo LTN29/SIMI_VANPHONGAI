@@ -80,7 +80,7 @@ run(async () => {
   await bao.post('state', { status: { activity: 'image', text: '🎨 Đang tạo ảnh', model: 'muse-image' } });
   // 28 đồng nghiệp khác: đồ ngẫu nhiên, một nửa ngồi sẵn ở quầy / góc thiền / sofa
   const R = (a) => a[Math.floor(Math.random() * a.length)];
-  const seats = ['b1', 'b2', 'b4', 'b5', 'b6', 'b7', 'b8', 'z1', 'z3', 'z4', 'z6', 'z8', 'zt1', 's11', 's13', 's22'];
+  const seats = ['b1', 'b2', 'b4', 's12', 's21', 's23', 'z2', 'z1', 'z3', 'z4', 'z6', 'z8', 'zt1', 's11', 's13', 's22'];
   const acts = [['chat', '💬 Đang chat với AI'], ['image', '🎨 Đang tạo ảnh'], ['idle', '☕ Đang rảnh'], ['video', '🎬 Đang làm video'], ['web', '🔎 Đang tìm trên web']];
   const crowd = [];
   for (let i = 0; i < CROWD; i++) {
@@ -117,13 +117,13 @@ run(async () => {
 
     // bấm vào ghế quầy bar còn trống để ngồi
     const seatPt = await win.evaluate(() => {
-      const L = window.__lobby; const st = L.seats.get('b10'); const r = L.canvas.getBoundingClientRect();
+      const L = window.__lobby; const st = L.seats.get('b3'); const r = L.canvas.getBoundingClientRect();
       L.view.target.set(st.x, 0.6, st.z); L.follow = false; L.updateCamera();
       const s = L.project(new (L.tmpV.constructor)(st.x, 0.5, st.z)); return { x: r.left + s.x, y: r.top + s.y };
     });
     await win.mouse.click(seatPt.x, seatPt.y);
-    const sat = await bao.waitFor('move', (d) => d.id === 'u:sales-ngoc' && d.seat === 'b10');
-    check(sat.seat === 'b10', 'bấm ghế → đi tới ngồi, đồng nghiệp thấy mình đang ngồi ghế đó');
+    const sat = await bao.waitFor('move', (d) => d.id === 'u:sales-ngoc' && d.seat === 'b3');
+    check(sat.seat === 'b3', 'bấm ghế → đi tới ngồi, đồng nghiệp thấy mình đang ngồi ghế đó');
     await win.waitForFunction(() => window.__lobby.self().sitting, null, { timeout: 120000 });
     check(true, 'nhân vật của mình đã ngồi xuống');
     await win.waitForTimeout(800); await shot('01b-seated');
@@ -157,12 +157,19 @@ run(async () => {
     const monk = await bao.waitFor('member', (d) => d.name === 'Ngọc' && d.avatar && d.avatar.outfit === 'kasaya');
     check(monk.avatar.hairStyle === 'bald', 'mặc áo cà sa SIMI + đầu trọc, đồng nghiệp thấy ngay');
     // bàn thờ Tổ nghề: 4 bồ đoàn quỳ cho người (không còn bot)
-    const kneel = await win.evaluate(() => [...window.__lobby.seats.values()].filter((s) => s.kind === 'kneel').length);
-    check(kneel === 15, 'bàn thờ Tổ nghề có 15 bồ đoàn quỳ');
+    const kneel = await win.evaluate(() => [...window.__lobby.seats.values()].filter((s) => s.kind === 'kneel').reduce((n, s) => ({ ...n, [s.theme || 'altar']: (n[s.theme || 'altar'] || 0) + 1 }), {}));
+    check(kneel.altar === 15 && kneel.thantai === 6, 'bàn thờ Tổ nghề 15 bồ đoàn + góc Thần Tài 6 bồ đoàn quỳ');
+    const stools = await win.evaluate(() => [...window.__lobby.seats.keys()].filter((id) => /^b\d+$/.test(id)).length);
+    check(stools === 4, 'quầy bar thu gọn còn 4 ghế cao');
     await win.evaluate(() => window.__lobby.sitSelf('k2'));
     await win.waitForFunction(() => { const p = window.__lobby.self(); return p.sitting && p.seatKind === 'kneel'; }, null, { timeout: 60000 });
     await win.waitForTimeout(1200); await shot('03c-altar');
     check(true, 'bấm bồ đoàn → đi tới quỳ lạy trước bàn thờ');
+    await win.evaluate(() => window.__lobby.sitSelf('tt2'));
+    await win.waitForFunction(() => { const p = window.__lobby.self(); return p.sitting && p.seat === 'tt2' && p.seatTheme === 'thantai'; }, null, { timeout: 60000 });
+    await win.keyboard.press('Escape'); await win.evaluate(() => { document.querySelectorAll('.npc-panel, .npc-pop').forEach((n) => n.remove()); window.__lobby.lookAt('thantai'); });
+    await win.waitForTimeout(1800); await shot('03d-thantai');
+    check(true, 'quỳ khấn ở góc Thần Tài cầu bán hàng chạy');
     await win.evaluate(() => window.__lobby.focusSelf());
 
     // di chuyển + biểu cảm của đồng nghiệp

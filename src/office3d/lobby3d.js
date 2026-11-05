@@ -27,7 +27,7 @@ const NPC_LOOK = { id: 'npc', name: 'Trợ lý SIMI', shirt: '#0a5cc2', pants: '
 const OVERVIEW = { x: 6, z: 4, zoom: 0.31 };
 // các khu trong Sảnh (Trợ lý dẫn đi tham quan: camera bay tới, vòng sáng chỉ vào đúng chỗ)
 const PLACES = {
-  npc: { x: NPC.x, z: NPC.z, y: 1.1, zoom: 1.45 }, altar: { x: 12.6, z: -8.4, y: 1.2, zoom: 1.0 }, bar: { x: 3, z: -7.6, y: 1.0, zoom: 0.95 }, dance: { x: -2, z: 4.5, y: 0.2, zoom: 1.05 },
+  npc: { x: NPC.x, z: NPC.z, y: 1.1, zoom: 1.45 }, altar: { x: 12.6, z: -8.4, y: 1.2, zoom: 1.0 }, thantai: { x: 7.8, z: -8.4, y: 1.0, zoom: 1.05 }, bar: { x: 3, z: -7.6, y: 1.0, zoom: 0.95 }, dance: { x: -2, z: 4.5, y: 0.2, zoom: 1.05 },
   cinema: { x: -9.6, z: -9.0, y: 1.9, zoom: 0.95 }, game: { x: 20.8, z: -4.4, y: 0.9, zoom: 0.95 }, zen: { x: 8.4, z: 2.2, y: 0.4, zoom: 0.92 }, garden: { x: 8, z: 14.2, y: 0.4, zoom: 0.62 },
 };
 
@@ -402,7 +402,10 @@ class Lobby3D {
     }
     if (st.kind === 'kneel') {
       p.zenFx = performance.now() / 1000 + 1.5 + Math.random() * 2;
-      if (p.me && this.opts.onToast) this.opts.onToast('🙏 Thành tâm khấn: cầu không bug, token đầy kho, deadline lùi! Bấm đi chỗ khác là đứng dậy.');
+      p.seatTheme = st.theme || null;
+      if (p.me && this.opts.onToast) this.opts.onToast(st.theme === 'thantai'
+        ? '💰 Thần Tài phù hộ: khách vào như nước, chốt đơn ầm ầm, doanh số x10! Bấm đi chỗ khác là đứng dậy.'
+        : '🙏 Thành tâm khấn: cầu không bug, token đầy kho, deadline lùi! Bấm đi chỗ khác là đứng dậy.');
     }
   }
   walk(p, x, z) {
@@ -720,7 +723,11 @@ class Lobby3D {
       // ghế thường: hông cao ~0,45 m; ngồi thiền / quỳ: hông sát mặt bồ đoàn (thân hạ thấp hơn sàn gốc)
       const rootY = zen ? (p.seatH || 0.2) - 0.4 : kneel ? (p.seatH || 0.09) - 0.32 : seated ? Math.max(0, (p.seatH || 0.45) - 0.45) : 0;
       if (zen && now > (p.zenFx || 0)) { p.zenFx = now + 6 + Math.random() * 5; this.fx(p, ['🧘', '🍃', '✨', '🌿', '☯️', '🕉️'][Math.floor(Math.random() * 6)], 2200); }
-      if (kneel && now > (p.zenFx || 0)) { p.zenFx = now + 5 + Math.random() * 4; this.fx(p, ['🙏', '🙇', '✨', '💰', '🍀'][Math.floor(Math.random() * 5)], 2000); }
+      if (kneel && now > (p.zenFx || 0)) {
+        p.zenFx = now + 5 + Math.random() * 4;
+        const fx = p.seatTheme === 'thantai' ? ['💰', '🧧', '📈', '🐱', '💸', '🛒'] : ['🙏', '🙇', '✨', '💰', '🍀'];
+        this.fx(p, fx[Math.floor(Math.random() * fx.length)], 2000);
+      }
       p.person.root.position.set(p.pos.x, rootY, p.pos.z);
       if (p.person.blob) { p.person.blob.position.y = 0.012 - rootY; p.person.blob.visible = !seated || rootY < 0.05; }
       p.person.root.rotation.y = p.facing;

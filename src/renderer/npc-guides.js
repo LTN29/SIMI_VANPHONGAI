@@ -60,6 +60,7 @@
       { view: 'lobby', place: 'cinema', text: 'Màn chiếu: dán link YouTube để cả quán xem cùng lúc.', target: '#lbCineBtn' },
       { view: 'lobby', place: 'game', text: 'Khu Game: 2 bàn bida chơi được. Bấm vào bàn → chọn người để mời; người kia đồng ý là bàn bida hiện lên.' },
       { view: 'lobby', place: 'altar', text: 'Bàn thờ Tổ nghề AI: bấm vào bồ đoàn vàng trước bàn thờ để quỳ lạy – cầu không bug, token đầy kho 🙏' },
+      { view: 'lobby', place: 'thantai', text: 'Góc Thần Tài cạnh quầy bar: bấm vào bồ đoàn đỏ để quỳ khấn cầu bán hàng chạy, khách vào như nước, chốt đơn ầm ầm 💰' },
       { view: 'lobby', place: 'zen', text: 'Góc Thiền · Dưỡng sinh: bấm vào bồ đoàn để ngồi xếp bằng, nhắm mắt thở chậm – nghỉ mắt vài phút giữa giờ. Bên cạnh có bàn trà và vườn đá.' },
       { view: 'lobby', place: 'garden', text: 'Sân vườn: bàn dù, ghế đá quanh đài phun nước – ngồi nói chuyện với đồng nghiệp.' },
       { view: 'lobby', text: 'Muốn nhìn cả quán: bấm 🗺 Toàn cảnh. Muốn quay về nhân vật của mình: 🎯 Về chỗ mình.', target: '.lb-top .btn[title="Nhìn toàn bộ quán"]' },
