@@ -9,6 +9,7 @@ const { runTask } = require('./orchestrator');
 const accounts = require('./accounts');
 const simi = require('./simi');
 const skillsAdmin = require('./skills');
+const { askFortune } = require('./fortune-ai');
 const { ChatEngine } = require('./chat');
 const { CodexAppServer } = require('./codex-server');
 const { Updater, newer } = require('./updater');
@@ -301,6 +302,7 @@ function registerIpc() {
   const skillsChanged = () => { if (codexServer && !codexServer.active) codexServer.stop(); }; // Codex nạp lại skill ở lượt sau
   const trash = (dir) => shell.trashItem(dir).catch(() => fs.rmSync(dir, { recursive: true, force: true }));
   handle('skills:read', (name) => skillsAdmin.readSkill(name));
+  handle('fortune:ask', (p) => askFortune(p || {})); // 🎋 AI viết quẻ đầu ngày
   handle('skills:save', (p) => { const r = skillsAdmin.saveSkill(p || {}); skillsChanged(); return r; });
   handle('skills:remove', async (name) => { const r = await skillsAdmin.removeSkill(name, trash); skillsChanged(); return r; });
   handle('skills:import', async (paths, overwrite) => {

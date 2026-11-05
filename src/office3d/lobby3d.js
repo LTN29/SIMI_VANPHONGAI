@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { NavGrid } from './nav.js';
 import { Cat } from './cat.js';
 import { Person } from './person.js';
-import { BAR, buildBar, POOL_FELT } from './bar.js';
+import { BAR, buildBar, POOL_FELT, FORTUNE } from './bar.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 
 const ROOM = BAR;
@@ -27,7 +27,7 @@ const NPC_LOOK = { id: 'npc', name: 'Trợ lý SIMI', shirt: '#0a5cc2', pants: '
 const OVERVIEW = { x: 6, z: 4, zoom: 0.31 };
 // các khu trong Sảnh (Trợ lý dẫn đi tham quan: camera bay tới, vòng sáng chỉ vào đúng chỗ)
 const PLACES = {
-  npc: { x: NPC.x, z: NPC.z, y: 1.1, zoom: 1.45 }, altar: { x: 12.6, z: -8.4, y: 1.2, zoom: 1.0 }, thantai: { x: 7.8, z: -8.4, y: 1.0, zoom: 1.05 }, bar: { x: 3, z: -7.6, y: 1.0, zoom: 0.95 }, dance: { x: -2, z: 4.5, y: 0.2, zoom: 1.05 },
+  npc: { x: NPC.x, z: NPC.z, y: 1.1, zoom: 1.45 }, altar: { x: 11.8, z: -8.4, y: 1.2, zoom: 1.0 }, fortune: { x: 8.75, z: -9.2, y: 1.0, zoom: 1.15 }, bar: { x: 3, z: -7.6, y: 1.0, zoom: 0.95 }, dance: { x: -2, z: 4.5, y: 0.2, zoom: 1.05 },
   cinema: { x: -9.6, z: -9.0, y: 1.9, zoom: 0.95 }, game: { x: 20.8, z: -4.4, y: 0.9, zoom: 0.95 }, zen: { x: 8.4, z: 2.2, y: 0.4, zoom: 0.92 }, garden: { x: 8, z: 14.2, y: 0.4, zoom: 0.62 },
 };
 
@@ -247,6 +247,13 @@ class Lobby3D {
     const hit = this.ray(clientX, clientY).intersectObjects(this.pool.map((T) => T.hit), false)[0];
     return hit ? hit.object.userData.poolTable : -1;
   }
+  // vật bấm được trong quán (quầy xin quẻ…) → tên hành động
+  pickAction(clientX, clientY) {
+    const list = this.world.clickables || [];
+    if (!list.length) return null;
+    const hit = this.ray(clientX, clientY).intersectObjects(list, false)[0];
+    return hit ? hit.object.userData.action : null;
+  }
   pickSeat(clientX, clientY) {
     const hit = this.ray(clientX, clientY).intersectObjects(this.world.seatMeshes, false)[0];
     return hit ? this.seats.get(hit.object.userData.seatId) : null;
@@ -288,7 +295,7 @@ class Lobby3D {
       }
       // dò người / ghế dưới chuột tối đa ~12 lần mỗi giây (dò mỗi lần di chuột làm khựng)
       const x = e.clientX, y = e.clientY;
-      const pick = () => { hoverAt = performance.now(); c.style.cursor = this.pickPerson(x, y) || this.pickNpc(x, y) || this.pickCat(x, y) || this.pickTable(x, y) >= 0 || this.pickSeat(x, y) ? 'pointer' : 'crosshair'; };
+      const pick = () => { hoverAt = performance.now(); c.style.cursor = this.pickPerson(x, y) || this.pickNpc(x, y) || this.pickCat(x, y) || this.pickTable(x, y) >= 0 || this.pickAction(x, y) || this.pickSeat(x, y) ? 'pointer' : 'crosshair'; };
       clearTimeout(hoverTimer);
       if (performance.now() - hoverAt > 80) pick(); else hoverTimer = setTimeout(pick, 90);
     });
@@ -299,8 +306,10 @@ class Lobby3D {
         const npc = !p && this.pickNpc(e.clientX, e.clientY);
         const cat = !p && !npc && this.pickCat(e.clientX, e.clientY);
         const table = !p && !npc && !cat ? this.pickTable(e.clientX, e.clientY) : -1;
-        const st = !p && !cat && !npc && table < 0 && this.pickSeat(e.clientX, e.clientY);
-        if (npc) { this.npcWave(); this.opts.onNpcClick && this.opts.onNpcClick(e.clientX, e.clientY); }
+        const action = !p && !npc && !cat && table < 0 ? this.pickAction(e.clientX, e.clientY) : null;
+        const st = !p && !cat && !npc && table < 0 && !action && this.pickSeat(e.clientX, e.clientY);
+        if (action === 'fortune') { this.walkSelf(FORTUNE.x, FORTUNE.z + 0.9, true); this.opts.onFortune && this.opts.onFortune(); }
+        else if (npc) { this.npcWave(); this.opts.onNpcClick && this.opts.onNpcClick(e.clientX, e.clientY); }
         else if (table >= 0) this.opts.onTableClick && this.opts.onTableClick(table, e.clientX, e.clientY);
         else if (cat) this.opts.onCatClick && this.opts.onCatClick(e.clientX, e.clientY);
         else if (p && !p.me) this.opts.onPersonClick && this.opts.onPersonClick(p.m.id, e.clientX, e.clientY);

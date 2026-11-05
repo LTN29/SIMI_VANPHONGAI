@@ -348,6 +348,7 @@
         onCatClick: (x, y) => openCat(x, y),
         onNpcClick: () => window.VPNpc && window.VPNpc.open(),
         onTableClick: (t, x, y) => window.VPPoolUI && window.VPPoolUI.tableMenu(t, x, y),
+        onFortune: () => window.VPFortune && window.VPFortune.open({ me: L.me, share: L.me && L.status.state === 'online' ? (text) => quickSay(text) : null }),
         npcGreeting: () => `Chào ${L.me ? L.me.name : 'bạn'}! Cần giúp gì không? Bấm vào mình nhé 👋`,
         onDance: (style, byMove) => { L.myDance = style; renderDancePick(); if (!byMove && L.status.state === 'online' && L.features.has('dance')) window.vp.lobby.presence({ dance: style }); },
         onFloor: (on) => { L.onFloor = on; renderDancePick(); },

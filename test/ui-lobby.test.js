@@ -157,19 +157,31 @@ run(async () => {
     const monk = await bao.waitFor('member', (d) => d.name === 'Ngọc' && d.avatar && d.avatar.outfit === 'kasaya');
     check(monk.avatar.hairStyle === 'bald', 'mặc áo cà sa SIMI + đầu trọc, đồng nghiệp thấy ngay');
     // bàn thờ Tổ nghề: 4 bồ đoàn quỳ cho người (không còn bot)
-    const kneel = await win.evaluate(() => [...window.__lobby.seats.values()].filter((s) => s.kind === 'kneel').reduce((n, s) => ({ ...n, [s.theme || 'altar']: (n[s.theme || 'altar'] || 0) + 1 }), {}));
-    check(kneel.altar === 15 && kneel.thantai === 6, 'bàn thờ Tổ nghề 15 bồ đoàn + góc Thần Tài 6 bồ đoàn quỳ');
+    const kneel = await win.evaluate(() => [...window.__lobby.seats.values()].filter((s) => s.kind === 'kneel').map((s) => s.theme || 'khac'));
+    check(kneel.length === 25 && kneel.every((t) => t === 'thantai'), 'bàn thờ Thần Tài cầu nhiều đơn có 25 bồ đoàn quỳ (5 hàng)');
     const stools = await win.evaluate(() => [...window.__lobby.seats.keys()].filter((id) => /^b\d+$/.test(id)).length);
     check(stools === 4, 'quầy bar thu gọn còn 4 ghế cao');
-    await win.evaluate(() => window.__lobby.sitSelf('k2'));
-    await win.waitForFunction(() => { const p = window.__lobby.self(); return p.sitting && p.seatKind === 'kneel'; }, null, { timeout: 60000 });
-    await win.waitForTimeout(1200); await shot('03c-altar');
-    check(true, 'bấm bồ đoàn → đi tới quỳ lạy trước bàn thờ');
-    await win.evaluate(() => window.__lobby.sitSelf('tt2'));
-    await win.waitForFunction(() => { const p = window.__lobby.self(); return p.sitting && p.seat === 'tt2' && p.seatTheme === 'thantai'; }, null, { timeout: 60000 });
-    await win.keyboard.press('Escape'); await win.evaluate(() => { document.querySelectorAll('.npc-panel, .npc-pop').forEach((n) => n.remove()); window.__lobby.lookAt('thantai'); });
-    await win.waitForTimeout(1800); await shot('03d-thantai');
-    check(true, 'quỳ khấn ở góc Thần Tài cầu bán hàng chạy');
+    await win.evaluate(() => window.__lobby.sitSelf('k22'));
+    await win.waitForFunction(() => { const p = window.__lobby.self(); return p.sitting && p.seatKind === 'kneel' && p.seatTheme === 'thantai'; }, null, { timeout: 60000 });
+    await win.keyboard.press('Escape'); await win.evaluate(() => window.__lobby.lookAt('altar'));
+    await win.waitForTimeout(1800); await shot('03c-altar');
+    check(true, 'bấm bồ đoàn → đi tới quỳ khấn trước bàn thờ Thần Tài');
+    // ống xin quẻ: bấm vào → lắc 3 lần → que rơi → hiện quẻ; mỗi ngày 1 quẻ
+    check(await win.evaluate(() => (window.__lobby.world.clickables || []).some((m) => m.userData.action === 'fortune')), 'có ống xin quẻ bấm được cạnh bàn thờ');
+    check(await win.evaluate(() => window.VPFortune.count) === 30, 'có 30 quẻ thông điệp may mắn');
+    await win.evaluate(() => window.__lobby.opts.onFortune());
+    await win.waitForSelector('.fq-shake');
+    await win.click('.fq-shake');
+    await win.waitForTimeout(700); await shot('03d-fortune-shake');
+    await win.waitForSelector('.fq-card:not([hidden]) .fq-no', { timeout: 8000 });
+    const que = await win.locator('.fq-no').innerText();
+    await shot('03e-fortune');
+    check(/^Quẻ số \d+ · \S/.test(que), 'lắc 3 lần → que rơi ra → hiện quẻ (' + que + ')');
+    await win.click('#modalClose');
+    await win.evaluate(() => window.__lobby.opts.onFortune());
+    await win.waitForSelector('.fq-card:not([hidden]) .fq-no');
+    check(await win.locator('.fq-shake').count() === 0 && (await win.locator('.fq-no').innerText()) === que, 'hôm nay đã xin quẻ → xem lại đúng quẻ cũ, mai mới lắc được');
+    await win.click('#modalClose');
     await win.evaluate(() => window.__lobby.focusSelf());
 
     // di chuyển + biểu cảm của đồng nghiệp

@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('vp', {
     install: () => ipcRenderer.invoke('simi:install'),
     update: () => ipcRenderer.invoke('simi:update'),
   },
+  fortune: { ask: (p) => ipcRenderer.invoke('fortune:ask', p) },
   skills: {
     read: (name) => ipcRenderer.invoke('skills:read', name),
     save: (p) => ipcRenderer.invoke('skills:save', p),
