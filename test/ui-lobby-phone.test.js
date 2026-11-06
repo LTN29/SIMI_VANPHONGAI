@@ -47,12 +47,12 @@ run(async () => {
     // máy tính thấy điện thoại vừa đăng nhập, có nút đăng xuất từ xa
     await win.waitForSelector('#modal .ph-dev', { timeout: 10000 });
     check((await win.locator('#modal .ph-devs').innerText()).includes('iPhone'), 'máy tính hiện điện thoại đã đăng nhập');
-    await pg.click('.tabs button:nth-child(2)');
+    await pg.click('.tabs button:has-text("Tin nhắn")');
     check((await pg.locator('.top small').innerText()).includes('Ngọc'), 'điện thoại vào Sảnh dưới tên người dùng máy tính');
-    await pg.click('.tabs button:nth-child(3)');
+    await pg.click('.tabs button:has-text("Online")');
     await pg.waitForSelector('.row >> text=Bảo');
     check(true, 'điện thoại thấy đồng nghiệp đang online');
-    await pg.click('.tabs button:nth-child(2)');
+    await pg.click('.tabs button:has-text("Tin nhắn")');
     await pg.click('.row >> text=Cả công ty');
     await pg.fill('#compose textarea', 'Chào cả nhà, em nhắn từ điện thoại 📱');
     await pg.click('.send');

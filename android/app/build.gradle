@@ -1,0 +1,43 @@
+// App Android "Văn Phòng AI": vỏ WebView mở trang điện thoại của SIMI Gateway (/m) – Sảnh 3D, Chat AI, Tin nhắn.
+// Giao diện tải từ Gateway nên cập nhật Gateway là điện thoại có bản mới, không cần cài lại APK.
+plugins { id "com.android.application" }
+
+def keyProps = new Properties()
+def keyFile = rootProject.file("keystore.properties") // ngoài repo (xem android/README.md)
+if (keyFile.exists()) keyFile.withInputStream { keyProps.load(it) }
+def gatewayUrl = (project.findProperty("gatewayUrl") ?: "https://ai.simi.vn").toString().replaceAll('/+$', '')
+
+android {
+    namespace "vn.simi.vanphongai"
+    compileSdk 35
+    defaultConfig {
+        applicationId "vn.simi.vanphongai"
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName "1.0.0"
+        buildConfigField "String", "GATEWAY_URL", "\"${gatewayUrl}\""
+        manifestPlaceholders = [gatewayHost: new URI(gatewayUrl).host]
+    }
+    buildFeatures { buildConfig true }
+    signingConfigs {
+        release {
+            if (keyProps["storeFile"]) {
+                storeFile rootProject.file(keyProps["storeFile"])
+                storePassword keyProps["storePassword"]
+                keyAlias keyProps["keyAlias"]
+                keyPassword keyProps["keyPassword"]
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keyProps["storeFile"] ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

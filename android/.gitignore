@@ -1,0 +1,10 @@
+# bản build + khoá ký APK (BÍ MẬT, không đưa lên repo)
+.gradle/
+build/
+app/build/
+local.properties
+keystore.properties
+*.jks
+*.keystore
+release-key/
+*.apk
