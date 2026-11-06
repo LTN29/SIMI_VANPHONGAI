@@ -6,7 +6,7 @@
 .viewtabs .vt-dot { position: absolute; top: 4px; right: 5px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s infinite; }
 body.in-chat .status { display: none; }
 
-.chatview { height: calc(100% - 60px); display: grid; grid-template-columns: 286px 1fr; background: var(--bg); }
+.chatview { --side-w: 286px; height: calc(100% - 60px); display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); background: var(--bg); transition: grid-template-columns .18s ease; }
 .ch-side { display: flex; flex-direction: column; gap: 10px; padding: 14px 12px 12px; background: var(--panel); border-right: 1px solid var(--line); min-height: 0; }
 .ch-new { width: 100%; padding: 10px; font-size: 14px; }
 .ch-search { border: 1.5px solid var(--line); background: var(--input); border-radius: 11px; padding: 7px 11px; outline: none; }
@@ -182,7 +182,7 @@ body.in-chat .status { display: none; }
 .mbody .md th { background: var(--panel2); }
 
 /* ---------- màn hình hẹp ---------- */
-@media (max-width: 1280px) { .chatview { grid-template-columns: 250px 1fr; } .qskills { grid-template-columns: repeat(2, 1fr); } .viewtabs button span { display: none; } }
+@media (max-width: 1280px) { .chatview { --side-w: 250px; } .qskills { grid-template-columns: repeat(2, 1fr); } .viewtabs button span { display: none; } }
 @media (max-width: 1200px) { .ch-bar .cs { max-width: 150px; } .ch-bar .cs.small { max-width: 110px; } }
 
 /* liên thông ChatGPT Work */
@@ -363,10 +363,10 @@ body.in-chat .status { display: none; }
 @media (max-width: 640px) { .skm-row { flex-wrap: wrap; } .skm-act { width: 100%; justify-content: flex-end; } }
 
 /* 🌐 Trình duyệt cạnh khung chat (trang web là lớp riêng của app, đặt khít vào .cbw-host) */
-.chatview.with-browser { --cbw-w: 46vw; grid-template-columns: 286px minmax(360px, 1fr) 6px var(--cbw-w); }
+.chatview.with-browser { --cbw-w: 46vw; grid-template-columns: var(--side-w) minmax(360px, 1fr) 6px var(--cbw-w); }
 .chatview.with-browser > .ch-main { min-width: 0; }
 .chatview.with-browser .ch-bar .cb .cbl { display: none; }
-@media (max-width: 1280px) { .chatview.with-browser { grid-template-columns: minmax(340px, 1fr) 6px var(--cbw-w); } .chatview.with-browser > .ch-side { display: none; } }
+
 .cbw-split { cursor: col-resize; background: var(--line); position: relative; }
 .cbw-split::after { content: ''; position: absolute; left: 2px; top: 50%; width: 2px; height: 34px; margin-top: -17px; border-radius: 2px; background: var(--line2); }
 .cbw-split:hover, body.cbw-dragging .cbw-split { background: var(--accent2); }
@@ -399,3 +399,24 @@ body.cbw-dragging { cursor: col-resize; user-select: none; }
 .cbw-marks { display: flex; gap: 5px; padding: 5px 8px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .cbw-mark { flex: none; border: 1px solid var(--line); background: var(--panel2); color: var(--text); border-radius: 999px; padding: 3px 10px; font-size: 11.5px; font-weight: 600; cursor: pointer; }
 .cbw-mark:hover { border-color: var(--accent2); color: var(--accent); }
+
+/* ⇤ thu gọn cột danh sách đoạn chat: còn dải hẹp với nút mở rộng + đoạn chat mới (màn nhỏ mà mở trình duyệt thì tự thu gọn) */
+.ch-side-top { display: flex; gap: 6px; align-items: stretch; }
+.ch-side-top .ch-new { flex: 1; width: auto; min-width: 0; }
+.ch-fold { flex: none; width: 34px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); color: var(--muted); font-size: 16px; font-weight: 700; cursor: pointer; }
+.ch-fold:hover { color: var(--accent); border-color: var(--accent2); }
+.chatview.side-mini { --side-w: 58px; }
+.chatview.side-mini .ch-side { padding: 12px 8px; align-items: center; overflow: hidden; }
+.chatview.side-mini .ch-side > :not(.ch-side-top) { display: none; }
+.chatview.side-mini .ch-side-top { flex-direction: column-reverse; gap: 8px; }
+.chatview.side-mini .ch-new { flex: none; width: 40px; height: 40px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.chatview.side-mini .ch-new-t { display: none; }
+.chatview.side-mini .ch-fold { width: 40px; height: 34px; }
+@media (max-width: 1280px) {
+  .chatview.with-browser { --side-w: 58px; }
+  .chatview.with-browser .ch-side { padding: 12px 8px; align-items: center; overflow: hidden; }
+  .chatview.with-browser .ch-side > :not(.ch-side-top) { display: none; }
+  .chatview.with-browser .ch-side-top { flex-direction: column-reverse; gap: 8px; }
+  .chatview.with-browser .ch-new { flex: none; width: 40px; height: 40px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+  .chatview.with-browser .ch-new-t, .chatview.with-browser .ch-fold { display: none; }
+}

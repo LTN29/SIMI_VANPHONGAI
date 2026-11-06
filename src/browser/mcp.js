@@ -31,6 +31,23 @@ const TOOLS = [
   { name: 'browser_act', title: 'Thao tác trang', description: 'Thực hiện liên tiếp nhiều thao tác như người thật (con trỏ SIMI di chuyển, bấm, gõ tiếng Việt, chọn, cuộn, nhấn phím, chờ, chờ tệp tải về – wait_download trả đường dẫn tệp trong thư mục Tải xuống) trong 1 lần gọi, rồi trả về trang sau khi làm. Gộp các bước biết trước (vd điền cả form rồi bấm Gửi) vào cùng một lần gọi.', inputSchema: { type: 'object', properties: { actions: { type: 'array', items: ACT_ITEM, minItems: 1, maxItems: 30 }, snapshot: { type: 'boolean', description: 'false: không trả lại trang sau khi làm.' }, max_chars: { type: 'integer' } }, required: ['actions'], additionalProperties: false } },
   { name: 'browser_read', title: 'Đọc chữ trang', description: 'Lấy toàn bộ chữ của trang đang mở (bài viết, bảng giá, kết quả tìm kiếm…).', inputSchema: { type: 'object', properties: { max_chars: { type: 'integer' } }, additionalProperties: false } },
   { name: 'browser_screenshot', title: 'Chụp trang', description: 'Ảnh chụp trang đang mở – chỉ dùng khi cần nhìn bố cục / hình ảnh (canvas, biểu đồ, captcha…); việc thường dùng browser_snapshot.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'design_render', title: 'Xuất thiết kế thành ảnh', description: [
+    'Thiết kế ảnh đẹp kiểu Claude Desktop: bạn viết 1 trang HTML / CSS / SVG đúng khổ ảnh, app dựng rồi xuất PNG / JPG (nét gấp 2) hoặc PDF, trả ảnh xem trước + cảnh báo chữ tràn để bạn tự soát. Dùng cho mọi ảnh có chữ / bố cục: poster, banner, bài đăng MXH, thumbnail, infographic, thiệp, menu, chứng nhận, slide ảnh, logo chữ, ảnh quảng cáo sản phẩm – chữ tiếng Việt luôn đúng dấu, đúng màu thương hiệu (model tạo ảnh hay viết sai chữ).',
+    'Cách làm cho đẹp: 1 ý chính + 1 điểm nhấn lớn; lưới căn lề rõ, lề ≥ 6% cạnh; tối đa 2 font, 3–5 màu, tương phản chữ cao; tiêu đề to đậm, chữ phụ nhỏ hơn hẳn; khoảng trắng thoáng; trang trí bằng SVG inline / gradient / hình khối / hoạ tiết tự vẽ, không dùng ảnh mẫu giả hay lorem ipsum.',
+    'Font Google có tiếng Việt (link fonts.googleapis.com/css2): Be Vietnam Pro, Montserrat, Inter, Lexend, Nunito, Roboto, Playfair Display, Lora, Noto Serif, Dancing Script, Pacifico, Bungee; luôn có font dự phòng (Arial, sans-serif).',
+    'Ảnh chụp / tranh: ảnh có sẵn hoặc ảnh tạo bằng image_generate (không có chữ) → đặt làm nền / khung trong HTML bằng đường dẫn tuyệt đối (file:///C:/…) hoặc tên file cùng thư mục với file kết quả, rồi phủ chữ + hình khối lên.',
+    'Khổ hay dùng (px): bài đăng 1080×1080 hoặc 1080×1350, story / reels 1080×1920, ảnh bìa Facebook 1640×624 (hoặc 820×312), thumbnail YouTube 1280×720, banner web 1920×600, slide 1920×1080, A4 dọc 794×1123 (xuất .pdf để in).',
+    'Sau khi xuất: NHÌN ảnh xem trước, sửa chữ tràn / chồng / lệch / thiếu tương phản rồi render lại cùng đường dẫn (tối đa 3 vòng). Nhiều ảnh (carousel, bộ banner) thì gọi nhiều lần, mỗi ảnh 1 file.',
+  ].join(' '), inputSchema: { type: 'object', properties: {
+    html: { type: 'string', description: 'Trang HTML hoàn chỉnh (có <style>, <link> font Google, SVG…). Khung html/body tự đặt đúng width×height, overflow ẩn – thiết kế vừa khít khung.' },
+    html_path: { type: 'string', description: 'Hoặc đường dẫn file .html đã viết sẵn (ảnh tương đối tính theo thư mục file đó).' },
+    path: { type: 'string', description: 'File kết quả (đường dẫn tuyệt đối trong thư mục làm việc), đuôi .png / .jpg / .pdf.' },
+    width: { type: 'integer', description: 'Rộng (px CSS), mặc định 1080.' },
+    height: { type: 'integer', description: 'Cao (px CSS), mặc định 1080.' },
+    scale: { type: 'number', description: 'Độ nét PNG / JPG (1–4, mặc định 2 → ảnh 2160px cho khung 1080).' },
+    transparent: { type: 'boolean', description: 'PNG nền trong suốt (logo, sticker): body không đặt màu nền.' },
+    wait_ms: { type: 'integer', description: 'Chờ thêm trước khi chụp (hiệu ứng CSS), mặc định 150.' },
+  }, additionalProperties: false } },
   { name: 'browser_tabs', title: 'Tab', description: 'Xem / mở / chuyển / đóng tab của trình duyệt cạnh chat.', inputSchema: { type: 'object', properties: { action: { type: 'string', enum: ['list', 'new', 'switch', 'close'] }, id: { type: 'string' }, url: { type: 'string' } }, additionalProperties: false } },
 ];
 

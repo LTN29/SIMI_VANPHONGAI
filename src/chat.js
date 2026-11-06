@@ -20,6 +20,7 @@ const CHAT_GUIDE = [
   'Ưu tiên tốc độ: việc chỉ cần chữ (dịch, tóm tắt, viết lại, soạn thảo, giải thích, trả lời câu hỏi) thì trả lời thẳng ngay trong chat ở 1 lượt – không mở skill, không chạy lệnh, không tìm file, không tạo file trừ khi người dùng yêu cầu file. Ảnh và PDF đính kèm: đọc trực tiếp, không chạy OCR bằng script.',
   'Tìm web, đọc trang công khai, tạo / sửa ảnh, chép lời file ghi âm / video: gọi thẳng công cụ MCP simi_browser web_search / web_fetch / image_generate / audio_transcribe (mỗi việc 1 lần gọi, chạy ngoài sandbox) thay cho tự chạy khối lệnh trong skill hay tự viết code; chỉ dùng khối lệnh khi phiên không có các công cụ này.',
   'Chỉnh ảnh có sẵn mà phải giữ đúng chi tiết (làm nét, chỉnh sáng / màu, cắt, xoay, xoá / viết lại chữ, logo bị mờ, che vùng, chèn logo): dùng simi_browser image_retouch (vài giây, chạy trên máy), không dùng model tạo ảnh (vẽ lại cả ảnh, chậm, sai chi tiết) và không tự viết script Python.',
+  'Ảnh có chữ / bố cục (poster, banner, bài đăng MXH, thumbnail, infographic, thiệp, menu, chứng nhận, logo chữ, ảnh quảng cáo): ưu tiên tự thiết kế bằng HTML / CSS / SVG rồi gọi vp_browser design_render (chữ tiếng Việt đúng 100%, nét, đúng màu, sửa được) – xem ảnh xem trước, chỉnh tới khi đẹp. Cần ảnh chụp / tranh vẽ chân thực thì image_generate tạo phần ảnh KHÔNG chữ rồi đặt làm nền trong HTML và phủ chữ bằng design_render.',
   'Tạo ảnh: viết prompt tiếng Anh chi tiết (chủ thể, bố cục, phong cách, ánh sáng, màu; chữ trong ảnh giữ tiếng Việt trong ngoặc kép, thật ngắn) – yêu cầu chung chung thì tự bổ sung chi tiết cho đẹp, không chuyển nguyên câu ngắn của người dùng.',
   'Thao tác trên trang web (mở trang cho người dùng xem, điền form, đăng / sửa nội dung, bấm nút, trang cần đăng nhập): ưu tiên MCP vp_browser khi có – trình duyệt hiện ngay cạnh khung chat, người dùng nhìn thấy và đã đăng nhập sẵn. Quy trình: browser_open → đọc danh sách [eN] → browser_act gộp nhiều bước (gõ, chọn, bấm) trong 1 lần gọi → xem trang trả về; chỉ browser_screenshot khi cần nhìn hình; phần tử không có mã thì browser_act click theo x, y trên ảnh đó. Trang đang mở trong khung này TUYỆT ĐỐI không dùng vp_computer / Computer Use (toạ độ màn hình khác toạ độ trang, bấm sẽ trượt). Trang đòi đăng nhập / mã OTP / captcha: dừng lại nhờ người dùng tự làm trong khung trình duyệt rồi làm tiếp, không tự nhập mật khẩu. Trước khi bấm nút gửi / đăng / thanh toán / xoá thật: hỏi người dùng xác nhận trừ khi họ đã yêu cầu rõ.',
   'Canva (thiết kế, poster, banner, slide, bài đăng MXH theo mẫu Canva): làm bằng vp_browser trên https://www.canva.com – người dùng đăng nhập Canva sẵn trong khung trình duyệt. Chưa đăng nhập → nhờ họ bấm 🎨 Canva trên khung trình duyệt và đăng nhập (nếu Google chặn đăng nhập trong app thì dùng email + mã Canva gửi về). Cách làm nhanh: tìm mẫu bằng ô tìm kiếm của Canva → mở mẫu → sửa chữ (double_click khối chữ, Ctrl+A rồi gõ) → đổi ảnh / màu khi được yêu cầu → Chia sẻ → Tải xuống (chọn PNG / PDF / MP4) → browser_act wait_download lấy đường dẫn tệp và báo cho người dùng. Gửi kèm link thiết kế (URL đang mở) để họ tự chỉnh tiếp.',
@@ -33,6 +34,14 @@ const SCRATCH_DIR = /[\\/](?:tmp|temp|_tmp|scratch|nhap|_nhap|__pycache__)[\\/]/
 
 // cách tạo file tài liệu tiếng Việt không lỗi font (lỗi hay gặp: PDF dùng font có sẵn Helvetica/Times → ô vuông,
 // chữ dấu tách rời NFD → mất dấu, CSV không BOM → Excel hiện "Há»� tÃªn", PowerShell Set-Content/Out-File → ? hoặc UTF-16)
+// Claude không có model tạo ảnh riêng: ảnh "xịn" như Claude Desktop là ảnh tự thiết kế bằng code rồi xuất ra
+const CLAUDE_DESIGN = [
+  'Bạn là Claude: tạo ảnh / thiết kế theo cách của Claude Desktop – tự thiết kế bằng HTML / CSS / SVG (có thể cả hoạ tiết, minh hoạ vector, biểu đồ) rồi xuất bằng vp_browser design_render, không chuyển việc cho model tạo ảnh khi ảnh chủ yếu là chữ, bố cục, đồ hoạ phẳng, biểu tượng, sơ đồ.',
+  'Làm như nhà thiết kế: chốt mục đích + người xem + khổ ảnh; chọn 1 phong cách rõ ràng hợp chủ đề (tối giản, sang trọng, trẻ trung, Tết, công nghệ…); bảng màu 3–5 màu có màu thương hiệu nếu biết; cặp font tiêu đề / nội dung; dựng bố cục lưới; thêm chi tiết đồ hoạ SVG tự vẽ cho có chiều sâu (bóng đổ mềm, gradient, hình khối, hoạ tiết nền nhẹ).',
+  'Xuất xong luôn nhìn ảnh xem trước và tự chấm như giám khảo thiết kế (căn lề, cân đối, cỡ chữ, tương phản, khoảng trắng, chữ đúng dấu) → sửa → xuất lại cùng file; chỉ báo xong khi ảnh thật sự đẹp. Người dùng không nói khổ thì chọn khổ hợp nơi đăng và nói rõ.',
+  'Chỉ dùng image_generate cho phần ảnh chụp / tranh vẽ chân thực (người, sản phẩm thật, phong cảnh) – prompt tiếng Anh, không chữ – rồi ghép vào thiết kế HTML.',
+].join('\n');
+
 function docGuide(f = {}) {
   const font = (label, p) => (p ? `${label}: ${p}` : '');
   const have = [font('chữ thường', f.sans), font('chữ đậm', f.sansBold), font('kiểu Times', f.serif), font('Times đậm', f.serifBold)].filter(Boolean);
@@ -120,7 +129,7 @@ function stepFromItem(it) {
       return { sk: 'cmd', title: shownCmd(it.command) || 'Chạy lệnh', output: String(it.aggregated_output ?? it.aggregatedOutput ?? '').slice(-4000), exit: it.exit_code ?? it.exitCode, status };
     case 'mcp_tool_call':
     case 'dynamic_tool_call':
-      return { sk: 'tool', server: it.server || it.namespace || '', title: [TOOL_SHORT[it.server] || it.server || it.namespace, it.server === VPC ? vpcLabel(it.tool, it.arguments) : it.tool].filter(Boolean).join(' · ') || 'Công cụ', output: it.error ? String(it.error.message || JSON.stringify(it.error)).slice(0, 800) : '', status: it.error ? 'failed' : status };
+      return { sk: 'tool', server: it.server || it.namespace || '', title: [TOOL_SHORT[it.server] || it.server || it.namespace, it.server === VPC ? vpcLabel(it.tool, it.arguments) : it.tool === 'design_render' ? '🎨 Xuất thiết kế ' + String((it.arguments && it.arguments.path) || '').split(/[\\/]/).pop() : it.tool].filter(Boolean).join(' · ') || 'Công cụ', output: it.error ? String(it.error.message || JSON.stringify(it.error)).slice(0, 800) : '', status: it.error ? 'failed' : status, ...(it.tool === 'design_render' && !it.error && status === 'completed' && it.arguments && it.arguments.path ? { files: [String(it.arguments.path)] } : {}) };
     case 'web_search':
       return { sk: 'web', title: it.query || 'Tìm trên web', status };
     case 'file_change': {
@@ -897,7 +906,7 @@ class ChatEngine {
         const gen = await srv.start();
         const cu = await this.computerUse();
         try { fs.mkdirSync(SCRATCH, { recursive: true }); } catch { /* bỏ qua */ }
-        const guide = CHAT_GUIDE + '\n' + docGuide(vietFonts()) + '\n' + computerGuide({ native: !!(cu && cu.native), enabled: this.getConfig().computerControl !== false });
+        const guide = CHAT_GUIDE + (/claude|opus|sonnet|haiku/i.test(set.model || '') ? '\n' + CLAUDE_DESIGN : '') + '\n' + docGuide(vietFonts()) + '\n' + computerGuide({ native: !!(cu && cu.native), enabled: this.getConfig().computerControl !== false });
         const threadOpts = { cwd: dir, model: set.model, modelProvider: set.modelProvider, approvalPolicy: set.approvalPolicy, sandbox: set.sandbox, config: { ...set.config, ...this.extraConfig() }, developerInstructions: guide };
         if (t.codexThread && !srv.loaded.has(t.codexThread)) {
           try {
@@ -1127,4 +1136,4 @@ class ChatEngine {
   }
 }
 
-module.exports = { cmdProgram, askKey, docGuide, isScratch, collectFiles, SCRATCH, ChatEngine };
+module.exports = { cmdProgram, askKey, docGuide, isScratch, collectFiles, stepFromItem, SCRATCH, ChatEngine };

@@ -368,6 +368,7 @@ class BrowserPane {
   }
 
   async call(tool, args = {}) {
+    if (tool === 'design_render') { this.emit({ type: 'toast', text: '🎨 SIMI đang xuất thiết kế…' }); return require('./design').render(args); }
     await this.ensureShown();
     switch (tool) {
       case 'browser_open': {

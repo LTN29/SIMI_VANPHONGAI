@@ -46,7 +46,9 @@
     $('.topbar .brands') ? $('.topbar .brands').after(tabs) : $('.topbar .brand').after(tabs);
 
     const side = el('aside', { class: 'ch-side' },
-      el('button', { class: 'btn primary ch-new', onclick: () => newThread() }, icon('plus'), 'Đoạn chat mới'),
+      el('div', { class: 'ch-side-top' },
+        el('button', { class: 'btn primary ch-new', title: 'Đoạn chat mới', onclick: () => newThread() }, icon('plus'), el('span', { class: 'ch-new-t', text: 'Đoạn chat mới' })),
+        el('button', { class: 'ch-fold', id: 'chFold', title: 'Thu gọn danh sách đoạn chat', 'aria-label': 'Thu gọn danh sách đoạn chat', onclick: () => foldSide() }, '«')),
       el('input', { class: 'ch-search', id: 'chSearch', placeholder: 'Tìm đoạn chat…', oninput: renderSide }),
       el('div', { class: 'ch-list', id: 'chList' }),
       el('div', { class: 'ch-ext', id: 'chExt' }),
@@ -72,6 +74,7 @@
           el('button', { class: 'ch-send', id: 'chSend', title: 'Gửi (Enter)', onclick: sendOrStop }, icon('send')))));
     const view = el('main', { class: 'chatview hidden', id: 'chatView' }, side, main);
     $('main.layout').after(view);
+    try { if (localStorage.getItem('vp.chatSideMini') === '1') foldSide(true); } catch { /* bỏ qua */ }
 
     const ta = $('#chInput');
     ta.addEventListener('input', onInput);
@@ -140,6 +143,16 @@
     const recent = (g) => (g.items[0] ? g.items[0].updatedAt : 0);
     const [chung, ...rest] = [...groups.values()];
     return [chung, ...rest.sort((a, b) => recent(b) - recent(a))];
+  }
+
+  // thu gọn / mở rộng cột danh sách đoạn chat (nhớ cho lần sau) – chừa chỗ cho khung chat / trình duyệt
+  function foldSide(on) {
+    const view = $('#chatView'); if (!view) return;
+    const mini = on === undefined ? !view.classList.contains('side-mini') : !!on;
+    view.classList.toggle('side-mini', mini);
+    const b = $('#chFold'); if (b) { b.textContent = mini ? '»' : '«'; b.title = mini ? 'Mở rộng danh sách đoạn chat' : 'Thu gọn danh sách đoạn chat'; b.setAttribute('aria-label', b.title); }
+    try { localStorage.setItem('vp.chatSideMini', mini ? '1' : '0'); } catch { /* bỏ qua */ }
+    if (window.VPBrowser) window.VPBrowser.sync();
   }
 
   function renderSide() {

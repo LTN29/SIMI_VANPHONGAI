@@ -51,7 +51,31 @@ run(async () => {
   const init = await rpc(mcp, { id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
   check(init.result.serverInfo.name === 'vp_browser' && /đăng nhập/.test(init.result.instructions), 'MCP vp_browser khởi động, có hướng dẫn cho AI');
   const list = await rpc(mcp, { id: 2, method: 'tools/list' });
-  check(list.result.tools.map((t) => t.name).join() === 'browser_open,browser_snapshot,browser_act,browser_read,browser_screenshot,browser_tabs', 'đủ 6 công cụ trình duyệt');
+  check(list.result.tools.map((t) => t.name).join() === 'browser_open,browser_snapshot,browser_act,browser_read,browser_screenshot,design_render,browser_tabs', 'đủ 7 công cụ (6 trình duyệt + xuất thiết kế)');
+
+  // 🎨 thiết kế kiểu Claude Desktop: HTML → PNG nét gấp 2 / PDF, cảnh báo chữ tràn, PNG trong suốt
+  check(list.result.tools.some((t) => t.name === 'design_render' && /Claude Desktop/.test(t.description)), 'có công cụ design_render');
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vp-design-out-'));
+  const poster = `<!doctype html><html><head><style>body{background:linear-gradient(135deg,#0b3d91,#1e88e5);font-family:Arial,sans-serif;color:#fff}
+    h1{position:absolute;left:80px;top:120px;margin:0;font-size:96px;line-height:1.05}p{position:absolute;left:80px;bottom:100px;margin:0;font-size:40px}
+    svg{position:absolute;right:60px;top:60px}</style></head><body><h1>Siêu sale<br>11.11</h1><p>Giảm đến 50% – UNIQ Việt Nam</p>
+    <svg width="220" height="220"><circle cx="110" cy="110" r="100" fill="#ffd54f"/><text x="110" y="128" font-size="48" text-anchor="middle" fill="#0b3d91" font-weight="700">-50%</text></svg></body></html>`;
+  const t1 = Date.now();
+  const d1 = await rpc(mcp, { id: 21, method: 'tools/call', params: { name: 'design_render', arguments: { html: poster, path: path.join(outDir, 'poster.png'), width: 1080, height: 1080 } } });
+  const posterPng = fs.readFileSync(path.join(outDir, 'poster.png'));
+  check(!d1.result.isError && posterPng.readUInt32BE(16) === 2160 && posterPng.readUInt32BE(20) === 2160, `design_render → PNG 2160×2160 nét gấp 2 (${Date.now() - t1} ms)`);
+  check(d1.result.content[1].type === 'image' && /Không thấy chữ tràn/.test(d1.result.content[0].text), 'trả ảnh xem trước để AI tự soát, không cảnh báo khi bố cục ổn');
+  check(!(await win.locator('#chBrowser:not(.hidden)').count()), 'xuất thiết kế không bật khung trình duyệt');
+  const px = await app.evaluate(({ nativeImage }, f) => { const b = nativeImage.createFromPath(f).toBitmap(); const sz = nativeImage.createFromPath(f).getSize(); const at = (x, y) => { const i = (y * sz.width + x) * 4; return [b[i + 2], b[i + 1], b[i], b[i + 3]]; }; return { corner: at(5, 5), badge: at(Math.round(sz.width * 0.82), Math.round(sz.height * 0.08)) }; }, path.join(outDir, 'poster.png'));
+  check(px.corner[2] > 100 && px.corner[0] < 60 && px.badge[0] > 200 && px.badge[1] > 170, 'màu nền gradient + huy hiệu SVG vàng đúng chỗ');
+  const d2 = await rpc(mcp, { id: 22, method: 'tools/call', params: { name: 'design_render', arguments: { html: '<div style="position:absolute;left:600px;top:40px;font-size:120px;white-space:nowrap">Chữ quá dài tràn ra ngoài</div><div style="width:200px;height:40px;overflow:hidden;font-size:30px">Hộp nhỏ chứa quá nhiều chữ sẽ bị cắt mất</div><p style="position:absolute;left:40px;top:200px;margin:0;font-size:36px">Khẩu hiệu bị huy hiệu che</p><div class="badge" style="position:absolute;left:220px;top:180px;width:120px;height:120px;border-radius:50%;background:#e53935"></div>', path: path.join(outDir, 'loi.png'), width: 800, height: 400, scale: 1 } } });
+  check(/chữ ra ngoài khung: div "Chữ quá dài/.test(d2.result.content[0].text) && /chữ bị cắt \(tràn hộp\)/.test(d2.result.content[0].text) && /chữ bị div\.badge đè lên: p "Khẩu hiệu/.test(d2.result.content[0].text), 'cảnh báo chữ ra ngoài khung / bị cắt / bị khối khác đè để AI sửa');
+  const d3 = await rpc(mcp, { id: 23, method: 'tools/call', params: { name: 'design_render', arguments: { html: '<h1 style="font:700 48px Arial;margin:60px">Giấy chứng nhận – Nguyễn Văn Ánh</h1>', path: path.join(outDir, 'chung-nhan.pdf'), width: 1123, height: 794 } } });
+  check(!d3.result.isError && fs.readFileSync(path.join(outDir, 'chung-nhan.pdf')).subarray(0, 4).toString() === '%PDF', 'xuất PDF (in được, chữ vector)');
+  await rpc(mcp, { id: 24, method: 'tools/call', params: { name: 'design_render', arguments: { html: '<div style="margin:40px;width:120px;height:120px;border-radius:50%;background:#e53935"></div>', path: path.join(outDir, 'logo.png'), width: 200, height: 200, scale: 1, transparent: true } } });
+  const alpha = await app.evaluate(({ nativeImage }, f) => { const im = nativeImage.createFromPath(f); const b = im.toBitmap(); const w = im.getSize().width; return [b[3], b[(100 * w + 100) * 4 + 3]]; }, path.join(outDir, 'logo.png'));
+  check(alpha[0] === 0 && alpha[1] === 255, 'PNG nền trong suốt cho logo / sticker');
+  fs.rmSync(outDir, { recursive: true, force: true });
 
   // AI mở trang khi người dùng đang ở Văn phòng → tự chuyển sang Chat và mở khung bên phải
   const t0 = Date.now();
@@ -137,6 +161,21 @@ run(async () => {
   await new Promise((r) => setTimeout(r, 200));
   check(/Trình duyệt cạnh chat/.test(await win.locator('.tools-pop').innerText()), '🧰 Công cụ có mục "Trình duyệt cạnh chat"');
   await win.mouse.click(400, 300);
+  // thu gọn cột danh sách đoạn chat → khung chat rộng ra, trang web vẫn khít bên phải
+  const mainW0 = (await win.locator('.ch-main').boundingBox()).width;
+  await win.click('#chFold');
+  await new Promise((r) => setTimeout(r, 400));
+  const sideW = (await win.locator('.ch-side').boundingBox()).width;
+  const mainW1 = (await win.locator('.ch-main').boundingBox()).width;
+  check(sideW < 70 && mainW1 > mainW0 + 150, `nút « thu gọn danh sách chat (còn ${Math.round(sideW)}px, khung chat rộng thêm ${Math.round(mainW1 - mainW0)}px)`);
+  check(await win.locator('.ch-side .ch-new').isVisible() && !(await win.locator('#chList').isVisible()), 'dải thu gọn vẫn có nút ＋ Đoạn chat mới');
+  const hb = await win.locator('#cbwHost').boundingBox(); const vb = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children[0].getBounds());
+  check(Math.abs(hb.x - vb.x) <= 1 && Math.abs(hb.width - vb.width) <= 1, 'trang web đi theo khi đổi bố cục');
+  check(await win.evaluate(() => localStorage.getItem('vp.chatSideMini')) === '1', 'nhớ trạng thái thu gọn cho lần sau');
+  await shot('side-mini');
+  await win.click('#chFold');
+  await new Promise((r) => setTimeout(r, 400));
+  check((await win.locator('.ch-side').boundingBox()).width > 250, 'nút » mở rộng lại');
   check(await win.locator('.cbw-mark', { hasText: 'Canva' }).count() === 1, 'khung trình duyệt có nút mở nhanh 🎨 Canva');
   await win.locator('.ch-bar .cb.web').click();
   await new Promise((r) => setTimeout(r, 250));
