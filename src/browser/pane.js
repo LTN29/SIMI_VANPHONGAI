@@ -22,11 +22,19 @@ const SNAPSHOT = String.raw`(function (maxChars, full) {
   const SEL = 'a[href],button,input:not([type=hidden]),textarea,select,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=option],[role=checkbox],[role=radio],[role=switch],[role=combobox],[role=textbox],[role=searchbox],[contenteditable=""],[contenteditable=true],[onclick],[tabindex]:not([tabindex="-1"])';
   const out = []; const vh = innerHeight;
   const els = [...document.querySelectorAll(SEL)].filter(vis);
+  // trang kiểu Shopee / app web: ô sản phẩm, thẻ… là div có con trỏ bàn tay → cũng đưa vào (chỉ lớp ngoài cùng)
+  const has = new Set(els);
+  const pointer = (e) => e && e.nodeType === 1 && getComputedStyle(e).cursor === 'pointer';
+  for (const el of [...document.querySelectorAll('div,span,li,img,label,svg')].slice(0, 4000)) {
+    if (els.length >= (full ? 600 : 300)) break;
+    if (has.has(el) || !pointer(el) || pointer(el.parentElement) || el.closest(SEL) || el.querySelector(SEL) || !vis(el)) continue;
+    els.push(el); has.add(el);
+  }
   for (const el of els.slice(0, full ? 600 : 300)) {
     let ref = el.getAttribute('data-vp-ref'); if (!ref) { ref = 'e' + (++seq); el.setAttribute('data-vp-ref', ref); }
     const tag = el.tagName.toLowerCase(); const type = (el.getAttribute('type') || '').toLowerCase();
     const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'select' ? 'select' : tag === 'textarea' || (tag === 'input' && !['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'range', 'color'].includes(type)) || el.isContentEditable ? 'textbox' : tag === 'input' ? type : tag);
-    let line = '[' + ref + '] ' + role + ' "' + label(el) + '"';
+    let line = '[' + ref + '] ' + (/^(div|span|li|img|label|svg|td|tr|p|section|article)$/.test(role) ? 'clickable' : role) + ' "' + label(el) + '"';
     const ph = el.getAttribute('placeholder'); if (ph && !line.includes(clean(ph, 90))) line += ' (gợi ý: ' + clean(ph, 50) + ')';
     if (role === 'textbox' && el.value) line += ' = "' + clean(el.value, 60) + '"';
     if (type === 'checkbox' || type === 'radio' || role === 'checkbox' || role === 'switch') line += el.checked || el.getAttribute('aria-checked') === 'true' ? ' ✓' : ' ☐';
@@ -246,13 +254,19 @@ class BrowserPane {
   async moveTo(x, y, kind, label) {
     const wc = this.wc();
     await wc.executeJavaScript(`${CURSOR}(${x}, ${y}, ${JSON.stringify(kind || '')}, ${JSON.stringify(label || 'SIMI')})`, true).catch(() => {});
-    await sleep(kind === 'click' ? 340 : 200); // để mắt người theo kịp con trỏ
+    await sleep(kind === 'click' ? 220 : 120); // để mắt người theo kịp con trỏ
     const z = wc.getZoomFactor();
     wc.sendInputEvent({ type: 'mouseMove', x: Math.round(x * z), y: Math.round(y * z) });
   }
-  async click(ref, { double = false, label } = {}) {
-    const p = await this.run(`${LOCATE}(${JSON.stringify(ref)})`);
-    if (p.error) throw new Error(p.error);
+  // vị trí theo mã [eN], hoặc theo toạ độ x,y (px trên ảnh browser_screenshot = px của trang đang thấy)
+  async locate(a) {
+    if (a.ref) { const p = await this.run(`${LOCATE}(${JSON.stringify(a.ref)})`); if (p.error) throw new Error(p.error); return p; }
+    const x = Number(a.x), y = Number(a.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Cần ref (mã eN) hoặc toạ độ x, y lấy từ browser_screenshot');
+    return this.run(`(function(x,y){const e=document.elementFromPoint(x,y);return {x:x,y:y,editable:!!(e&&(e.isContentEditable||/^(INPUT|TEXTAREA)$/.test(e.tagName)))};})(${x},${y})`);
+  }
+  async click(target, { double = false, label } = {}) {
+    const p = await this.locate(typeof target === 'string' ? { ref: target } : target);
     await this.moveTo(p.x, p.y, 'click', label);
     const z = this.wc().getZoomFactor(); const x = Math.round(p.x * z), y = Math.round(p.y * z);
     for (let c = 1; c <= (double ? 2 : 1); c++) {
@@ -282,17 +296,18 @@ class BrowserPane {
       for (const [i, a] of actions.slice(0, 30).entries()) {
         const what = String(a.action || '');
         if (what === 'click' || what === 'double_click') {
-          const p = await this.click(a.ref, { double: what === 'double_click' });
-          this.status(`Bấm ${a.ref}`);
-          log.push(`${i + 1}. bấm ${a.ref}${p.covered ? ' (có thể bị lớp khác che)' : ''}`);
+          const at = a.ref || `(${a.x}, ${a.y})`;
+          const p = await this.click(a, { double: what === 'double_click' });
+          this.status(`Bấm ${at}`);
+          log.push(`${i + 1}. bấm ${at}${p.covered ? ' (có thể bị lớp khác che)' : ''}`);
         } else if (what === 'type') {
-          const p = await this.click(a.ref, { label: 'SIMI đang gõ…' });
-          if (a.clear !== false) await this.run(`${SELECT_ALL}(${JSON.stringify(a.ref)})`);
+          const p = await this.click(a, { label: 'SIMI đang gõ…' });
+          if (a.clear !== false) { if (a.ref) await this.run(`${SELECT_ALL}(${JSON.stringify(a.ref)})`); else this.press(process.platform === 'darwin' ? 'Meta+A' : 'Ctrl+A'); }
           const text = String(a.text ?? '');
           if (text) await wc.insertText(text); else if (a.clear !== false) this.press('Backspace');
           if (a.submit) { await sleep(80); this.press('Enter'); }
           this.status(`Gõ vào ${a.ref}`);
-          log.push(`${i + 1}. gõ ${JSON.stringify(text.slice(0, 40))} vào ${a.ref}${p.editable ? '' : ' (phần tử này có thể không gõ được)'}${a.submit ? ' + Enter' : ''}`);
+          log.push(`${i + 1}. gõ ${JSON.stringify(text.slice(0, 40))} vào ${a.ref || `(${a.x}, ${a.y})`}${p.editable ? '' : ' (phần tử này có thể không gõ được)'}${a.submit ? ' + Enter' : ''}`);
         } else if (what === 'press') {
           this.press(a.key || a.text); log.push(`${i + 1}. phím ${a.key || a.text}`);
         } else if (what === 'select') {
@@ -300,8 +315,8 @@ class BrowserPane {
           if (r !== 'ok') throw new Error(r);
           log.push(`${i + 1}. chọn "${a.value ?? a.text}" ở ${a.ref}`);
         } else if (what === 'hover') {
-          const p = await this.run(`${LOCATE}(${JSON.stringify(a.ref)})`); if (p.error) throw new Error(p.error);
-          await this.moveTo(p.x, p.y, 'hover'); log.push(`${i + 1}. rê chuột lên ${a.ref}`);
+          const p = await this.locate(a);
+          await this.moveTo(p.x, p.y, 'hover'); log.push(`${i + 1}. rê chuột lên ${a.ref || `(${a.x}, ${a.y})`}`);
         } else if (what === 'scroll') {
           const dy = (a.direction === 'up' ? -1 : 1) * Math.max(100, Math.min(4000, Number(a.amount) || 600));
           if (a.ref) await this.run(`(function(){const e=document.querySelector('[data-vp-ref="${String(a.ref).replace(/"/g, '')}"]'); if(e) e.scrollBy({top:${dy},behavior:'smooth'});})()`);
@@ -342,8 +357,11 @@ class BrowserPane {
       case 'browser_screenshot': {
         await this.waitLoad(this.wc(), 8000);
         let img = await this.wc().capturePage();
-        const { width } = img.getSize(); if (width > 1280) img = img.resize({ width: 1280 });
-        return [{ type: 'text', text: `Ảnh trang ${this.wc().getURL()}` }, { type: 'image', data: img.toJPEG(80).toString('base64'), mimeType: 'image/jpeg' }];
+        // ảnh đúng bằng khổ trang (px CSS) → toạ độ trên ảnh dùng thẳng cho browser_act {x, y}
+        const vw = Math.round(await this.run('innerWidth').catch(() => 0)) || img.getSize().width;
+        const w = Math.min(1280, vw); if (img.getSize().width !== w) img = img.resize({ width: w });
+        const k = vw / w;
+        return [{ type: 'text', text: `Ảnh trang ${this.wc().getURL()} (${img.getSize().width}×${img.getSize().height}px). Bấm theo vị trí trên ảnh: browser_act {"action":"click","x":${k === 1 ? 'X' : `X×${k.toFixed(3)}`},"y":${k === 1 ? 'Y' : `Y×${k.toFixed(3)}`}} – KHÔNG dùng công cụ điều khiển máy cho trang này.` }, { type: 'image', data: img.toJPEG(80).toString('base64'), mimeType: 'image/jpeg' }];
       }
       case 'browser_tabs': {
         const a = args.action || 'list';

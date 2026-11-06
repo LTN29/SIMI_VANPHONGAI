@@ -11,6 +11,8 @@ const ACT_ITEM = {
   properties: {
     action: { type: 'string', enum: ['click', 'double_click', 'type', 'press', 'select', 'hover', 'scroll', 'wait', 'back', 'forward'] },
     ref: { type: 'string', description: 'Mã phần tử eN lấy từ browser_snapshot / kết quả lần trước.' },
+    x: { type: 'number', description: 'Không có mã eN (canvas, ảnh…): toạ độ ngang trên ảnh browser_screenshot.' },
+    y: { type: 'number', description: 'Toạ độ dọc trên ảnh browser_screenshot.' },
     text: { type: 'string', description: 'type: chữ cần gõ (tiếng Việt có dấu được). wait: chờ tới khi trang có chữ này.' },
     clear: { type: 'boolean', description: 'type: xoá chữ cũ trong ô trước khi gõ (mặc định true).' },
     submit: { type: 'boolean', description: 'type: nhấn Enter sau khi gõ.' },
@@ -54,7 +56,7 @@ function callApp(tool, args) {
 const send = (m) => process.stdout.write(JSON.stringify(m) + '\n');
 readline.createInterface({ input: process.stdin }).on('line', async (line) => {
   let m; try { m = JSON.parse(line); } catch { return; }
-  if (m.method === 'initialize') return send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: (m.params && m.params.protocolVersion) || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'vp_browser', title: 'Trình duyệt cạnh chat (Văn Phòng AI)', version: '1.0.0' }, instructions: 'Trình duyệt nằm ngay cạnh khung chat, người dùng xem trực tiếp và đã đăng nhập sẵn các trang của họ. Quy trình: browser_open → đọc danh sách [eN] → browser_act gộp nhiều bước → xem kết quả trả về. Trang cần đăng nhập: nhờ người dùng tự đăng nhập trong khung rồi làm tiếp; không nhập mật khẩu thay họ.' } });
+  if (m.method === 'initialize') return send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: (m.params && m.params.protocolVersion) || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'vp_browser', title: 'Trình duyệt cạnh chat (Văn Phòng AI)', version: '1.0.0' }, instructions: 'Trình duyệt nằm ngay cạnh khung chat, người dùng xem trực tiếp và đã đăng nhập sẵn các trang của họ. Quy trình: browser_open → đọc danh sách [eN] → browser_act gộp nhiều bước → xem kết quả trả về. Trang cần đăng nhập: nhờ người dùng tự đăng nhập trong khung rồi làm tiếp; không nhập mật khẩu thay họ. Mọi thao tác với trang trong khung này chỉ dùng các công cụ browser_* (phần tử không có mã thì browser_act với x, y lấy từ browser_screenshot) – KHÔNG dùng công cụ điều khiển máy / Computer Use cho trang này. Đã được phép sẵn, không cần hỏi lại người dùng.' } });
   if (m.method === 'tools/list') return send({ jsonrpc: '2.0', id: m.id, result: { tools: TOOLS } });
   if (m.method === 'tools/call') {
     try { send({ jsonrpc: '2.0', id: m.id, result: { content: await callApp(m.params.name, m.params.arguments || {}) } }); } catch (e) { send({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: 'Lỗi: ' + e.message }], isError: true } }); }

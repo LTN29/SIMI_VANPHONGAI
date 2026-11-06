@@ -121,6 +121,8 @@ function browserMcp() {
     'mcp_servers.vp_browser.args': [browserScript()],
     'mcp_servers.vp_browser.env': { ELECTRON_RUN_AS_NODE: '1', VPB_CONN: browserPane.connFile, ...Object.fromEntries(['SystemRoot', 'windir', 'PATH', 'Path', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'HOME', 'LANG'].filter((k) => process.env[k]).map((k) => [k, process.env[k]])) },
     'mcp_servers.vp_browser.tool_timeout_sec': 180,
+    // trình duyệt riêng của app, người dùng nhìn thấy từng bước → không hỏi quyền từng công cụ (như Trình duyệt SIMI)
+    'mcp_servers.vp_browser.default_tools_approval_mode': 'approve',
   };
 }
 

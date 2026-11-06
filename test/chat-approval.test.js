@@ -68,6 +68,21 @@ test('"Luôn cho phép, không hỏi nữa" → đoạn chat Tự cho phép mọ
   assert.equal(live().length, 1);
 });
 
+test('"Tự cho phép mọi lệnh" → công cụ MCP (trình duyệt, Canva…) không hỏi; chuột / bàn phím thật vẫn hỏi', () => {
+  const { e, t, sent, ask, live } = engine();
+  const mcp = (n, server, tool) => ask(n, 'mcpServer/elicitation/request', { serverName: server, message: `Allow tool "${tool}"?`, _meta: { codex_approval_kind: 'mcp_tool_call', tool_params_display: [], persist: ['session', 'always'] } });
+  mcp(1, 'vp_browser', 'browser_snapshot');
+  assert.equal(live().length, 1, 'chế độ thường: vẫn hỏi');
+  e.update(t.id, { sandbox: 'danger-full-access' });
+  sent.length = 0;
+  mcp(2, 'vp_browser', 'browser_screenshot');
+  mcp(3, 'Canva', 'create-design');
+  assert.deepEqual(sent, [[2, { action: 'accept', content: {}, _meta: { persist: 'session' } }], [3, { action: 'accept', content: {}, _meta: { persist: 'session' } }]]);
+  mcp(4, 'vp_computer', 'click');
+  mcp(5, 'computer-use', 'request_access');
+  assert.equal(live().length, 3, 'điều khiển máy thật vẫn hỏi');
+});
+
 test('đổi ô quyền sang "Tự cho phép mọi lệnh" trong lúc AI đang chạy → áp dụng ngay', () => {
   const { e, t, sent, ask, live } = engine();
   e.update(t.id, { sandbox: 'danger-full-access' });

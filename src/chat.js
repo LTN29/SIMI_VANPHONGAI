@@ -21,7 +21,7 @@ const CHAT_GUIDE = [
   'Tìm web, đọc trang công khai, tạo / sửa ảnh, chép lời file ghi âm / video: gọi thẳng công cụ MCP simi_browser web_search / web_fetch / image_generate / audio_transcribe (mỗi việc 1 lần gọi, chạy ngoài sandbox) thay cho tự chạy khối lệnh trong skill hay tự viết code; chỉ dùng khối lệnh khi phiên không có các công cụ này.',
   'Chỉnh ảnh có sẵn mà phải giữ đúng chi tiết (làm nét, chỉnh sáng / màu, cắt, xoay, xoá / viết lại chữ, logo bị mờ, che vùng, chèn logo): dùng simi_browser image_retouch (vài giây, chạy trên máy), không dùng model tạo ảnh (vẽ lại cả ảnh, chậm, sai chi tiết) và không tự viết script Python.',
   'Tạo ảnh: viết prompt tiếng Anh chi tiết (chủ thể, bố cục, phong cách, ánh sáng, màu; chữ trong ảnh giữ tiếng Việt trong ngoặc kép, thật ngắn) – yêu cầu chung chung thì tự bổ sung chi tiết cho đẹp, không chuyển nguyên câu ngắn của người dùng.',
-  'Thao tác trên trang web (mở trang cho người dùng xem, điền form, đăng / sửa nội dung, bấm nút, trang cần đăng nhập): ưu tiên MCP vp_browser khi có – trình duyệt hiện ngay cạnh khung chat, người dùng nhìn thấy và đã đăng nhập sẵn. Quy trình: browser_open → đọc danh sách [eN] → browser_act gộp nhiều bước (gõ, chọn, bấm) trong 1 lần gọi → xem trang trả về; chỉ browser_screenshot khi cần nhìn hình. Trang đòi đăng nhập / mã OTP / captcha: dừng lại nhờ người dùng tự làm trong khung trình duyệt rồi làm tiếp, không tự nhập mật khẩu. Trước khi bấm nút gửi / đăng / thanh toán / xoá thật: hỏi người dùng xác nhận trừ khi họ đã yêu cầu rõ.',
+  'Thao tác trên trang web (mở trang cho người dùng xem, điền form, đăng / sửa nội dung, bấm nút, trang cần đăng nhập): ưu tiên MCP vp_browser khi có – trình duyệt hiện ngay cạnh khung chat, người dùng nhìn thấy và đã đăng nhập sẵn. Quy trình: browser_open → đọc danh sách [eN] → browser_act gộp nhiều bước (gõ, chọn, bấm) trong 1 lần gọi → xem trang trả về; chỉ browser_screenshot khi cần nhìn hình; phần tử không có mã thì browser_act click theo x, y trên ảnh đó. Trang đang mở trong khung này TUYỆT ĐỐI không dùng vp_computer / Computer Use (toạ độ màn hình khác toạ độ trang, bấm sẽ trượt). Trang đòi đăng nhập / mã OTP / captcha: dừng lại nhờ người dùng tự làm trong khung trình duyệt rồi làm tiếp, không tự nhập mật khẩu. Trước khi bấm nút gửi / đăng / thanh toán / xoá thật: hỏi người dùng xác nhận trừ khi họ đã yêu cầu rõ.',
   'Khi không có vp_browser: việc trên trang web dùng MCP simi_browser khi có – browser_snapshot rồi browser_act gộp nhiều bước trong 1 lần gọi; nhanh hơn nhiều so với điều khiển bằng ảnh chụp màn hình. Chỉ dùng vp_computer / Computer Use cho ứng dụng ngoài trình duyệt, hoặc khi simi_browser không làm được (trang vẽ bằng canvas, kéo thả phức tạp). Không nhầm lỗi browser access host của công cụ trình duyệt với runtime @oai/sky điều khiển Windows.',
 ].join('\n');
 // thư mục nháp: file trung gian của AI (ảnh ghép khung hình, ảnh thử, script tạm…) để ngoài thư mục làm việc của người dùng
@@ -679,6 +679,11 @@ class ChatEngine {
     }
     // đoạn chat ở chế độ "Tự cho phép mọi lệnh" → đồng ý luôn, không hỏi
     if (AUTO_OK.has(method) && this._autoAll(run)) return this.codex.respond(id, responseFor(method, params, 'all', { fields: [] }));
+    // "Tự cho phép mọi lệnh" cũng tự cho phép công cụ MCP (trừ điều khiển chuột / bàn phím thật: vẫn hỏi 1 lần mỗi đoạn chat)
+    const meta = (params && params._meta) || {};
+    if (method === 'mcpServer/elicitation/request' && meta.codex_approval_kind === 'mcp_tool_call' && params.serverName !== VPC && !isCU(params.serverName) && this._autoAll(run)) {
+      return this.codex.respond(id, responseFor(method, params, 'session', { fields: [] }));
+    }
     // đã chọn "Luôn cho phép trong đoạn chat này" cho đúng việc này → tự đồng ý
     const key = askKey(method, params);
     if (key && (run.t.allow || []).includes(key)) return this.codex.respond(id, responseFor(method, params, 'session', { fields: [] }));

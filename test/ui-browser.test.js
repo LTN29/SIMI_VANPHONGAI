@@ -13,7 +13,9 @@ const PAGE = `<!doctype html><meta charset="utf-8"><title>Form thử SIMI</title
 <select id="city"><option value="hn">Hà Nội</option><option value="hcm">TP Hồ Chí Minh</option><option value="dn">Đà Nẵng</option></select>
 <textarea id="note" placeholder="Ghi chú"></textarea>
 <button id="send" onclick="document.getElementById('out').textContent='Đã gửi: '+document.getElementById('name').value+' / '+document.getElementById('city').value+' / '+document.getElementById('note').value">Gửi yêu cầu</button>
-<p id="out"></p><a href="/trang-2">Sang trang 2</a>`;
+<p id="out"></p><a href="/trang-2">Sang trang 2</a>
+<div id="card" style="cursor:pointer;width:220px;padding:14px;border:1px solid #ccc" onclick="document.getElementById('out').textContent='Đã chọn sản phẩm'"><div>Tai nghe Bluetooth SIMI</div><span>299.000đ</span></div>
+<canvas id="cv" width="200" height="60" style="border:1px solid #999" onclick="document.getElementById('out').textContent='Bấm canvas tại '+event.offsetX+','+event.offsetY"></canvas>`;
 
 function rpc(child, msg) {
   return new Promise((resolve) => {
@@ -84,6 +86,17 @@ run(async () => {
   fs.writeFileSync(path.join(require('./helpers').SHOTS, 'browser-page.png'), Buffer.from(page.png, 'base64'));
   fs.writeFileSync(path.join(require('./helpers').SHOTS, 'browser-page.json'), JSON.stringify(page.b));
   await shot('ui');
+
+  // ô sản phẩm kiểu Shopee (div có con trỏ bàn tay) cũng có mã; canvas bấm theo toạ độ trên ảnh chụp
+  const card = (out.match(/\[(e\d+)\] clickable "Tai nghe Bluetooth SIMI 299\.000đ"/) || [])[1];
+  check(card, 'ô sản phẩm dạng div (con trỏ bàn tay) có mã [eN] để bấm');
+  const cr = await rpc(mcp, { id: 41, method: 'tools/call', params: { name: 'browser_act', arguments: { actions: [{ action: 'click', ref: card }] } } });
+  check(/Đã chọn sản phẩm/.test(cr.result.content[0].text), 'bấm ô sản phẩm theo mã → đúng');
+  const shot1 = await rpc(mcp, { id: 42, method: 'tools/call', params: { name: 'browser_screenshot', arguments: {} } });
+  check(/KHÔNG dùng công cụ điều khiển máy/.test(shot1.result.content[0].text), 'ảnh chụp nhắc AI bấm bằng x, y của trình duyệt');
+  const cvp = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children[0].webContents.executeJavaScript('(() => { const r = document.getElementById("cv").getBoundingClientRect(); return { x: Math.round(r.left + 50), y: Math.round(r.top + 20) }; })()'));
+  const xy = await rpc(mcp, { id: 43, method: 'tools/call', params: { name: 'browser_act', arguments: { actions: [{ action: 'click', x: cvp.x, y: cvp.y }] } } });
+  check(/Bấm canvas tại (4[7-9]|5[0-2]),(1[7-9]|2[0-2])/.test(xy.result.content[0].text), 'bấm theo toạ độ x, y trên ảnh → trúng đúng chỗ trong canvas');
 
   // bấm link → điều hướng, nút Quay lại bật
   const link = (out.match(/\[(e\d+)\] link "Sang trang 2"/) || [])[1];
