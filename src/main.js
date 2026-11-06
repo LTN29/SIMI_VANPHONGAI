@@ -296,6 +296,8 @@ function registerIpc() {
   handle('lobby:npc', () => lobby.call('npc', undefined, 'GET'));
   handle('lobby:game', (payload) => lobby.call('game', payload || {}));
   handle('lobby:games', () => lobby.call('games', undefined, 'GET'));
+  handle('lobby:honor', (q) => { q = q || {}; return lobby.call(`honor?period=${q.period === 'month' ? 'month' : 'week'}&offset=${Math.max(0, Math.min(8, Number(q.offset) || 0))}`, undefined, 'GET'); });
+  handle('lobby:honorDo', (kind) => { if (kind !== 'fortune' && kind !== 'pray') throw new Error('Thao tác không hợp lệ'); return lobby.call(`honor/${kind}`, {}); });
   handle('lobby:npcAsk', (payload) => lobby.npcAsk(payload || {}));
   handle('lobby:npcFeedback', (payload) => lobby.call('npc/feedback', payload || {}));
   handle('lobby:dnd', (on) => { lobbyDnd = !!on; return true; });

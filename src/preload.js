@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('vp', {
     npc: () => ipcRenderer.invoke('lobby:npc'),
     game: (payload) => ipcRenderer.invoke('lobby:game', payload),
     games: () => ipcRenderer.invoke('lobby:games'),
+    honor: (q) => ipcRenderer.invoke('lobby:honor', q),
+    honorDo: (kind) => ipcRenderer.invoke('lobby:honorDo', kind),
     npcAsk: (payload) => ipcRenderer.invoke('lobby:npcAsk', payload),
     npcFeedback: (payload) => ipcRenderer.invoke('lobby:npcFeedback', payload),
     dnd: (on) => ipcRenderer.invoke('lobby:dnd', on),

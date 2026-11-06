@@ -220,7 +220,9 @@
       el('div', { class: 'stp-list' }, MY_STATUS.map(([k, ic, name, dnd]) => el('button', { class: 'stp-it' + (pick === k ? ' on' : ''), role: 'menuitemradio', 'aria-checked': pick === k ? 'true' : 'false', onclick: () => { pick = k; draw(); } },
         el('span', { class: 'ic', text: ic }), el('span', { class: 'grow' }, el('b', { text: name }), dnd ? el('small', { text: 'Không làm phiền' }) : ''), pick === k ? el('span', { class: 'ck', text: '✓' }) : ''))),
       el('div', { class: 'stp-dur' }, el('small', { text: 'Trong' }), ...durs.map(([m, label]) => el('button', { class: 'chip', onclick: () => { pop.remove(); setMyStatus(pick, m); } }, label))),
-      cur ? el('button', { class: 'btn small stp-clear', onclick: () => { pop.remove(); setMyStatus(null); } }, '🟢 Về Sẵn sàng') : '');
+      cur ? el('button', { class: 'btn small stp-clear', onclick: () => { pop.remove(); setMyStatus(null); } }, '🟢 Về Sẵn sàng') : '',
+      el('div', { class: 'stp-bub' }, el('small', { text: '💭 Bong bóng trên đầu khi AI đang làm việc' }),
+        el('div', { class: 'stp-dur' }, ...[['detail', 'Chi tiết'], ['brief', 'Chung chung'], ['off', 'Tắt']].map(([k, label]) => el('button', { class: 'chip' + (bubbleMode() === k ? ' on' : ''), title: k === 'detail' ? 'Hiện bước AI đang làm theo kế hoạch, vd. "📋 Đăng 12 sản phẩm (2/5)"' : k === 'brief' ? 'Chỉ hiện loại việc, vd. "🌐 Đang thao tác trên web"' : 'Không hiện bong bóng', onclick: () => { ls.set('vp.bubble', k); for (const c of L.chats.values()) c.task = k === 'off' ? '' : c.task && k === 'brief' ? c.task.replace(/^📋.*$/, '🛠️ Đang làm việc') : c.task; updatePresence(); draw(); } }, label)))));
     draw();
     document.body.append(pop);
     const r = e.currentTarget.getBoundingClientRect();
@@ -341,6 +343,31 @@
     stop.observe($('#modal'), { attributes: true, attributeFilter: ['class'] });
   }
 
+  // ================= 🏆 Bảng vàng (treo tường cạnh ống quẻ) =================
+  const honorOn = () => L.features.has('honor') && L.me && L.status.state === 'online';
+  async function loadHonor(force) {
+    if (!honorOn()) return;
+    if (!force && L.honorAt && Date.now() - L.honorAt < 4 * 60_000) return;
+    L.honorAt = Date.now();
+    try { L.honor = await window.vp.lobby.honor({ period: 'week' }); if (L.scene) L.scene.setHonor(L.honor); } catch { /* Gateway bận: lần sau tải lại */ }
+  }
+  setInterval(() => { if (L.shown) loadHonor(false); }, 60_000);
+  async function honorDo(kind) {
+    if (!honorOn()) return;
+    try {
+      const r = await window.vp.lobby.honorDo(kind);
+      if (kind === 'pray' && r && r.counted) setTimeout(() => toast(`🙏 +${r.gain || 5} điểm Tài lộc · đã khấn ${r.prays}/${r.max} hôm nay`), 2600);
+      if (kind === 'fortune' && r && r.first) setTimeout(() => toast(`🏆 +${r.points} điểm Tài lộc vào Bảng vàng tuần này`), 600);
+      if ((kind === 'pray' && r.counted) || (kind === 'fortune' && r.first)) loadHonor(true);
+    } catch { /* không tính điểm được thì thôi */ }
+  }
+  function openHonor() {
+    if (!window.VPHonor) return;
+    if (!L.features.has('honor')) { toast('Gateway chưa có Bảng vàng – báo admin cập nhật Gateway nhé'); return; }
+    if (!L.me || L.status.state !== 'online') { toast('Vào Sảnh (online) để xem Bảng vàng'); return; }
+    window.VPHonor.open({ me: L.me, load: (q) => window.vp.lobby.honor(q).then((d) => { if (q.period === 'week' && !q.offset) { L.honor = d; L.honorAt = Date.now(); if (L.scene) L.scene.setHonor(d); } return d; }) });
+  }
+
   // ================= cảnh 3D =================
   function ensureScene() {
     if (L.scene || !window.Lobby3D) return;
@@ -353,7 +380,9 @@
         onCatClick: (x, y) => openCat(x, y),
         onNpcClick: () => window.VPNpc && window.VPNpc.open(),
         onTableClick: (t, x, y) => window.VPPoolUI && window.VPPoolUI.tableMenu(t, x, y),
-        onFortune: () => window.VPFortune && window.VPFortune.open({ me: L.me, share: L.me && L.status.state === 'online' ? (text) => quickSay(text) : null }),
+        onFortune: () => window.VPFortune && window.VPFortune.open({ me: L.me, share: L.me && L.status.state === 'online' ? (text) => quickSay(text) : null, onDrawn: () => honorDo('fortune') }),
+        onHonor: () => openHonor(),
+        onPray: () => honorDo('pray'),
         npcGreeting: () => `Chào ${L.me ? L.me.name : 'bạn'}! Cần giúp gì không? Bấm vào mình nhé 👋`,
         onDance: (style, byMove) => { L.myDance = style; renderDancePick(); if (!byMove && L.status.state === 'online' && L.features.has('dance')) window.vp.lobby.presence({ dance: style }); },
         onFloor: (on) => { L.onFloor = on; renderDancePick(); },
@@ -363,6 +392,7 @@
       L.scene.setSkew(L.skew || 0);
       if (L.catState) L.scene.setCat(L.catState);
       L.scene.setNpc(L.npc || null);
+      if (L.honor) L.scene.setHonor(L.honor);
       window.__lobby = L.scene;
       syncScene();
       if (window.VPPoolUI) window.VPPoolUI.syncScene();
@@ -1099,19 +1129,49 @@
     if (/\$(simi-doc-pdf|simi-tai-lieu|simi-chep-loi)/.test(t)) return 'doc';
     return 'chat';
   }
+  // 💭 bong bóng trên đầu nhân vật: AI đang làm bước gì. 'detail' = theo kế hoạch AI tự viết ("📋 Đăng 12 sản phẩm (2/5)"),
+  // 'brief' = chỉ loại việc ("🌐 Đang thao tác trên web"), 'off' = không hiện. Không bao giờ gửi lệnh, đường dẫn file, từ khoá tìm kiếm.
+  const bubbleMode = () => { const v = ls.get('vp.bubble', 'detail'); return ['detail', 'brief', 'off'].includes(v) ? v : 'detail'; };
+  function stepKind(b) {
+    if (b.sk === 'web') return '🔎 Đang tìm trên web';
+    if (b.sk === 'cmd') return '⚙️ Đang chạy lệnh trên máy';
+    if (b.sk === 'file') return `📝 Đang soạn ${Math.max(1, (b.files || []).length)} file`;
+    if (b.sk === 'think') return '💭 Đang suy nghĩ';
+    if (b.sk === 'plan') return '🗺️ Đang lên kế hoạch';
+    const t = String(b.title || '');
+    if (/Xuất thiết kế/.test(t)) return '🎨 Đang xuất thiết kế';
+    if (/^Tạo ảnh/.test(t)) return '🎨 Đang tạo ảnh';
+    if (b.server === 'vp_browser' || b.server === 'simi_browser' || /Trình duyệt/.test(t)) return '🌐 Đang thao tác trên web';
+    if (b.server === 'vp_computer' || /Computer Use|Điều khiển máy/.test(t)) return '🖥️ Đang điều khiển máy tính';
+    return '🛠️ Đang dùng công cụ';
+  }
+  function taskOf(blocks, mode = bubbleMode()) {
+    if (mode === 'off' || !Array.isArray(blocks) || !blocks.length) return '';
+    const steps = blocks.filter((b) => b && b.kind === 'step');
+    const work = steps.filter((b) => b.sk !== 'think' && b.sk !== 'plan').length;
+    if (mode === 'detail') {
+      const plan = [...steps].reverse().find((b) => b.sk === 'plan' && Array.isArray(b.items) && b.items.length > 1);
+      const i = plan ? plan.items.findIndex((x) => !x.done) : -1;
+      if (i >= 0) { const txt = String(plan.items[i].text || '').replace(/\s+/g, ' ').trim(); if (txt) return `📋 ${txt.length > 52 ? txt.slice(0, 51) + '…' : txt} (${i + 1}/${plan.items.length})`; }
+    }
+    const cur = [...steps].reverse().find((b) => b.status === 'in_progress');
+    const last = blocks[blocks.length - 1];
+    const base = cur ? stepKind(cur) : last && last.kind === 'text' ? '✍️ Đang viết trả lời' : steps.length ? stepKind(steps[steps.length - 1]) : '💭 Đang suy nghĩ';
+    return work > 1 ? `${base} · bước ${work}` : base;
+  }
   let presT = 0;
   function updatePresence() {
     let p;
     const running = [...L.chats.values()];
     const mine = myStatus();
     if (mine) p = { activity: 'away', text: statusText(mine), model: '' };
-    else if (running.length) { const c = running[running.length - 1]; p = { activity: c.activity, text: ACT_TEXT[c.activity], model: c.model || '' }; }
+    else if (running.length) { const c = running.reduce((a, b) => ((b.at || 0) >= (a.at || 0) ? b : a)); p = { activity: c.activity, text: ACT_TEXT[c.activity], model: c.model || '', ...(c.task ? { task: c.task } : {}) }; }
     else if (L.working) p = { activity: 'work', text: ACT_TEXT.work, model: '' };
     else p = { activity: 'idle', text: ACT_TEXT.idle, model: '' };
     if (JSON.stringify(p) === JSON.stringify(L.presence)) return;
     L.presence = p; syncScene();
     clearTimeout(presT);
-    presT = setTimeout(() => { if (L.status.state === 'online') window.vp.lobby.presence({ status: L.presence }); }, 400);
+    presT = setTimeout(() => { if (L.status.state === 'online') window.vp.lobby.presence({ status: L.presence }); }, 900); // gộp các bước liên tiếp → ít tin hơn
   }
 
   // Gateway gửi danh sách ai đang online mỗi 30 giây: lệch (lỡ mất sự kiện vào / rời khi mạng chập chờn) → tải lại danh sách
@@ -1154,6 +1214,7 @@
       if (d.cat) { L.catState = d.cat; if (L.scene) L.scene.setCat(d.cat); }
       if ('npc' in d) { L.npc = d.npc; if (window.VPNpc) window.VPNpc.setInfo(d.npc); }
       if (window.VPPoolUI) window.VPPoolUI.onHello(d.games || []);
+      loadHonor(true);
       if (window.VPNpc && L.shown) window.VPNpc.maybeTour(d.me && d.me.name);
       // nhân vật đã chọn trên máy này nhưng chưa lưu lên Gateway (lần đầu vào Sảnh)
       const local = ls.get('vp.myAvatar', null);
@@ -1216,8 +1277,9 @@
     if (e.type === 'lobby') return onLobby(e.ev, e.data);
     if (e.type === 'lobby-open') { window.VPChat.setView('lobby'); openRoom(e.room).then(() => { if (e.msg) setTimeout(() => jumpTo(e.msg), 80); }); return; }
     if (e.type === 'chat') {
-      if (e.ev === 'start') L.chats.set(e.threadId, { activity: skillActivity(e.user && e.user.text), model: (e.message && e.message.model) || '' });
+      if (e.ev === 'start') L.chats.set(e.threadId, { activity: skillActivity(e.user && e.user.text), model: (e.message && e.message.model) || '', task: taskOf([]) || (bubbleMode() === 'off' ? '' : '💭 Đang suy nghĩ'), at: Date.now() });
       else if (e.ev === 'done') L.chats.delete(e.threadId);
+      else if (e.ev === 'blocks') { const c = L.chats.get(e.threadId); if (!c) return; const t = taskOf(e.blocks); if (t === c.task) return; c.task = t; c.at = Date.now(); }
       else return;
       updatePresence();
     }

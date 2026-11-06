@@ -113,6 +113,25 @@ run(async () => {
     check(joined.teamName === 'Sales', 'đồng nghiệp thấy mình vào Sảnh kèm team');
     await bao.waitFor('member', (d) => d.name === 'Ngọc' && d.status && d.status.activity === 'idle');
     check(true, 'trạng thái mình tự cập nhật (đang rảnh)');
+    // 💭 bong bóng việc AI đang làm: theo kế hoạch AI viết, đồng nghiệp thấy trên đầu nhân vật; không lộ lệnh / file
+    const send = (data) => app.evaluate(({ BrowserWindow }, d) => BrowserWindow.getAllWindows()[0].webContents.send('evt', d), data);
+    bao.events.length = 0; // chỉ xét sự kiện từ đây
+    await send({ type: 'chat', ev: 'start', threadId: 'tb1', user: { text: 'đăng sản phẩm' }, message: { model: 'gpt' } });
+    await send({ type: 'chat', ev: 'blocks', threadId: 'tb1', blocks: [{ kind: 'step', sk: 'plan', items: [{ text: 'Mở Shopee', done: true }, { text: 'Đăng 12 sản phẩm lên Shopee', done: false }, { text: 'Báo cáo', done: false }], status: 'completed' }, { kind: 'step', sk: 'cmd', title: 'rm -rf C:/bi-mat', status: 'in_progress' }] });
+    const bub = await bao.waitFor('member', (d) => d.name === 'Ngọc' && d.status && d.status.task);
+    check(bub.status.task === '📋 Đăng 12 sản phẩm lên Shopee (2/3)', 'bong bóng theo kế hoạch: ' + bub.status.task);
+    await win.waitForFunction(() => { const p = [...window.__lobby.people.values()].find((x) => x.me); const b = p && p.plate.querySelector('.pl-bubble'); return b && !b.hidden && /Đăng 12/.test(b.textContent); }, null, { timeout: 5000 });
+    check(true, 'bong bóng hiện trên đầu nhân vật của mình');
+    await win.evaluate(() => localStorage.setItem('vp.bubble', JSON.stringify('brief')));
+    bao.events.length = 0;
+    await send({ type: 'chat', ev: 'blocks', threadId: 'tb1', blocks: [{ kind: 'step', sk: 'plan', items: [{ text: 'Mở Shopee', done: true }, { text: 'Đăng 12 sản phẩm', done: false }], status: 'completed' }, { kind: 'step', sk: 'cmd', title: 'rm -rf C:/bi-mat', status: 'in_progress' }] });
+    const brief = await bao.waitFor('member', (d) => d.name === 'Ngọc' && d.status && d.status.task && !/Đăng/.test(d.status.task));
+    check(brief.status.task === '⚙️ Đang chạy lệnh trên máy' && !/rm|bi-mat/.test(JSON.stringify(brief.status)), 'chế độ Chung chung chỉ hiện loại việc, không lộ lệnh: ' + brief.status.task);
+    await win.evaluate(() => localStorage.removeItem('vp.bubble'));
+    bao.events.length = 0;
+    await send({ type: 'chat', ev: 'done', threadId: 'tb1' });
+    const idle = await bao.waitFor('member', (d) => d.name === 'Ngọc' && d.status && d.status.activity === 'idle');
+    check(!idle.status.task, 'AI xong việc → hết bong bóng');
     await win.waitForTimeout(1200); await shot('01-lobby');
 
     // bấm vào ghế quầy bar còn trống để ngồi
@@ -181,6 +200,15 @@ run(async () => {
     await win.evaluate(() => window.__lobby.opts.onFortune());
     await win.waitForSelector('.fq-card:not([hidden]) .fq-no');
     check(await win.locator('.fq-shake').count() === 0 && (await win.locator('.fq-no').innerText()) === que, 'hôm nay đã xin quẻ → xem lại đúng quẻ cũ, mai mới lắc được');
+    await win.click('#modalClose');
+    // 🏆 Bảng vàng: quẻ vừa xin được Gateway ghi điểm, bảng treo tường bấm được, mở bảng chi tiết
+    check(await win.evaluate(() => (window.__lobby.world.clickables || []).some((m) => m.userData.action === 'honor')), 'có Bảng vàng treo tường bấm được');
+    await win.evaluate(() => window.__lobby.opts.onHonor());
+    await win.waitForSelector('.hn-row', { timeout: 8000 });
+    check((await win.locator('.hn-row.me b').innerText()).startsWith('Ngọc'), 'Bảng vàng: Ngọc lên bảng Thần Tài sống sau khi xin quẻ');
+    await win.click('.hn-cat:has-text("May mắn nhất")');
+    check(/điểm/.test(await win.locator('.hn-row.me .hn-score').innerText()), 'tab May mắn nhất có điểm quẻ');
+    await shot('03f-honor');
     await win.click('#modalClose');
     await win.evaluate(() => window.__lobby.focusSelf());
 
