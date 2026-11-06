@@ -134,6 +134,7 @@ function normUrl(u) {
 
 class BrowserPane {
   constructor({ getWindow, emit, connFile }) {
+    this.downloads = []; this.dlWait = [];
     this.getWindow = getWindow; this.emit = emit; this.connFile = connFile;
     this.tabs = new Map(); this.active = null; this.seq = 0;
     this.bounds = null; this.visible = false; this.covered = false; this.attached = null;
@@ -148,9 +149,19 @@ class BrowserPane {
     s.setUserAgent(s.getUserAgent().replace(/\s(Electron|VanPhongAI|vanphong-ai)\/\S+/gi, ''));
     s.setPermissionRequestHandler((_wc, perm, cb) => cb(['clipboard-sanitized-write', 'fullscreen'].includes(perm)));
     s.on('will-download', (_e, item) => {
+      // tệp tải về (vd Canva → Tải xuống PNG / PDF) vào thư mục Tải xuống, không ghi đè tệp trùng tên; AI biết đường dẫn
       const dir = app.getPath('downloads');
-      item.setSavePath(path.join(dir, item.getFilename()));
-      item.once('done', (_ev, state) => this.emit({ type: 'toast', text: state === 'completed' ? `⬇️ Đã tải về: ${item.getFilename()} (thư mục Tải xuống)` : `Tải ${item.getFilename()} không thành công`, error: state !== 'completed' }));
+      const ext = path.extname(item.getFilename()); const base = path.basename(item.getFilename(), ext) || 'tai-ve';
+      let file = path.join(dir, base + ext);
+      for (let n = 2; fs.existsSync(file) && n < 500; n++) file = path.join(dir, `${base} (${n})${ext}`);
+      item.setSavePath(file);
+      this.status('Đang tải ' + path.basename(file));
+      item.once('done', (_ev, state) => {
+        const ok = state === 'completed';
+        this.emit({ type: 'toast', text: ok ? `⬇️ Đã tải về: ${path.basename(file)} (thư mục Tải xuống)` : `Tải ${path.basename(file)} không thành công`, error: !ok });
+        if (ok) { this.downloads.push({ file, at: Date.now(), told: false }); this.downloads = this.downloads.slice(-10); }
+        for (const w of this.dlWait.splice(0)) w(ok ? file : null);
+      });
     });
     this.ses = s; return s;
   }
@@ -249,7 +260,20 @@ class BrowserPane {
     await sleep(250);
   }
   run(code) { return this.wc().executeJavaScript(code, true); }
-  async snapshot(max = 12000, full = false) { await this.waitLoad(this.wc(), 8000); return this.run(`${SNAPSHOT}(${Number(max) || 12000}, ${full ? 'true' : 'false'})`); }
+  async snapshot(max = 12000, full = false) {
+    await this.waitLoad(this.wc(), 8000);
+    const snap = await this.run(`${SNAPSHOT}(${Number(max) || 12000}, ${full ? 'true' : 'false'})`);
+    const fresh = this.downloads.filter((d) => !d.told); fresh.forEach((d) => { d.told = true; });
+    return (fresh.length ? 'Tệp vừa tải về máy:\n' + fresh.map((d) => '- ' + d.file).join('\n') + '\n\n' : '') + snap;
+  }
+  waitDownload(ms) {
+    const fresh = this.downloads.find((d) => !d.told); if (fresh) { fresh.told = true; return Promise.resolve(fresh.file); }
+    return new Promise((resolve) => {
+      const w = (f) => { clearTimeout(t); const d = this.downloads.find((x) => x.file === f); if (d) d.told = true; resolve(f); };
+      const t = setTimeout(() => { this.dlWait = this.dlWait.filter((x) => x !== w); resolve(null); }, ms);
+      this.dlWait.push(w);
+    });
+  }
 
   async moveTo(x, y, kind, label) {
     const wc = this.wc();
@@ -328,6 +352,10 @@ class BrowserPane {
             while (Date.now() < until) { ok = await this.run(`document.body && document.body.innerText.includes(${JSON.stringify(String(a.text))})`).catch(() => false); if (ok) break; await sleep(300); }
             log.push(`${i + 1}. chờ chữ "${a.text}": ${ok ? 'đã thấy' : 'chưa thấy'}`);
           } else { await sleep(Math.min(10000, Number(a.ms) || 1000)); log.push(`${i + 1}. chờ ${Math.min(10000, Number(a.ms) || 1000)} ms`); }
+        } else if (what === 'wait_download') {
+          this.status('Chờ tải tệp về');
+          const f = await this.waitDownload(Math.min(120000, Number(a.ms) || 60000));
+          log.push(`${i + 1}. chờ tải tệp: ${f ? 'đã lưu ' + f : 'chưa có tệp nào tải về'}`);
         } else if (what === 'back' || what === 'forward') {
           if (what === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
           if (what === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();

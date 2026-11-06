@@ -477,7 +477,7 @@
       if (m.index > last) out.push(text.slice(last, m.index));
       if (m[2]) {
         const x = mentions.find((y) => y.name.toLowerCase() === m[2].toLowerCase());
-        out.push(el('span', { class: 'skchip mention', title: x.kind === 'plugin' ? 'Plugin ' + x.id : 'Công cụ của Văn Phòng AI' }, (x.kind === 'tool' ? (x.id === 'vp_computer' ? '🖱️ ' : x.id === 'vp_browser' ? '🌐 ' : '🧭 ') : /computer/i.test(x.id) ? '🖥️ ' : '🧩 ') + x.name));
+        out.push(el('span', { class: 'skchip mention', title: x.kind === 'plugin' ? 'Plugin ' + x.id : 'Công cụ của Văn Phòng AI' }, (x.kind === 'tool' ? (x.id === 'vp_computer' ? '🖱️ ' : x.id === 'vp_browser' ? '🌐 ' : x.id === 'canva_web' ? '🎨 ' : '🧭 ') : /computer/i.test(x.id) ? '🖥️ ' : '🧩 ') + x.name));
       } else {
         const s = C.skills.find((x) => x.name === m[1]);
         out.push(s ? el('span', { class: 'skchip', title: s.description }, skillUi(s)[0] + ' ' + skillUi(s)[1]) : m[0]);
@@ -677,6 +677,7 @@
         el('small', { text: 'Giống Claude Desktop: trang web hiện ngay bên phải, AI tự mở trang, bấm, gõ, điền form – bạn xem trực tiếp và bấm tiếp được. Đăng nhập 1 lần trong khung, lần sau tự nhớ.' })), badge('ready')),
       el('div', { class: 'tp-act' },
         el('button', { class: 'btn mini', onclick: () => { pop.remove(); window.VPBrowser.toggle(true); } }, '🌐 Mở khung'),
+        el('button', { class: 'btn mini', title: 'Mở Canva trong khung trình duyệt – đăng nhập 1 lần, AI thiết kế giúp', onclick: () => { pop.remove(); window.VPBrowser.go('https://www.canva.com/'); } }, '🎨 Canva'),
         el('button', { class: 'btn mini', onclick: () => { C.mentions = [{ kind: 'tool', id: 'vp_browser', name: 'Trình duyệt', icon: '🌐' }]; tryIt('@Trình duyệt mở google.com tìm "giá vàng hôm nay" rồi tóm tắt 3 dòng'); } }, '▶ Dùng thử'))) : null;
     const others = (info.plugins || []).filter((p) => p.installed && p.name !== 'computer-use');
     const plRow = others.length ? el('div', { class: 'tp-list' }, el('small', { class: 'dim', text: 'Plugin đã cài: ' }), ...others.map((p) => el('span', { class: 'tp-chip', title: p.description, text: p.title }))) : null;

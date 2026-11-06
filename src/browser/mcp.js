@@ -9,7 +9,7 @@ const CONN = process.env.VPB_CONN || '';
 const ACT_ITEM = {
   type: 'object',
   properties: {
-    action: { type: 'string', enum: ['click', 'double_click', 'type', 'press', 'select', 'hover', 'scroll', 'wait', 'back', 'forward'] },
+    action: { type: 'string', enum: ['click', 'double_click', 'type', 'press', 'select', 'hover', 'scroll', 'wait', 'wait_download', 'back', 'forward'] },
     ref: { type: 'string', description: 'Mã phần tử eN lấy từ browser_snapshot / kết quả lần trước.' },
     x: { type: 'number', description: 'Không có mã eN (canvas, ảnh…): toạ độ ngang trên ảnh browser_screenshot.' },
     y: { type: 'number', description: 'Toạ độ dọc trên ảnh browser_screenshot.' },
@@ -20,7 +20,7 @@ const ACT_ITEM = {
     value: { type: 'string', description: 'select: chữ hoặc giá trị lựa chọn.' },
     direction: { type: 'string', enum: ['up', 'down'] },
     amount: { type: 'number', description: 'scroll: số px (mặc định 600).' },
-    ms: { type: 'number', description: 'wait: số mili giây (tối đa 10000; chờ chữ tối đa 15000).' },
+    ms: { type: 'number', description: 'wait: số mili giây (tối đa 10000; chờ chữ tối đa 15000). wait_download: chờ tối đa bao lâu (mặc định 60000).' },
   },
   required: ['action'],
   additionalProperties: false,
@@ -28,7 +28,7 @@ const ACT_ITEM = {
 const TOOLS = [
   { name: 'browser_open', title: 'Mở trang', description: 'Mở một trang web (hoặc tìm Google nếu không phải địa chỉ) trong trình duyệt cạnh khung chat – người dùng thấy trực tiếp. Trả về tóm tắt trang + danh sách phần tử thao tác được [eN].', inputSchema: { type: 'object', properties: { url: { type: 'string' }, new_tab: { type: 'boolean' }, max_chars: { type: 'integer' } }, required: ['url'], additionalProperties: false } },
   { name: 'browser_snapshot', title: 'Xem trang', description: 'Đọc trang đang mở: tiêu đề, hộp thoại, danh sách nút / ô nhập / link có mã [eN], nội dung chính rút gọn. Nhanh và rẻ hơn ảnh chụp – dùng trước khi thao tác.', inputSchema: { type: 'object', properties: { full: { type: 'boolean', description: 'Lấy nhiều phần tử và chữ hơn.' }, max_chars: { type: 'integer' } }, additionalProperties: false } },
-  { name: 'browser_act', title: 'Thao tác trang', description: 'Thực hiện liên tiếp nhiều thao tác như người thật (con trỏ SIMI di chuyển, bấm, gõ tiếng Việt, chọn, cuộn, nhấn phím, chờ) trong 1 lần gọi, rồi trả về trang sau khi làm. Gộp các bước biết trước (vd điền cả form rồi bấm Gửi) vào cùng một lần gọi.', inputSchema: { type: 'object', properties: { actions: { type: 'array', items: ACT_ITEM, minItems: 1, maxItems: 30 }, snapshot: { type: 'boolean', description: 'false: không trả lại trang sau khi làm.' }, max_chars: { type: 'integer' } }, required: ['actions'], additionalProperties: false } },
+  { name: 'browser_act', title: 'Thao tác trang', description: 'Thực hiện liên tiếp nhiều thao tác như người thật (con trỏ SIMI di chuyển, bấm, gõ tiếng Việt, chọn, cuộn, nhấn phím, chờ, chờ tệp tải về – wait_download trả đường dẫn tệp trong thư mục Tải xuống) trong 1 lần gọi, rồi trả về trang sau khi làm. Gộp các bước biết trước (vd điền cả form rồi bấm Gửi) vào cùng một lần gọi.', inputSchema: { type: 'object', properties: { actions: { type: 'array', items: ACT_ITEM, minItems: 1, maxItems: 30 }, snapshot: { type: 'boolean', description: 'false: không trả lại trang sau khi làm.' }, max_chars: { type: 'integer' } }, required: ['actions'], additionalProperties: false } },
   { name: 'browser_read', title: 'Đọc chữ trang', description: 'Lấy toàn bộ chữ của trang đang mở (bài viết, bảng giá, kết quả tìm kiếm…).', inputSchema: { type: 'object', properties: { max_chars: { type: 'integer' } }, additionalProperties: false } },
   { name: 'browser_screenshot', title: 'Chụp trang', description: 'Ảnh chụp trang đang mở – chỉ dùng khi cần nhìn bố cục / hình ảnh (canvas, biểu đồ, captcha…); việc thường dùng browser_snapshot.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'browser_tabs', title: 'Tab', description: 'Xem / mở / chuyển / đóng tab của trình duyệt cạnh chat.', inputSchema: { type: 'object', properties: { action: { type: 'string', enum: ['list', 'new', 'switch', 'close'] }, id: { type: 'string' }, url: { type: 'string' } }, additionalProperties: false } },

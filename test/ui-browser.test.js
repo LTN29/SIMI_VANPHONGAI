@@ -15,8 +15,10 @@ const PAGE = `<!doctype html><meta charset="utf-8"><title>Form thử SIMI</title
 <button id="send" onclick="document.getElementById('out').textContent='Đã gửi: '+document.getElementById('name').value+' / '+document.getElementById('city').value+' / '+document.getElementById('note').value">Gửi yêu cầu</button>
 <p id="out"></p><a href="/trang-2">Sang trang 2</a>
 <div id="card" style="cursor:pointer;width:220px;padding:14px;border:1px solid #ccc" onclick="document.getElementById('out').textContent='Đã chọn sản phẩm'"><div>Tai nghe Bluetooth SIMI</div><span>299.000đ</span></div>
+<a id="dl" href="/bao-gia.txt" download="bao-gia.txt">Tải báo giá</a>
 <canvas id="cv" width="200" height="60" style="border:1px solid #999" onclick="document.getElementById('out').textContent='Bấm canvas tại '+event.offsetX+','+event.offsetY"></canvas>`;
 
+const dlRef = (t) => (t.match(/\[(e\d+)\] link "Tải báo giá"/) || [])[1];
 function rpc(child, msg) {
   return new Promise((resolve) => {
     let buf = '';
@@ -28,6 +30,7 @@ function rpc(child, msg) {
 
 run(async () => {
   const srv = http.createServer((req, res) => {
+    if (req.url === '/bao-gia.txt') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'content-disposition': 'attachment; filename="bao-gia.txt"' }); return res.end('Báo giá SIMI'); }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(req.url === '/trang-2' ? '<!doctype html><meta charset="utf-8"><title>Trang 2</title><h1>Trang thứ hai</h1>' : PAGE);
   });
@@ -98,6 +101,11 @@ run(async () => {
   const xy = await rpc(mcp, { id: 43, method: 'tools/call', params: { name: 'browser_act', arguments: { actions: [{ action: 'click', x: cvp.x, y: cvp.y }] } } });
   check(/Bấm canvas tại (4[7-9]|5[0-2]),(1[7-9]|2[0-2])/.test(xy.result.content[0].text), 'bấm theo toạ độ x, y trên ảnh → trúng đúng chỗ trong canvas');
 
+  // tải tệp về (như Canva → Tải xuống) → AI nhận đường dẫn tệp
+  const dl = await rpc(mcp, { id: 44, method: 'tools/call', params: { name: 'browser_act', arguments: { actions: [{ action: 'click', ref: dlRef(xy.result.content[0].text) }, { action: 'wait_download', ms: 15000 }] } } });
+  const dlFile = (dl.result.content[0].text.match(/đã lưu (.+bao-gia[^\n]*\.txt)/) || [])[1];
+  check(dlFile && fs.readFileSync(dlFile, 'utf8') === 'Báo giá SIMI', 'wait_download: tải tệp về thư mục Tải xuống, trả đúng đường dẫn');
+
   // bấm link → điều hướng, nút Quay lại bật
   const link = (out.match(/\[(e\d+)\] link "Sang trang 2"/) || [])[1];
   const nav = await rpc(mcp, { id: 5, method: 'tools/call', params: { name: 'browser_act', arguments: { actions: [{ action: 'click', ref: link }] } } });
@@ -129,6 +137,7 @@ run(async () => {
   await new Promise((r) => setTimeout(r, 200));
   check(/Trình duyệt cạnh chat/.test(await win.locator('.tools-pop').innerText()), '🧰 Công cụ có mục "Trình duyệt cạnh chat"');
   await win.mouse.click(400, 300);
+  check(await win.locator('.cbw-mark', { hasText: 'Canva' }).count() === 1, 'khung trình duyệt có nút mở nhanh 🎨 Canva');
   await win.locator('.ch-bar .cb.web').click();
   await new Promise((r) => setTimeout(r, 250));
   check(!(await pageShown()) && await win.locator('#chBrowser.hidden').count() === 1, 'nút 🌐 đóng khung → gỡ lớp trang');

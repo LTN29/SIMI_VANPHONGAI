@@ -20,6 +20,7 @@
         ic('↗', 'Mở trang này bằng trình duyệt của máy', 'external'),
         el('button', { class: 'cbw-ic', title: 'Đóng khung trình duyệt', 'aria-label': 'Đóng', onclick: () => toggle(false) }, '✕')),
       el('div', { class: 'cbw-tabs', id: 'cbwTabs' }),
+      el('div', { class: 'cbw-marks' }, ...MARKS.map((m) => el('button', { class: 'cbw-mark', title: m.title, onclick: () => go(m.url) }, m.label))),
       el('div', { class: 'cbw-ai hidden', id: 'cbwAi', role: 'status' }, el('span', { class: 'cbw-dot' }), el('span', { id: 'cbwAiT' })),
       el('div', { class: 'cbw-host', id: 'cbwHost' }, el('div', { class: 'cbw-empty' }, el('b', { text: '🌐 Trình duyệt SIMI' }), el('small', { text: 'Đang mở trang… AI sẽ thao tác ngay tại đây, bạn xem và tự bấm được.' }))));
     const split = el('div', { class: 'cbw-split hidden', id: 'cbwSplit', title: 'Kéo để đổi độ rộng' });
@@ -39,6 +40,15 @@
     const modal = $('#modal'); if (modal) new MutationObserver(() => sync()).observe(modal, { attributes: true, attributeFilter: ['class'] });
     if (ls.get('vp.browserOpen', false)) toggle(true);
   }
+
+  // mở nhanh trang hay dùng (đăng nhập 1 lần trong khung, AI dùng tiếp)
+  const MARKS = [
+    { label: '🎨 Canva', url: 'https://www.canva.com/', title: 'Canva – đăng nhập 1 lần, rồi nhờ AI thiết kế poster, banner, slide…' },
+    { label: '📁 Drive', url: 'https://drive.google.com/', title: 'Google Drive' },
+    { label: '📘 Facebook', url: 'https://www.facebook.com/', title: 'Facebook' },
+    { label: '🛒 Shopee', url: 'https://shopee.vn/', title: 'Shopee' },
+  ];
+  function go(url) { if (!B.open) toggle(true); window.vp.browser.ui({ action: 'go', url }); }
 
   function covered(r) {
     const m = $('#modal'); if (m && !m.classList.contains('hidden')) return true;
@@ -99,5 +109,5 @@
   }
 
   function init(api) { U = api; build(); window.vp.browser.state().then((s) => { if (s) { B.state = s; render(); } }).catch(() => {}); }
-  window.VPBrowser = { init, toggle, sync, onEvent, isOpen: () => B.open };
+  window.VPBrowser = { init, toggle, sync, onEvent, go, isOpen: () => B.open };
 })();

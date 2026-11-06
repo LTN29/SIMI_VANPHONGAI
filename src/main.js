@@ -321,7 +321,7 @@ function registerIpc() {
   handle('fortune:ask', (p) => askFortune(p || {})); // 🎋 AI viết quẻ đầu ngày
   // 🌐 trình duyệt cạnh khung Chat: renderer báo vị trí ô trống, người dùng bấm thanh công cụ
   ipcMain.on('browser:bounds', (_e, b, visible, covered) => { if (browserPane) browserPane.setBounds(b, visible, covered); });
-  handle('browser:ui', (cmd) => (browserPane ? browserPane.ui(cmd || {}) : null));
+  handle('browser:ui', (cmd) => { if (browserPane) browserPane.ui(cmd || {}); return null; });
   handle('browser:state', () => (browserPane ? browserPane.state() : null));
   handle('skills:save', (p) => { const r = skillsAdmin.saveSkill(p || {}); skillsChanged(); return r; });
   handle('skills:remove', async (name) => { const r = await skillsAdmin.removeSkill(name, trash); skillsChanged(); return r; });
@@ -393,6 +393,7 @@ function registerIpc() {
     const cfg = store.getConfig();
     const tools = [
       { id: 'vp_browser', name: 'Trình duyệt', icon: '🌐', desc: 'Trình duyệt hiện cạnh khung chat – AI mở trang, bấm, gõ; bạn xem trực tiếp', enabled: !!browserPane && cfg.builtinBrowser !== false },
+      { id: 'canva_web', name: 'Canva', icon: '🎨', desc: 'Thiết kế trên Canva ngay trong trình duyệt cạnh chat (đăng nhập Canva 1 lần)', enabled: !!browserPane && cfg.builtinBrowser !== false },
       { id: 'vp_computer', name: 'Máy tính', icon: '🖱️', desc: 'Điều khiển chuột, bàn phím – mọi app trên máy, kể cả trình duyệt', enabled: cfg.computerControl !== false },
       { id: 'simi_browser', name: 'Trình duyệt SIMI', icon: '🧭', desc: 'Đọc & thao tác trang web (điền form, sửa / đăng bài) – nhanh, giữ đăng nhập', enabled: !!simi.readCodexConfig().browserMcp },
     ];
