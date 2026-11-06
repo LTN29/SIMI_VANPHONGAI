@@ -5,6 +5,7 @@ import { NavGrid } from './nav.js';
 import { Cat } from './cat.js';
 import { Person } from './person.js';
 import { BAR, buildBar, POOL_FELT, FORTUNE } from './bar.js';
+import { mergeStatic } from './merge.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 
 const ROOM = BAR;
@@ -48,12 +49,13 @@ export function avatarToLook(m) {
   };
 }
 
-// độ phân giải tối đa: màn hình 4K/Retina vẽ ở 1.5x là đủ nét, đỡ nặng gấp đôi
-const MAX_DPR = 1.5;
+// độ nét: vẽ tới 2x (màn Retina / điện thoại 3x vẫn sắc nét); máy không theo kịp thì tự hạ từng nấc, chạy dư sức thì tự nâng lại
+const MAX_DPR = 2;
+const DEVICE_DPR = () => Math.min(window.devicePixelRatio || 1, MAX_DPR);
 function makeRenderer(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
   if (!renderer.getContext()) throw new Error('WebGL không khả dụng');
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DPR));
+  renderer.setPixelRatio(DEVICE_DPR());
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -113,7 +115,7 @@ class Lobby3D {
     // view: góc nhìn đang vẽ; goal: góc nhìn muốn tới (kéo chuột, lăn chuột) → mỗi khung hình trượt mượt về goal
     this.view = { az: 0.72, el: 0.7, zoom: 0.85, target: new THREE.Vector3(0, 0.6, 0.6) };
     this.goal = { az: 0.72, el: 0.7, zoom: 0.85 };
-    this.perf = { acc: 0, n: 0, dpr: Math.min(window.devicePixelRatio || 1, MAX_DPR), slow: 0 };
+    this.perf = { acc: 0, n: 0, dpr: DEVICE_DPR(), slow: 0, fast: 0, ceil: DEVICE_DPR(), min: 1 };
 
     this.nav = new NavGrid(ROOM.minX, ROOM.minZ, ROOM.maxX, ROOM.maxZ, 0.2);
     this.nav.blockRect(ROOM.minX, ROOM.minZ, ROOM.maxX, ROOM.minZ + 0.25, 0.15);
@@ -121,6 +123,8 @@ class Lobby3D {
     this.nav.blockRect(ROOM.maxX - 0.2, ROOM.minZ, ROOM.maxX, ROOM.maxZ, 0.15);
     this.nav.blockRect(ROOM.minX, ROOM.maxZ - 0.2, ROOM.maxX, ROOM.maxZ, 0.15);
     for (const o of this.world.obstacles) this.nav.blockRect(...o);
+    // gộp đồ vật đứng yên → ít lệnh vẽ, điện thoại mượt hơn (lỗi thì giữ nguyên cảnh)
+    if (!opts.noMerge && !window.VP_NO_MERGE) try { this.mergeStats = mergeStatic(this.scene, this.world, { keep: ['cinema', 'clickables', 'poolTables', 'seatMeshes', 'seats'] }); } catch (e) { this.mergeStats = { error: String(e && e.message || e) }; }
     this.buildNpcDesk();
     for (const T of this.pool) this.setTableBalls(T, null);
     this.cat = new Cat(this.scene, this.nav);
@@ -129,6 +133,7 @@ class Lobby3D {
     this.skew = 0;              // lệch giờ so với Gateway (để nhảy cùng nhịp, mèo đúng giờ)
     this.light = false;         // chế độ nhẹ: độ phân giải 1x, không bóng đổ, tối đa 30 khung hình/giây
     this.capFps = false;
+    this.lastInput = performance.now();
 
     this.raycaster = new THREE.Raycaster(); this.ndc = new THREE.Vector2(); this.tmpV = new THREE.Vector3();
     this.floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -145,9 +150,9 @@ class Lobby3D {
     this.stick = { x: 0, y: 0 }; // joystick ảo trên điện thoại (-1…1)
     this.bindInput();
     if (opts.mobile) {
-      // điện thoại: không bóng đổ (vệt bóng mềm dưới chân vẫn còn), độ nét tối đa 1.5x, 30 khung hình/giây → mát máy, đỡ pin
-      this.renderer.shadowMap.enabled = false; this.perf.noShadow = true; this.capFps = true;
-      this.perf.dpr = Math.min(window.devicePixelRatio || 1, 1.5); this.renderer.setPixelRatio(this.perf.dpr);
+      // điện thoại: không bóng đổ (vệt bóng mềm dưới chân vẫn còn), 60 khung hình/giây, nét 2x; máy yếu tự hạ độ nét rồi mới hạ 30 khung
+      this.renderer.shadowMap.enabled = false; this.perf.noShadow = true;
+      this.perf.min = 1.25; // dưới 1.25x trên màn điện thoại nhìn rõ bị mờ
       this.goal.zoom = this.view.zoom = 0.7;
     }
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(root); this.resize();
@@ -156,11 +161,15 @@ class Lobby3D {
     const loop = (ts) => {
       if (this.dead) return; this.raf = requestAnimationFrame(loop);
       if (this.paused) return;
-      if ((this.capFps || this.light) && ts - (this.lastTs || 0) < 31) return;
+      if (this.slowMode() && ts - (this.lastTs || 0) < 31) return;
       this.lastTs = ts; this.frame();
     };
     loop();
   }
+
+  // vẽ 30 khung/giây khi: máy yếu, chế độ nhẹ, hoặc điện thoại để yên > 40 giây (đỡ nóng máy, đỡ pin; chạm là mượt lại ngay)
+  slowMode() { return this.capFps || this.light || (this.opts.mobile && performance.now() - (this.lastInput || 0) > 40000); }
+  poke() { this.lastInput = performance.now(); }
 
   // ---------------- camera ----------------
   updateCamera() {
@@ -271,6 +280,7 @@ class Lobby3D {
     const touches = new Map(); let pinch = null;
     const gap = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
     c.addEventListener('pointerdown', (e) => {
+      this.poke();
       c.focus(); c.setPointerCapture(e.pointerId);
       touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (touches.size === 2) { pinch = { d: gap(), zoom: this.goal.zoom }; if (down) down.moved = true; return; } // 2 ngón: không tính là chạm
@@ -677,8 +687,8 @@ class Lobby3D {
   // chế độ nhẹ cho máy yếu (Cài đặt hoặc tự bật khi khung hình thấp)
   setLight(on) {
     this.light = !!on;
-    const dpr = on ? 1 : Math.min(window.devicePixelRatio || 1, MAX_DPR);
-    this.perf.dpr = dpr; this.renderer.setPixelRatio(dpr);
+    const dpr = on ? 1 : DEVICE_DPR();
+    this.perf.dpr = dpr; this.perf.ceil = dpr; this.renderer.setPixelRatio(dpr);
     const shadows = !on && !this.perf.noShadow;
     if (this.renderer.shadowMap.enabled !== shadows) {
       this.renderer.shadowMap.enabled = shadows;
@@ -689,7 +699,8 @@ class Lobby3D {
 
   // ---------------- vòng lặp ----------------
   frame() {
-    const dt = Math.min(0.05, this.clock.getDelta());
+    const raw = this.clock.getDelta();
+    const dt = Math.min(0.05, raw);
     const t = (this.t = (this.t || 0) + dt);
     const now = performance.now() / 1000;
     for (const fn of this.world.animated) fn(t, dt);
@@ -780,22 +791,33 @@ class Lobby3D {
     this.renderer.render(this.scene, this.cam);
     if (this.cinemaObj) this.cssRenderer.render(this.cssScene, this.cam);
     this.placeDom();
-    this.adapt(dt);
+    this.adapt(raw);
   }
 
-  // máy yếu: tự giảm độ phân giải, rồi tắt bóng đổ để giữ khung hình mượt
-  adapt(dt) {
-    const P = this.perf; P.acc += dt; P.n++;
+  // tự cân độ mượt / độ nét theo máy, đo mỗi 2 giây (so với nhịp mong muốn: 60 khung, hoặc 30 khi đang giới hạn):
+  //  · không theo kịp → hạ độ nét 0.25 (không dưới mức tối thiểu) → tắt bóng đổ → cuối cùng mới vẽ 30 khung/giây
+  //  · dư sức 3 lần đo liền → nâng độ nét lại (không vượt mức từng bị chậm) → máy mạnh luôn nét, máy yếu luôn mượt
+  adapt(raw) {
+    const P = this.perf;
+    const mode = this.slowMode();
+    if (raw > 1 || mode !== P.mode) { P.acc = 0; P.n = 0; P.mode = mode; return; } // vừa tạm dừng (> 1 giây) / đổi nhịp vẽ: đo lại từ đầu
+    P.acc += raw; P.n++;
     if (P.acc < 2) return;
     const avg = P.acc / P.n; P.acc = 0; P.n = 0;
-    if (avg > 1 / 38) {
-      P.slow++;
-      if (P.dpr > 1.01) { P.dpr = Math.max(1, P.dpr - 0.25); this.renderer.setPixelRatio(P.dpr); this.resize(); }
-      else if (P.slow >= 3 && this.renderer.shadowMap.enabled) {
+    const target = this.slowMode() ? 1 / 30 : 1 / 60;
+    if (avg > target * 1.4) {
+      P.slow++; P.fast = 0;
+      if (P.dpr > P.min + 0.01) { P.ceil = P.dpr - 0.25; P.dpr = Math.max(P.min, P.dpr - 0.25); this.renderer.setPixelRatio(P.dpr); this.resize(); }
+      else if (P.slow >= 2 && this.renderer.shadowMap.enabled) {
         this.renderer.shadowMap.enabled = false; P.noShadow = true;
         this.scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
-      } else if (P.slow >= 6 && !this.capFps) { this.capFps = true; this.opts.onSlow && this.opts.onSlow(); } // vẫn chậm: vẽ 30 khung/giây cho êm
-    } else P.slow = 0;
+      } else if (P.slow >= 4 && !this.capFps) { this.capFps = true; P.slow = 0; this.opts.onSlow && this.opts.onSlow(); } // vẫn chậm: vẽ 30 khung/giây cho êm
+    } else {
+      P.slow = 0;
+      if (avg < target * 1.12 && !this.light && P.dpr < Math.min(P.ceil, DEVICE_DPR()) - 0.01 && ++P.fast >= 3) {
+        P.fast = 0; P.dpr = Math.min(P.ceil, DEVICE_DPR(), P.dpr + 0.25); this.renderer.setPixelRatio(P.dpr); this.resize();
+      }
+    }
   }
 
   // WASD / phím mũi tên: đi theo hướng nhìn của camera
@@ -825,6 +847,7 @@ class Lobby3D {
 
   // joystick ảo: x sang phải, y xuống dưới (theo màn hình), độ dài 0…1
   setStick(x, y) {
+    this.poke();
     const was = Math.hypot(this.stick.x, this.stick.y) >= 0.15;
     this.stick.x = Number(x) || 0; this.stick.y = Number(y) || 0;
     // thả cần → báo chỗ đứng cuối cùng để người khác thấy mình dừng đúng chỗ
