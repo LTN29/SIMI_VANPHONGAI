@@ -70,7 +70,7 @@ jobs:
   # người dùng mở app bằng giao diện (Quyền riêng tư & Bảo mật → Vẫn mở), không cần Terminal. .zip giữ cho app tự cập nhật.
   build-mac:
     needs: test
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -92,7 +92,8 @@ jobs:
 
   release:
     needs: [build-windows, build-linux, build-mac]
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Mac lỗi vẫn phát hành bản Windows / Linux
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.build-windows.result == 'success' && needs.build-linux.result == 'success' }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
