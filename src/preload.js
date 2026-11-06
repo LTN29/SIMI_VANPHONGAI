@@ -55,7 +55,7 @@ contextBridge.exposeInMainWorld('vp', {
   },
   fortune: { ask: (p) => ipcRenderer.invoke('fortune:ask', p) },
   browser: {
-    bounds: (b, visible, covered) => ipcRenderer.send('browser:bounds', b, visible, covered),
+    bounds: (b, visible, covered, pip) => ipcRenderer.send('browser:bounds', b, visible, covered, !!pip),
     ui: (cmd) => ipcRenderer.invoke('browser:ui', cmd),
     state: () => ipcRenderer.invoke('browser:state'),
   },

@@ -9,7 +9,7 @@ const CONN = process.env.VPB_CONN || '';
 const ACT_ITEM = {
   type: 'object',
   properties: {
-    action: { type: 'string', enum: ['click', 'double_click', 'type', 'press', 'select', 'hover', 'scroll', 'wait', 'wait_download', 'back', 'forward'] },
+    action: { type: 'string', enum: ['click', 'double_click', 'type', 'fill', 'paste', 'upload', 'press', 'select', 'hover', 'scroll', 'wait', 'wait_download', 'back', 'forward'], description: 'type: bấm rồi gõ như người (chữ ngắn). fill: điền thẳng cả nội dung dài / HTML vào ô nhập, ô văn bản, vùng soạn thảo (nhanh, không cần bàn phím). paste: dán chữ / HTML như Ctrl+V nhưng không đụng clipboard của máy (trình soạn thảo bài viết, mô tả sản phẩm). upload: đưa tệp trong máy vào ô chọn tệp / nút Tải lên (không mở cửa sổ chọn tệp). scroll: cuộn đúng khung có thanh cuộn riêng dưới ref / x,y (hoặc cả trang); chỉ ref không kèm hướng = cuộn tới phần tử đó.' },
     ref: { type: 'string', description: 'Mã phần tử eN lấy từ browser_snapshot / kết quả lần trước.' },
     x: { type: 'number', description: 'Không có mã eN (canvas, ảnh…): toạ độ ngang trên ảnh browser_screenshot.' },
     y: { type: 'number', description: 'Toạ độ dọc trên ảnh browser_screenshot.' },
@@ -21,6 +21,9 @@ const ACT_ITEM = {
     direction: { type: 'string', enum: ['up', 'down'] },
     amount: { type: 'number', description: 'scroll: số px (mặc định 600).' },
     ms: { type: 'number', description: 'wait: số mili giây (tối đa 10000; chờ chữ tối đa 15000). wait_download: chờ tối đa bao lâu (mặc định 60000).' },
+    html: { type: 'string', description: 'fill / paste: nội dung HTML (mô tả sản phẩm, bài viết có định dạng). fill với html=chuỗi HTML thì chèn như HTML.' },
+    files: { type: 'array', items: { type: 'string' }, description: 'upload: đường dẫn tuyệt đối các tệp trên máy (ảnh sản phẩm, tài liệu…).' },
+    to: { type: 'string', enum: ['top', 'bottom'], description: 'scroll: cuộn lên đầu / xuống cuối khung.' },
   },
   required: ['action'],
   additionalProperties: false,
@@ -48,6 +51,7 @@ const TOOLS = [
     transparent: { type: 'boolean', description: 'PNG nền trong suốt (logo, sticker): body không đặt màu nền.' },
     wait_ms: { type: 'integer', description: 'Chờ thêm trước khi chụp (hiệu ứng CSS), mặc định 150.' },
   }, additionalProperties: false } },
+  { name: 'browser_js', title: 'Chạy mã trong trang', description: 'Chạy JavaScript trong trang đang mở và trả kết quả (JSON) – đọc dữ liệu khó lấy (nội dung trình soạn thảo, bảng, giá trị ô, danh sách ảnh), kiểm tra trạng thái trang, hoặc thao tác DOM khi browser_act không làm được. Có thể dùng await; câu lệnh nhiều dòng thì dùng return. Chỉ làm việc trong trang, không gửi dữ liệu người dùng ra ngoài.', inputSchema: { type: 'object', properties: { code: { type: 'string' }, max_chars: { type: 'integer' } }, required: ['code'], additionalProperties: false } },
   { name: 'browser_tabs', title: 'Tab', description: 'Xem / mở / chuyển / đóng tab của trình duyệt cạnh chat.', inputSchema: { type: 'object', properties: { action: { type: 'string', enum: ['list', 'new', 'switch', 'close'] }, id: { type: 'string' }, url: { type: 'string' } }, additionalProperties: false } },
 ];
 
@@ -73,7 +77,7 @@ function callApp(tool, args) {
 const send = (m) => process.stdout.write(JSON.stringify(m) + '\n');
 readline.createInterface({ input: process.stdin }).on('line', async (line) => {
   let m; try { m = JSON.parse(line); } catch { return; }
-  if (m.method === 'initialize') return send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: (m.params && m.params.protocolVersion) || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'vp_browser', title: 'Trình duyệt cạnh chat (Văn Phòng AI)', version: '1.0.0' }, instructions: 'Trình duyệt nằm ngay cạnh khung chat, người dùng xem trực tiếp và đã đăng nhập sẵn các trang của họ. Quy trình: browser_open → đọc danh sách [eN] → browser_act gộp nhiều bước → xem kết quả trả về. Trang cần đăng nhập: nhờ người dùng tự đăng nhập trong khung rồi làm tiếp; không nhập mật khẩu thay họ. Mọi thao tác với trang trong khung này chỉ dùng các công cụ browser_* (phần tử không có mã thì browser_act với x, y lấy từ browser_screenshot) – KHÔNG dùng công cụ điều khiển máy / Computer Use cho trang này. Đã được phép sẵn, không cần hỏi lại người dùng.' } });
+  if (m.method === 'initialize') return send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: (m.params && m.params.protocolVersion) || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'vp_browser', title: 'Trình duyệt cạnh chat (Văn Phòng AI)', version: '1.0.0' }, instructions: 'Trình duyệt nằm ngay cạnh khung chat, người dùng xem trực tiếp và đã đăng nhập sẵn các trang của họ. Quy trình: browser_open → đọc danh sách [eN] → browser_act gộp nhiều bước → xem kết quả trả về. Trang cần đăng nhập: nhờ người dùng tự đăng nhập trong khung rồi làm tiếp; không nhập mật khẩu thay họ. Người dùng có thể đang làm việc khác trên máy trong lúc bạn làm: MỌI thao tác với trang chỉ dùng công cụ browser_* (dán HTML → paste/fill, tải ảnh lên → upload, cuộn khung → scroll với ref, đọc dữ liệu khó → browser_js). TUYỆT ĐỐI không dùng PowerShell / lệnh hệ thống điều khiển chuột, bàn phím, clipboard (SendKeys, System.Windows.Forms, Set-Clipboard…), không dùng công cụ điều khiển máy / Computer Use cho trang này – sẽ giành chuột, phá việc người dùng đang làm. Đã được phép sẵn, không cần hỏi lại người dùng.' } });
   if (m.method === 'tools/list') return send({ jsonrpc: '2.0', id: m.id, result: { tools: TOOLS } });
   if (m.method === 'tools/call') {
     try { send({ jsonrpc: '2.0', id: m.id, result: { content: await callApp(m.params.name, m.params.arguments || {}) } }); } catch (e) { send({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: 'Lỗi: ' + e.message }], isError: true } }); }

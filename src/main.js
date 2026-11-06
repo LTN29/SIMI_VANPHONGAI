@@ -320,7 +320,7 @@ function registerIpc() {
   handle('skills:read', (name) => skillsAdmin.readSkill(name));
   handle('fortune:ask', (p) => askFortune(p || {})); // 🎋 AI viết quẻ đầu ngày
   // 🌐 trình duyệt cạnh khung Chat: renderer báo vị trí ô trống, người dùng bấm thanh công cụ
-  ipcMain.on('browser:bounds', (_e, b, visible, covered) => { if (browserPane) browserPane.setBounds(b, visible, covered); });
+  ipcMain.on('browser:bounds', (_e, b, visible, covered, pip) => { if (browserPane) browserPane.setBounds(b, visible, covered, pip); });
   handle('browser:ui', (cmd) => { if (browserPane) browserPane.ui(cmd || {}); return null; });
   handle('browser:state', () => (browserPane ? browserPane.state() : null));
   handle('skills:save', (p) => { const r = skillsAdmin.saveSkill(p || {}); skillsChanged(); return r; });
@@ -495,6 +495,9 @@ function createWindow() {
 app.on('second-instance', focusWindow);
 // màn chiếu YouTube trong Sảnh: video tự phát (không cần bấm vào khung)
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+// trình duyệt cạnh chat: AI vẫn thao tác được khi người dùng chuyển sang app khác che mất cửa sổ (Windows không coi trang là "ẩn")
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 
 // YouTube từ chối phát khung nhúng không có Referer (lỗi 153) – app chạy từ file:// nên tự gắn Referer cho khung nhúng
 function youtubeReferer() {

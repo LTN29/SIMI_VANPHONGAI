@@ -3,7 +3,7 @@
    và tự bấm được. Hộp thoại / menu của app đè lên ô trang → tạm ẩn trang (lớp trang luôn nằm trên giao diện). */
 (function () {
   let U = null;
-  const B = { open: false, state: null, aiT: null };
+  const B = { open: false, state: null, aiT: null, busy: false, pip: false, pipHidden: false };
   const $ = (s, r = document) => r.querySelector(s);
   const ls = { get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* bỏ qua */ } } };
   const OVERLAYS = '.tools-pop, .who-menu, .upd-card, .ch-skillpop:not(.hidden), .ctx-menu, .lb-pop';
@@ -50,6 +50,27 @@
   ];
   function go(url) { if (!B.open) toggle(true); window.vp.browser.ui({ action: 'go', url }); }
 
+  // khung nhỏ góc màn hình: AI đang dùng trình duyệt mà người dùng ở Văn phòng / Sảnh / Quản trị (không giành màn hình của họ)
+  function pipBox() {
+    let n = $('#cbwPip'); if (n) return n;
+    const { el } = U;
+    n = el('div', { class: 'cbw-pip hidden', id: 'cbwPip', role: 'region', 'aria-label': 'SIMI đang dùng trình duyệt' },
+      el('div', { class: 'cbw-pip-h' }, el('span', { class: 'cbw-dot' }), el('b', { id: 'cbwPipT', text: 'SIMI đang dùng trình duyệt' }),
+        el('button', { class: 'cbw-ic', title: 'Mở lớn bên cạnh khung chat', 'aria-label': 'Mở lớn', onclick: () => { B.pipHidden = false; if (window.VPChat) window.VPChat.setView('chat'); toggle(true); paintPip(); } }, '⤢'),
+        el('button', { class: 'cbw-ic', title: 'Ẩn khung nhỏ (AI vẫn làm tiếp)', 'aria-label': 'Ẩn', onclick: () => { B.pipHidden = true; paintPip(); } }, '–')),
+      el('div', { class: 'cbw-pip-host', id: 'cbwPipHost' }));
+    document.body.append(n);
+    new ResizeObserver(() => sync()).observe($('#cbwPipHost'));
+    return n;
+  }
+  const inChat = () => { const v = $('#chatView'); return !!(v && !v.classList.contains('hidden')); };
+  function paintPip() {
+    const want = B.busy && !B.pipHidden && !(B.open && inChat());
+    if (want !== B.pip || want) { B.pip = want; pipBox().classList.toggle('hidden', !want); }
+    const b = $('#chBrowserBtn'); if (b) b.classList.toggle('busy', !!B.busy);
+    sync();
+  }
+
   function covered(r) {
     const m = $('#modal'); if (m && !m.classList.contains('hidden')) return true;
     return [...document.querySelectorAll(OVERLAYS)].some((n) => { const o = n.getBoundingClientRect(); return o.width && o.height && o.right > r.left && o.left < r.right && o.bottom > r.top && o.top < r.bottom; });
@@ -59,10 +80,15 @@
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => {
       const host = $('#cbwHost'); if (!host || !window.vp.browser) return;
-      const view = $('#chatView');
-      const vis = B.open && view && !view.classList.contains('hidden');
+      const vis = B.open && inChat();
+      if (!vis && B.pip) {
+        const ph = $('#cbwPipHost'); const r = ph.getBoundingClientRect();
+        const m = $('#modal'); const cov = !!(m && !m.classList.contains('hidden'));
+        window.vp.browser.bounds({ x: r.left, y: r.top, width: r.width, height: r.height }, true, cov, true);
+        return;
+      }
       const r = host.getBoundingClientRect();
-      window.vp.browser.bounds({ x: r.left, y: r.top, width: r.width, height: r.height }, vis, vis && covered(r));
+      window.vp.browser.bounds({ x: r.left, y: r.top, width: r.width, height: r.height }, vis, vis && covered(r), false);
     });
   }
 
@@ -74,7 +100,7 @@
     $('#chBrowser').classList.toggle('hidden', !B.open);
     $('#cbwSplit').classList.toggle('hidden', !B.open);
     const b = $('#chBrowserBtn'); if (b) b.classList.toggle('on', B.open);
-    sync();
+    if (B.busy) paintPip(); else sync();
   }
 
   function render() {
@@ -93,12 +119,16 @@
 
   function onEvent(e) {
     if (e.ev === 'state') { B.state = e.state; render(); return; }
-    if (e.ev === 'show') {
-      if (window.VPChat && window.VPChat.view && window.VPChat.view() !== 'chat') window.VPChat.setView('chat');
-      if (!B.open) toggle(true); else sync();
+    if (e.ev === 'show' || e.ev === 'busy') {
+      // đang ở tab Chat → mở khung bên cạnh; đang ở chỗ khác → khung nhỏ góc màn hình, không kéo người dùng về Chat
+      if (e.ev === 'busy') { B.busy = !!e.on; if (!B.busy) B.pipHidden = false; }
+      else B.busy = true;
+      if (B.busy && inChat() && !B.open) toggle(true);
+      paintPip();
       return;
     }
     if (e.ev === 'ai') {
+      const pt = $('#cbwPipT'); if (pt) pt.textContent = '🤖 ' + e.text;
       const box = $('#cbwAi'); if (!box) return;
       $('#cbwAiT').textContent = '🤖 SIMI đang thao tác: ' + e.text;
       box.classList.remove('hidden'); clearTimeout(B.aiT);
@@ -109,5 +139,7 @@
   }
 
   function init(api) { U = api; build(); window.vp.browser.state().then((s) => { if (s) { B.state = s; render(); } }).catch(() => {}); }
-  window.VPBrowser = { init, toggle, sync, onEvent, go, isOpen: () => B.open };
+  // đổi tab Văn phòng / Chat / Sảnh → khung nhỏ hiện / ẩn theo
+  const resync = () => (B.busy ? paintPip() : sync());
+  window.VPBrowser = { init, toggle, sync: resync, onEvent, go, isOpen: () => B.open, _state: B };
 })();

@@ -19,6 +19,17 @@ const PAGE = `<!doctype html><meta charset="utf-8"><title>Form thử SIMI</title
 <canvas id="cv" width="200" height="60" style="border:1px solid #999" onclick="document.getElementById('out').textContent='Bấm canvas tại '+event.offsetX+','+event.offsetY"></canvas>`;
 
 const dlRef = (t) => (t.match(/\[(e\d+)\] link "Tải báo giá"/) || [])[1];
+// trang kiểu quản trị shop: trình soạn thảo mô tả (contenteditable), ô mã HTML trong khung cuộn riêng, nút tải ảnh (ô file ẩn), hỏi xác nhận
+const EDITOR = `<!doctype html><meta charset="utf-8"><title>Sửa sản phẩm</title><style>#box{height:120px;overflow:auto;border:1px solid #999}#box div{height:900px}</style>
+<h1>Sửa sản phẩm</h1>
+<div id="desc" contenteditable="true" aria-label="Mô tả sản phẩm" style="min-height:60px;border:1px solid #ccc"></div>
+<div id="box" aria-label="Khung chi tiết"><div><textarea id="html" aria-label="Mã HTML" rows="4"></textarea><p id="deep">Chi tiết ảnh sản phẩm</p></div></div>
+<input type="file" id="pic" accept="image/*" multiple style="display:none" onchange="document.getElementById('picOut').textContent='Ảnh: '+[...this.files].map(f=>f.name+':'+f.size).join(',')">
+<button id="upBtn" onclick="document.getElementById('pic').click()">Tải ảnh lên</button><p id="picOut"></p>
+<button id="del" onclick="document.getElementById('picOut').textContent += confirm('Xoá ảnh này?') ? ' | đã xoá' : ' | huỷ'">Xoá ảnh</button>
+<div id="ed2" contenteditable="true" aria-label="Ô dán" style="min-height:40px;border:1px solid #ccc"></div>
+<script>document.getElementById('ed2').addEventListener('paste',(e)=>{e.preventDefault();document.getElementById('ed2').innerHTML='[dán] '+e.clipboardData.getData('text/html');});</script>`;
+
 function rpc(child, msg) {
   return new Promise((resolve) => {
     let buf = '';
@@ -32,12 +43,16 @@ run(async () => {
   const srv = http.createServer((req, res) => {
     if (req.url === '/bao-gia.txt') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'content-disposition': 'attachment; filename="bao-gia.txt"' }); return res.end('Báo giá SIMI'); }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    if (req.url === '/editor') return res.end(EDITOR);
     res.end(req.url === '/trang-2' ? '<!doctype html><meta charset="utf-8"><title>Trang 2</title><h1>Trang thứ hai</h1>' : PAGE);
   });
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${srv.address().port}/`;
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'vpai-uibrowser-'));
   const { app, win, errors, shot, userData } = await launch({ prefix: 'browser', env: { CODEX_HOME: home, PATH: '/usr/bin:/bin' } });
+  // Playwright tự đóng hộp thoại alert/confirm của mọi trang nếu không ai nghe → để app tự xử lý (như khi chạy thật)
+  const keepDialogs = (pg) => pg.on('dialog', () => {});
+  app.context().pages().forEach(keepDialogs); app.context().on('page', keepDialogs);
   await win.click('.sheet footer .linkbtn').catch(() => {});
   await win.click('.viewtabs button[data-v="office"]');
 
@@ -51,7 +66,7 @@ run(async () => {
   const init = await rpc(mcp, { id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
   check(init.result.serverInfo.name === 'vp_browser' && /đăng nhập/.test(init.result.instructions), 'MCP vp_browser khởi động, có hướng dẫn cho AI');
   const list = await rpc(mcp, { id: 2, method: 'tools/list' });
-  check(list.result.tools.map((t) => t.name).join() === 'browser_open,browser_snapshot,browser_act,browser_read,browser_screenshot,design_render,browser_tabs', 'đủ 7 công cụ (6 trình duyệt + xuất thiết kế)');
+  check(list.result.tools.map((t) => t.name).join() === 'browser_open,browser_snapshot,browser_act,browser_read,browser_screenshot,design_render,browser_js,browser_tabs', 'đủ 8 công cụ (7 trình duyệt + xuất thiết kế)');
 
   // 🎨 thiết kế kiểu Claude Desktop: HTML → PNG nét gấp 2 / PDF, cảnh báo chữ tràn, PNG trong suốt
   check(list.result.tools.some((t) => t.name === 'design_render' && /Claude Desktop/.test(t.description)), 'có công cụ design_render');
@@ -82,8 +97,11 @@ run(async () => {
   const open = await rpc(mcp, { id: 3, method: 'tools/call', params: { name: 'browser_open', arguments: { url: base } } });
   const snap = open.result.content[0].text;
   check(!open.result.isError && /Đăng ký nhận báo giá/.test(snap) && /\[e\d+\] textbox "Họ tên" \(gợi ý: Họ và tên\)/.test(snap) && /select "" = "Hà Nội"/.test(snap), `browser_open trả về trang + phần tử [eN] (${Date.now() - t0} ms)`);
+  await win.waitForSelector('#cbwPip:not(.hidden)', { timeout: 5000 });
+  check(await win.locator('#chatView.hidden').count() === 1, 'người dùng đang ở Văn phòng → trang hiện ở khung nhỏ góc màn hình, không kéo về tab Chat');
+  await win.click('#cbwPip [aria-label="Mở lớn"]');
   await win.waitForSelector('#chatView.with-browser:not(.hidden) #chBrowser:not(.hidden)');
-  check(true, 'khung trình duyệt tự hiện cạnh khung chat');
+  check(await win.locator('#cbwPip.hidden').count() === 1, 'bấm ⤢ → mở lớn cạnh khung chat, khung nhỏ tắt');
   await win.waitForFunction((u) => document.querySelector('#cbwUrl').value === u, base);
   check(true, 'thanh địa chỉ hiện đúng trang AI đang mở');
   check(/Form thử SIMI/.test(await win.locator('.cbw-tab.on').innerText()), 'tab hiện tiêu đề trang');
@@ -177,15 +195,73 @@ run(async () => {
   await new Promise((r) => setTimeout(r, 400));
   check((await win.locator('.ch-side').boundingBox()).width > 250, 'nút » mở rộng lại');
   check(await win.locator('.cbw-mark', { hasText: 'Canva' }).count() === 1, 'khung trình duyệt có nút mở nhanh 🎨 Canva');
+  await win.waitForFunction(() => !window.VPBrowser._state.busy, null, { timeout: 20000 }); // AI đã xong việc
   await win.locator('.ch-bar .cb.web').click();
   await new Promise((r) => setTimeout(r, 250));
   check(!(await pageShown()) && await win.locator('#chBrowser.hidden').count() === 1, 'nút 🌐 đóng khung → gỡ lớp trang');
   await win.locator('.ch-bar .cb.web').click();
   await new Promise((r) => setTimeout(r, 250));
   check(await pageShown(), 'mở lại khung → trang cũ vẫn còn');
+  await win.waitForFunction(() => !window.VPBrowser._state.busy, null, { timeout: 20000 });
   await win.click('.viewtabs button[data-v="office"]');
   await new Promise((r) => setTimeout(r, 250));
   check(!(await pageShown()), 'sang Văn phòng → trang ẩn (không đè lên văn phòng)');
+
+  // ---- AI làm việc trong lúc người dùng làm việc khác: soạn mô tả, dán HTML, cuộn khung riêng, tải ảnh, hỏi xác nhận ----
+  const call = (id, name, args) => rpc(mcp, { id, method: 'tools/call', params: { name, arguments: args } });
+  const ed = await call(60, 'browser_open', { url: base + 'editor' });
+  const st1 = await win.evaluate(() => ({ pip: window.VPBrowser._state.pip, view: document.querySelector('.viewtabs button.on, .viewtabs button[aria-selected="true"]') && document.querySelector('.viewtabs button.on, .viewtabs button[aria-selected="true"]').dataset.v }));
+  check(st1.pip && await win.locator('#cbwPip:not(.hidden)').count() === 1 && !(await win.locator('#chatView:not(.hidden)').count()), 'người dùng đang ở Văn phòng → AI mở trang trong khung nhỏ góc màn hình, không kéo về tab Chat');
+  check(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children[0].webContents.executeJavaScript('document.visibilityState')) === 'visible', 'trang trong khung nhỏ vẫn hiển thị (AI bấm, gõ, chụp bình thường)');
+  const R = (re) => (ed.result.content[0].text.match(re) || [])[1];
+  const desc = R(/\[(e\d+)\] textbox "Mô tả sản phẩm"/) || R(/\[(e\d+)\] [a-z]+ "Mô tả sản phẩm"/), htmlBox = R(/\[(e\d+)\] textbox "Mã HTML"/), file = R(/\[(e\d+)\] file-input "image\/\*" \(nhiều tệp\) \(ẩn/), up = R(/\[(e\d+)\] button "Tải ảnh lên"/), del = R(/\[(e\d+)\] button "Xoá ảnh"/), ed2 = R(/\[(e\d+)\] [a-z]+ "Ô dán"/);
+  check(desc && htmlBox && file && up && del && ed2, 'snapshot thấy vùng soạn thảo, ô mã HTML, ô chọn tệp bị ẩn');
+  // người dùng đang gõ ở app (ô chat) trong lúc AI làm → không bị giành chữ / giành con trỏ
+  await win.click('.viewtabs button[data-v="chat"]'); await win.locator('.ch-bar .cb.web').click(); await new Promise((r) => setTimeout(r, 200));
+  await win.click('#chInput'); await win.keyboard.type('anh đang gõ');
+  const big = '<h2>Đặc điểm nổi bật</h2><ul>' + Array.from({ length: 60 }, (_, k) => `<li>Ý số ${k + 1}: thiết kế gọn nhẹ, hút mạnh</li>`).join('') + '</ul>';
+  const tmpImg = path.join(os.tmpdir(), 'vp-anh-sp-1.png'); const tmpImg2 = path.join(os.tmpdir(), 'vp-anh-sp-2.png');
+  fs.writeFileSync(tmpImg, Buffer.alloc(1234, 1)); fs.writeFileSync(tmpImg2, Buffer.alloc(77, 2));
+  const t2 = Date.now();
+  const r1 = await call(61, 'browser_act', { actions: [
+    { action: 'fill', ref: htmlBox, text: big },
+    { action: 'type', ref: desc, text: 'Máy hút bụi không dây SIMI' },
+    { action: 'paste', ref: ed2, text: 'x', html: '<b>Đậm</b>' },
+    { action: 'scroll', ref: htmlBox, amount: 500 },
+    { action: 'upload', ref: file, files: [tmpImg] },
+    { action: 'click', ref: del },
+  ] });
+  const o1 = r1.result.content[0].text;
+  if (r1.result.isError) console.log(o1);
+  await win.keyboard.type(' tiếp');
+  check(await win.locator('#chInput').inputValue() === 'anh đang gõ tiếp' && await win.evaluate(() => document.activeElement && document.activeElement.id) === 'chInput', 'người dùng gõ ở app trong lúc AI làm: chữ không lọt sang trang, ô chat vẫn giữ con trỏ');
+  const pg2 = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children[0].webContents.executeJavaScript('({ html: document.getElementById("html").value, desc: document.getElementById("desc").innerText, ed2: document.getElementById("ed2").innerHTML, box: document.getElementById("box").scrollTop, pic: document.getElementById("picOut").textContent })'));
+  check(pg2.html === big, `fill: điền ${big.length} ký tự HTML vào ô mã trong 1 bước (${Date.now() - t2} ms cả lượt)`);
+  check(pg2.desc === 'Máy hút bụi không dây SIMI', 'type: gõ tiếng Việt vào vùng soạn thảo');
+  check(pg2.ed2 === '[dán] <b>Đậm</b>', 'paste: dán HTML qua sự kiện dán của trang, không đụng clipboard máy');
+  check(/cuộn xuống khung textarea#html: dịch \d+px/.test(o1), 'scroll theo mã: cuộn đúng ô có thanh cuộn riêng (ô mã HTML), không phải cả trang');
+  const bx = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children[0].webContents.executeJavaScript('(() => { const r = document.getElementById("box").getBoundingClientRect(); return { x: Math.round(r.left + 40), y: Math.round(r.top + 105) }; })()'));
+  const sc1 = await call(66, 'browser_act', { actions: [{ action: 'scroll', x: bx.x, y: bx.y, amount: 300 }], snapshot: false });
+  check(/cuộn xuống khung div#box: dịch 300px/.test(sc1.result.content[0].text), 'scroll theo toạ độ: cuộn khung chi tiết bên dưới con trỏ (như lăn chuột)');
+  check(/Ảnh: vp-anh-sp-1\.png:1234/.test(pg2.pic), 'upload: đưa ảnh vào ô chọn tệp bị ẩn, không mở cửa sổ chọn tệp');
+  check(/\| đã xoá/.test(pg2.pic) && /hộp thoại confirm: "Xoá ảnh này\?" → đã bấm OK/.test(o1), 'trang hỏi xác nhận → tự bấm OK và báo lại cho AI');
+  const r2 = await call(62, 'browser_act', { actions: [{ action: 'upload', ref: up, files: [tmpImg, tmpImg2] }] });
+  const pic2 = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children[0].webContents.executeJavaScript('document.getElementById("picOut").textContent'));
+  check(!r2.result.isError && /vp-anh-sp-1\.png:1234,vp-anh-sp-2\.png:77/.test(pic2), 'upload qua nút "Tải ảnh lên": chặn hộp chọn tệp của Windows, đưa thẳng 2 ảnh vào');
+  const js = await call(63, 'browser_js', { code: 'document.querySelectorAll("#html").length + document.getElementById("desc").innerText.length' });
+  check(js.result.content[0].text === '27', 'browser_js: đọc dữ liệu trong trang');
+  // ẩn khung nhỏ / thu nhỏ app → trang không hiển thị: AI vẫn gõ / bấm được (bằng thao tác trong trang), ảnh chụp báo rõ
+  await win.locator('.ch-bar .cb.web').click(); await win.click('.viewtabs button[data-v="office"]');
+  await win.waitForSelector('#cbwPip:not(.hidden)', { timeout: 5000 }).catch(() => {});
+  await win.evaluate(() => { const b = document.querySelector('#cbwPip [aria-label="Ẩn"]'); if (b) b.click(); });
+  await new Promise((r) => setTimeout(r, 300));
+  if (process.env.DBG) console.log('DBG pane state', JSON.stringify(await win.evaluate(() => window.vp.browser.state())).slice(0, 300));
+  const hid = await call(64, 'browser_act', { actions: [{ action: 'type', ref: desc, text: 'Bản khi app ẩn' }, { action: 'click', ref: del }] });
+  if (process.env.DBG) console.log('DBG hid', JSON.stringify(hid).slice(0, 400));
+  const sc2 = await call(65, 'browser_screenshot', {});
+  check(!hid.result.isError && /điền "Bản khi app ẩn"/.test(hid.result.content[0].text), 'trang bị ẩn: AI vẫn điền chữ và bấm nút được');
+  check(sc2.result.isError && /không hiển thị|đang ẩn/.test(sc2.result.content[0].text), 'trang bị ẩn: chụp ảnh báo rõ, gợi ý dùng snapshot');
+  fs.rmSync(tmpImg, { force: true }); fs.rmSync(tmpImg2, { force: true });
 
   mcp.stdin.end(); mcp.kill();
   srv.close();
