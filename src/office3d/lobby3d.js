@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { NavGrid } from './nav.js';
 import { Cat } from './cat.js';
 import { Person } from './person.js';
-import { BAR, buildBar, POOL_FELT, FORTUNE, HONOR } from './bar.js';
+import { BAR, buildBar, POOL_FELT, FORTUNE, IDEAS } from './bar.js';
 import { mergeStatic } from './merge.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 
@@ -124,7 +124,7 @@ class Lobby3D {
     this.nav.blockRect(ROOM.minX, ROOM.maxZ - 0.2, ROOM.maxX, ROOM.maxZ, 0.15);
     for (const o of this.world.obstacles) this.nav.blockRect(...o);
     // gộp đồ vật đứng yên → ít lệnh vẽ, điện thoại mượt hơn (lỗi thì giữ nguyên cảnh)
-    if (!opts.noMerge && !window.VP_NO_MERGE) try { this.mergeStats = mergeStatic(this.scene, this.world, { keep: ['cinema', 'clickables', 'poolTables', 'seatMeshes', 'seats'] }); } catch (e) { this.mergeStats = { error: String(e && e.message || e) }; }
+    if (!opts.noMerge && !window.VP_NO_MERGE) try { this.mergeStats = mergeStatic(this.scene, this.world, { keep: ['cinema', 'clickables', 'poolTables', 'seatMeshes', 'seats', 'ideasFlag'] }); } catch (e) { this.mergeStats = { error: String(e && e.message || e) }; }
     this.buildNpcDesk();
     for (const T of this.pool) this.setTableBalls(T, null);
     this.cat = new Cat(this.scene, this.nav);
@@ -319,7 +319,7 @@ class Lobby3D {
         const action = !p && !npc && !cat && table < 0 ? this.pickAction(e.clientX, e.clientY) : null;
         const st = !p && !cat && !npc && table < 0 && !action && this.pickSeat(e.clientX, e.clientY);
         if (action === 'fortune') { this.walkSelf(FORTUNE.x, FORTUNE.z + 0.9, true); this.opts.onFortune && this.opts.onFortune(); }
-        else if (action === 'honor') { this.walkSelf(HONOR.x, BAR.minZ + 1.4, true); this.opts.onHonor && this.opts.onHonor(); }
+        else if (action === 'ideas') { this.walkSelf(IDEAS.x + 0.6, BAR.minZ + 1.3, true); this.opts.onIdeas && this.opts.onIdeas(); }
         else if (npc) { this.npcWave(); this.opts.onNpcClick && this.opts.onNpcClick(e.clientX, e.clientY); }
         else if (table >= 0) this.opts.onTableClick && this.opts.onTableClick(table, e.clientX, e.clientY);
         else if (cat) this.opts.onCatClick && this.opts.onCatClick(e.clientX, e.clientY);
@@ -388,7 +388,7 @@ class Lobby3D {
   makePlate(p) {
     const plate = document.createElement('div');
     plate.className = 'plate3d lobby' + (p.me ? ' me' : '');
-    plate.innerHTML = '<span class="pl-bubble" hidden></span><span class="pl-row"><span class="pl-badge"></span><span class="pl-name"></span></span><span class="pl-sub"><span class="pl-title"></span></span>';
+    plate.innerHTML = '<span class="pl-bubble" hidden></span><span class="pl-row"><span class="pl-name"></span></span><span class="pl-sub"><span class="pl-title"></span></span>';
     plate.addEventListener('click', (e) => {
       const r = plate.getBoundingClientRect();
       if (p.me) this.opts.onSelfClick && this.opts.onSelfClick(r.left + r.width / 2, r.bottom);
@@ -412,11 +412,7 @@ class Lobby3D {
       const task = p.busy && !p.game && !p.dance && st.task ? String(st.task) : '';
       if (bub.dataset.t !== task) { bub.dataset.t = task; bub.textContent = task; bub.hidden = !task; }
     }
-    // huy hiệu Bảng vàng tuần này
-    const hb = this.honorBadges && this.honorBadges.get(m.id);
-    const badge = p.plate.querySelector('.pl-badge');
-    if (badge) { badge.textContent = hb ? hb.icons : ''; badge.hidden = !hb; }
-    p.plate.title = `${m.name} · ${m.teamName || ''}${m.role ? ' · ' + m.role : ''}${hb ? ' · ' + hb.titles : ''}`;
+    p.plate.title = `${m.name} · ${m.teamName || ''}${m.role ? ' · ' + m.role : ''}`;
   }
 
   // ---------------- di chuyển ----------------
@@ -436,7 +432,6 @@ class Lobby3D {
       if (p.me && this.opts.onToast) this.opts.onToast(st.theme === 'thantai'
         ? '💰 Thần Tài phù hộ: khách vào như nước, chốt đơn ầm ầm, doanh số x10! Bấm đi chỗ khác là đứng dậy.'
         : '🙏 Thành tâm khấn: cầu không bug, token đầy kho, deadline lùi! Bấm đi chỗ khác là đứng dậy.');
-      if (p.me && this.opts.onPray) this.opts.onPray(st.theme || null);
     }
   }
   walk(p, x, z) {
@@ -652,20 +647,12 @@ class Lobby3D {
   }
 
   // ---------------- mèo / nhảy / tương tác (Gateway điều khiển) ----------------
-  /** 🏆 Bảng vàng treo tường: vẽ lại với số liệu mới (null = đang tải) */
-  setHonor(data) {
-    const b = this.world && this.world.honorBoard; if (b) b.draw(data || null);
-    // người đứng đầu mỗi bảng có huy hiệu cạnh tên: 💰 Thần Tài sống · 🍀 May mắn nhất · 🤖 Chiến thần AI
-    const map = new Map();
-    for (const [key, icon, title] of [['thantai', '💰', 'Thần Tài sống'], ['lucky', '🍀', 'May mắn nhất'], ['ai', '🤖', 'Chiến thần AI']]) {
-      const top = data && data.boards && data.boards[key] && data.boards[key][0];
-      if (!top) continue;
-      const cur = map.get(top.id) || { icons: '', titles: [] };
-      cur.icons += icon; cur.titles.push(`${icon} ${title} tuần này`); map.set(top.id, cur);
-    }
-    for (const v of map.values()) v.titles = v.titles.join(', ');
-    this.honorBadges = map;
-    for (const p of this.people.values()) if (p.plate && p.m) this.updatePlate(p);
+  /** 📮 Hòm thư góp ý: biển hiệu vẽ lại số góp ý theo sản phẩm; cờ vàng dựng lên khi còn góp ý IT chưa xem */
+  setIdeas(summary) {
+    const w = this.world || {};
+    if (w.ideasBoard) w.ideasBoard.draw(summary ? { summary } : null);
+    const fresh = summary ? Object.values(summary).reduce((n, b) => n + (b.fresh || 0), 0) : 0;
+    if (w.ideasFlag) w.ideasFlag.rotation.z = fresh ? 0 : -Math.PI / 2 + 0.15;
   }
   setSkew(ms) { this.skew = Number(ms) || 0; }
   setCat(st) { this.cat.command(st, this.skew); }

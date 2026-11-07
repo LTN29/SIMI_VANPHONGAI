@@ -11,7 +11,7 @@ const out = path.resolve(process.argv[2] || path.join(ROOT, '..', 'ltn-memory-ga
 // các file nguồn tạo nên Sảnh điện thoại (đổi file nào → phải đóng gói lại)
 const SOURCES = () => [
   ...fs.readdirSync(path.join(ROOT, 'src', 'office3d')).filter((f) => /\.(js|css)$/.test(f)).map((f) => path.join('src', 'office3d', f)),
-  path.join('src', 'renderer', 'npc-guides.js'), path.join('src', 'renderer', 'fortune.js'), path.join('src', 'renderer', 'honor.js'), path.join('src', 'renderer', 'lobby.css'),
+  path.join('src', 'renderer', 'npc-guides.js'), path.join('src', 'renderer', 'fortune.js'), path.join('src', 'renderer', 'ideas.js'), path.join('src', 'renderer', 'lobby.css'),
 ].sort();
 function sourceHash() {
   const h = require('crypto').createHash('sha256');
@@ -41,14 +41,15 @@ if (require.main === module) (async () => {
     target: ['chrome100', 'safari15', 'firefox100'], outfile: path.join(out, 'sanh3d.js'), legalComments: 'none',
     banner: { js: '/* Sảnh Văn Phòng AI 3D – dựng từ app Văn Phòng AI (build/mobile-lobby.js), không sửa tay. three.js © mrdoob (MIT) */' },
   });
-  // css Sảnh + phần ống xin quẻ (.fq-*) và Bảng vàng (.hn-*) lấy từ lobby.css của app
-  fs.writeFileSync(path.join(out, 'sanh3d.css'), fs.readFileSync(path.join(ROOT, 'src', 'office3d', 'lobby-web.css'), 'utf8') + '\n/* ống xin quẻ + Bảng vàng – từ src/renderer/lobby.css */\n' + pickCss(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'lobby.css'), 'utf8'), /\b(fq|hn)-?/));
+  // css Sảnh + phần ống xin quẻ (.fq-*) và Hòm thư góp ý (.ib-*) lấy từ lobby.css của app
+  fs.writeFileSync(path.join(out, 'sanh3d.css'), fs.readFileSync(path.join(ROOT, 'src', 'office3d', 'lobby-web.css'), 'utf8') + '\n/* ống xin quẻ + Hòm thư góp ý – từ src/renderer/lobby.css */\n' + pickCss(fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'lobby.css'), 'utf8'), /\.(fq|ib)\b/));
   fs.copyFileSync(path.join(ROOT, 'src', 'renderer', 'npc-guides.js'), path.join(out, 'npc-guides.js'));
   fs.copyFileSync(path.join(ROOT, 'src', 'renderer', 'fortune.js'), path.join(out, 'fortune.js'));
-  fs.copyFileSync(path.join(ROOT, 'src', 'renderer', 'honor.js'), path.join(out, 'honor.js'));
+  fs.copyFileSync(path.join(ROOT, 'src', 'renderer', 'ideas.js'), path.join(out, 'ideas.js'));
+  fs.rmSync(path.join(out, 'honor.js'), { force: true }); // Bảng vàng cũ đã bỏ
   // dấu phiên bản: app bên máy tính dùng để biết Sảnh trên điện thoại đã đóng gói lại sau lần sửa Sảnh gần nhất chưa
   fs.writeFileSync(path.join(out, 'version.json'), JSON.stringify({ app: require(path.join(ROOT, 'package.json')).version, source: sourceHash(), builtAt: new Date().toISOString() }, null, 1) + '\n');
   for (const f of fs.readdirSync(path.join(ROOT, 'src', 'renderer', 'brand'))) fs.copyFileSync(path.join(ROOT, 'src', 'renderer', 'brand', f), path.join(out, 'brand', f));
   const size = (f) => (fs.statSync(path.join(out, f)).size / 1024).toFixed(0) + ' KB';
-  console.log(`Đã đóng gói Sảnh 3D cho điện thoại vào ${out}\n  sanh3d.js ${size('sanh3d.js')} · sanh3d.css ${size('sanh3d.css')} · npc-guides.js ${size('npc-guides.js')} · fortune.js ${size('fortune.js')} · honor.js ${size('honor.js')} · brand/ ${fs.readdirSync(path.join(out, 'brand')).length} ảnh\n  → commit thư mục này bên repo Gateway rồi cập nhật máy chủ: điện thoại (app Android / web /m) có Sảnh mới ngay, không cần cài lại.`);
+  console.log(`Đã đóng gói Sảnh 3D cho điện thoại vào ${out}\n  sanh3d.js ${size('sanh3d.js')} · sanh3d.css ${size('sanh3d.css')} · npc-guides.js ${size('npc-guides.js')} · fortune.js ${size('fortune.js')} · ideas.js ${size('ideas.js')} · brand/ ${fs.readdirSync(path.join(out, 'brand')).length} ảnh\n  → commit thư mục này bên repo Gateway rồi cập nhật máy chủ: điện thoại (app Android / web /m) có Sảnh mới ngay, không cần cài lại.`);
 })().catch((e) => { console.error(e.message || e); process.exit(1); });

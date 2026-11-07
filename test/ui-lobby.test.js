@@ -215,14 +215,32 @@ run(async () => {
     await win.waitForSelector('.fq-card:not([hidden]) .fq-no');
     check(await win.locator('.fq-shake').count() === 0 && (await win.locator('.fq-no').innerText()) === que, 'hôm nay đã xin quẻ → xem lại đúng quẻ cũ, mai mới lắc được');
     await win.click('#modalClose');
-    // 🏆 Bảng vàng: quẻ vừa xin được Gateway ghi điểm, bảng treo tường bấm được, mở bảng chi tiết
-    check(await win.evaluate(() => (window.__lobby.world.clickables || []).some((m) => m.userData.action === 'honor')), 'có Bảng vàng treo tường bấm được');
-    await win.evaluate(() => window.__lobby.opts.onHonor());
-    await win.waitForSelector('.hn-row', { timeout: 8000 });
-    check((await win.locator('.hn-row.me b').innerText()).startsWith('Ngọc'), 'Bảng vàng: Ngọc lên bảng Thần Tài sống sau khi xin quẻ');
-    await win.click('.hn-cat:has-text("May mắn nhất")');
-    check(/điểm/.test(await win.locator('.hn-row.me .hn-score').innerText()), 'tab May mắn nhất có điểm quẻ');
-    await shot('03f-honor');
+    // 📮 Hòm thư góp ý SIMI: thùng thư + biển hiệu bấm được → gửi góp ý cho Website, IT (Bảo) nhận, duyệt, trả lời
+    check(await win.evaluate(() => (window.__lobby.world.clickables || []).filter((m) => m.userData.action === 'ideas').length === 2), 'có biển hiệu + thùng thư góp ý bấm được');
+    check(await win.evaluate(() => !(window.__lobby.world.clickables || []).some((m) => m.userData.action === 'honor')), 'đã bỏ Bảng vàng');
+    bao.events.length = 0;
+    await win.evaluate(() => window.__lobby.opts.onIdeas());
+    await win.waitForSelector('.ib-prod', { timeout: 8000 });
+    check(await win.locator('.ib-plate').count() === 4, 'biển hiệu có 4 sản phẩm: App mobile, Mini app Zalo, Website, Khác');
+    await win.locator('.ib-prod', { hasText: 'Website' }).click();
+    check(await win.locator('.ib-sites .ib-chip').count() === 4, 'chọn Website → hiện các trang simi.vn, inventory, baohanh, prosper-supply');
+    await win.locator('.ib-sites .ib-chip', { hasText: 'baohanh.simi.vn' }).click();
+    await win.locator('.ib-chip', { hasText: 'Báo lỗi' }).click();
+    await win.fill('#ibTitle', 'Tra cứu bảo hành không nhận số seri có dấu cách');
+    await win.fill('#ibDetail', 'Nhập "SM 123" báo không tìm thấy, bỏ dấu cách thì được.');
+    await shot('03f-ideas-form');
+    await win.click('.ib-send');
+    await win.waitForSelector('.ib-done', { timeout: 8000 });
+    const nw = await bao.waitFor('idea', (d) => d.action === 'new');
+    check(nw.title.startsWith('Tra cứu bảo hành') && nw.product === 'web', 'IT nhận ngay góp ý mới (Website)');
+    await win.waitForFunction(() => window.__lobby.world.ideasFlag.rotation.z === 0, null, { timeout: 5000 });
+    check(true, 'thùng thư dựng cờ vàng: có góp ý IT chưa xem');
+    await bao.post('ideas/review', { id: nw.id, status: 'planned', reply: 'Cảm ơn Ngọc, IT sửa trong bản tuần sau nhé' });
+    await win.click('.ib-tab:has-text("Của tôi")');
+    await win.waitForSelector('.ib-card.st-planned .ib-reply', { timeout: 8000 });
+    check((await win.locator('.ib-card .ib-reply').innerText()).includes('IT sửa trong bản tuần sau'), 'người gửi thấy IT trả lời + trạng thái Đã lên kế hoạch');
+    check(await win.evaluate(() => window.__lobby.world.ideasFlag.rotation.z !== 0), 'IT đã xem hết → hạ cờ');
+    await shot('03f-ideas');
     await win.click('#modalClose');
     await win.evaluate(() => window.__lobby.focusSelf());
 

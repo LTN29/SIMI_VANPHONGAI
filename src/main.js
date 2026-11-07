@@ -297,8 +297,13 @@ function registerIpc() {
   handle('lobby:npc', () => lobby.call('npc', undefined, 'GET'));
   handle('lobby:game', (payload) => lobby.call('game', payload || {}));
   handle('lobby:games', () => lobby.call('games', undefined, 'GET'));
-  handle('lobby:honor', (q) => { q = q || {}; return lobby.call(`honor?period=${q.period === 'month' ? 'month' : 'week'}&offset=${Math.max(0, Math.min(8, Number(q.offset) || 0))}`, undefined, 'GET'); });
-  handle('lobby:honorDo', (kind) => { if (kind !== 'fortune' && kind !== 'pray') throw new Error('Thao tác không hợp lệ'); return lobby.call(`honor/${kind}`, {}); });
+  // 📮 Hòm thư góp ý SIMI
+  handle('lobby:ideas', () => lobby.call('ideas', undefined, 'GET'));
+  handle('lobby:ideaDo', (action, body) => {
+    const path = { create: 'ideas', vote: 'ideas/vote', review: 'ideas/review', delete: 'ideas/delete' }[action];
+    if (!path) throw new Error('Thao tác không hợp lệ');
+    return lobby.call(path, body && typeof body === 'object' ? body : {});
+  });
   handle('lobby:npcAsk', (payload) => lobby.npcAsk(payload || {}));
   handle('lobby:npcFeedback', (payload) => lobby.call('npc/feedback', payload || {}));
   handle('lobby:dnd', (on) => { lobbyDnd = !!on; return true; });

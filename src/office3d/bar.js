@@ -352,7 +352,7 @@ export function buildBar(scene) {
   // bàn thờ Thần Tài cầu nhiều đơn (tường sau) + quầy xin quẻ đầu ngày bên trái
   buildAltar({ scene, add, box, block, seat, out });
   buildFortune({ scene, add, box, block, out });
-  buildHonor({ scene, add, box, out });
+  buildIdeas({ scene, add, box, block, out });
 
   // ---------- cây xanh (chậu + tán lá tròn) ----------
   const potMs = [std('#f6f1e8', 0.6), std('#d98b5f', 0.75)];
@@ -685,7 +685,7 @@ function buildZen({ scene, add, box, block, seat, out }) {
 // bàn thờ Thần Tài cầu nhiều đơn (trước là Tổ nghề AI) – 25 bồ đoàn quỳ (5 hàng × 5); quầy xin quẻ ở FORTUNE
 export const ALTAR = { x: 11.8, rows: [-8.1, -7.0, -5.9, -4.8, -3.7], cols: [-1.4, -0.7, 0, 0.7, 1.4] };
 export const FORTUNE = { x: 8.75, z: BAR.minZ + 0.55 };
-export const HONOR = { x: 7.0, y: 2.15, w: 1.44, h: 1.92 };
+export const IDEAS = { x: 7.0, y: 2.33, w: 1.44, h: 1.56 };
 
 function buildAltar({ scene, add, box, block, seat, out }) {
   const flat = { cast: false };
@@ -918,54 +918,79 @@ function buildFortune({ scene, add, box, block, out }) {
   hit.position.set(X, 0.75, Z); hit.userData.action = 'fortune'; scene.add(hit); out.clickables.push(hit);
 }
 
-// 🏆 Bảng vàng treo tường cạnh ống quẻ: top Thần Tài sống / May mắn nhất / Chiến thần AI của tuần (vẽ lại khi có số liệu mới)
-function drawHonor(g, w, h, data) {
-  const bg = g.createLinearGradient(0, 0, 0, h); bg.addColorStop(0, '#8e1410'); bg.addColorStop(1, '#4a0a08');
+// 📮 Hòm thư góp ý SIMI: biển hiệu treo tường (4 sản phẩm + số góp ý, vẽ lại khi có góp ý mới) + thùng thư đỏ đứng dưới
+function drawIdeas(g, w, h, data) {
+  const bg = g.createLinearGradient(0, 0, 0, h); bg.addColorStop(0, '#1259c8'); bg.addColorStop(1, '#0a3483');
   g.fillStyle = bg; g.fillRect(0, 0, w, h);
-  g.strokeStyle = 'rgba(255,215,110,.10)'; g.lineWidth = 4;
-  for (let y = 90; y < h; y += 110) for (let x = (y / 110 % 2) * 80; x < w; x += 160) { g.beginPath(); g.arc(x, y, 22, 0, Math.PI * 2); g.stroke(); }
   g.strokeStyle = '#f2c14e'; g.lineWidth = 14; g.strokeRect(10, 10, w - 20, h - 20);
-  g.lineWidth = 3; g.strokeRect(30, 30, w - 60, h - 60);
+  g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 3; g.strokeRect(30, 30, w - 60, h - 60);
   g.textAlign = 'center'; g.textBaseline = 'middle';
   const F = (wt, px) => `${wt} ${px}px "Segoe UI", "Noto Sans", Arial, sans-serif`;
-  const fit = (text, wt, px, maxW) => { text = String(text || '').normalize('NFC'); g.font = F(wt, px); while (px > 18 && g.measureText(text).width > maxW) { px -= 2; g.font = F(wt, px); } return text; };
-  const line = (text, wt, px, x, y, color, maxW = w - 110, align = 'center') => { g.textAlign = align; const t = fit(text, wt, px, maxW); g.fillStyle = color; g.fillText(t, x, y); g.textAlign = 'center'; };
-  // đầu bảng
-  g.fillStyle = '#3d1d0f'; g.fillRect(70, 52, w - 140, 128); g.strokeStyle = '#f2c14e'; g.lineWidth = 6; g.strokeRect(80, 62, w - 160, 108);
-  g.shadowColor = 'rgba(255,190,60,.8)'; g.shadowBlur = 16;
-  line('🏆 BẢNG VÀNG', 900, 78, w / 2, 118, '#ffd56a');
+  const line = (text, wt, px, x, y, color, maxW = w - 110, align = 'center') => {
+    text = String(text || '').normalize('NFC'); g.textAlign = align; g.font = F(wt, px);
+    while (px > 18 && g.measureText(text).width > maxW) { px -= 2; g.font = F(wt, px); }
+    g.fillStyle = color; g.fillText(text, x, y); g.textAlign = 'center';
+  };
+  g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 10;
+  line('📮 HÒM THƯ GÓP Ý', 900, 76, w / 2, 104, '#ffd56a');
   g.shadowBlur = 0;
-  line(data && data.label ? data.label : 'Vinh danh tuần này', 800, 34, w / 2, 214, '#ffe9b0');
-  const CATS = [['thantai', '💰 THẦN TÀI SỐNG', (x) => `${x.score} điểm`], ['lucky', '🍀 MAY MẮN NHẤT', (x) => `${x.score} điểm${x.dai ? ` · ${x.dai} Đại cát` : ''}`], ['ai', '🤖 CHIẾN THẦN AI', (x) => `${x.score} lượt AI`]];
-  const top = 252, secH = (h - top - 110) / 3;
-  CATS.forEach(([key, title, unit], i) => {
-    const y0 = top + i * secH;
-    g.fillStyle = 'rgba(255,240,200,.07)'; g.fillRect(56, y0 + 6, w - 112, secH - 16);
-    g.strokeStyle = 'rgba(242,193,78,.55)'; g.lineWidth = 2; g.strokeRect(56, y0 + 6, w - 112, secH - 16);
-    line(title, 900, 44, w / 2, y0 + 48, '#ffd56a');
-    const rows = (data && data.boards && data.boards[key]) || [];
-    if (!rows.length) { line(data ? 'Chưa có ai – mở hàng đi nào!' : 'Đang tải…', 800, 36, w / 2, y0 + secH / 2 + 14, '#ffe9b0'); return; }
-    const a = rows[0];
-    // nhìn từ xa trong Sảnh: chỉ người đứng đầu, chữ to (bấm vào bảng xem đủ top 10)
-    line(`👑 ${a.name}`, 900, 64, w / 2, y0 + 118, '#ffffff');
-    line(unit(a), 800, 36, w / 2, y0 + 176, '#ffcf6a');
+  line('Cùng xây sản phẩm SIMI tốt hơn', 700, 34, w / 2, 168, '#e3eeff');
+  const s = (data && data.summary) || null;
+  const rows = [['mobile', '📱', 'App mobile'], ['zalo', '💬', 'Mini app Zalo'], ['web', '🌐', 'Website'], ['other', '✨', 'Khác']];
+  const top = 216, rh = 134;
+  rows.forEach(([k, ic, name], i) => {
+    const y = top + i * rh;
+    g.fillStyle = 'rgba(255,255,255,.12)'; g.beginPath(); g.roundRect ? g.roundRect(56, y, w - 112, rh - 16, 18) : g.rect(56, y, w - 112, rh - 16); g.fill();
+    line(ic, 400, 56, 112, y + (rh - 16) / 2 + 2, '#fff', 80);
+    line(name, 900, 46, 168, y + 40, '#ffffff', w - 260, 'left');
+    const b = s && s[k];
+    line(b ? `${b.open} đang xử lý · ${b.done} đã cập nhật` : 'Gửi ý tưởng, báo lỗi…', 700, 30, 168, y + 86, '#ffd56a', w - 260, 'left');
   });
-  line('👉 Bấm xem top 10', 900, 40, w / 2, h - 66, '#f5c518');
+  g.fillStyle = '#f2c14e'; g.beginPath(); g.roundRect ? g.roundRect(110, h - 112, w - 220, 70, 35) : g.rect(110, h - 112, w - 220, 70); g.fill();
+  line('👉 Bấm để gửi góp ý', 900, 40, w / 2, h - 76, '#0a3483', w - 260);
 }
-function buildHonor({ scene, add, box, out }) {
+function buildIdeas({ scene, add, box, block, out }) {
   const flat = { cast: false };
-  const { x: X, y: Y, w: W, h: H } = HONOR, WZ = BAR.minZ;
-  const c = document.createElement('canvas'); c.width = 768; c.height = 1024;
+  const { x: X, y: Y, w: W, h: H } = IDEAS, WZ = BAR.minZ;
+  // biển hiệu
+  const c = document.createElement('canvas'); c.width = 768; c.height = 832;
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-  const draw = (data) => { try { drawHonor(c.getContext('2d'), c.width, c.height, data); tex.needsUpdate = true; } catch { /* canvas lỗi: giữ bảng cũ */ } };
+  const draw = (data) => { try { drawIdeas(c.getContext('2d'), c.width, c.height, data); tex.needsUpdate = true; } catch { /* canvas lỗi: giữ biển cũ */ } };
   draw(null);
-  const board = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, emissive: '#2a0604', emissiveIntensity: 0.3 }));
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, emissive: '#0a2a6a', emissiveIntensity: 0.25 }));
   board.position.set(X, Y, WZ + 0.1); scene.add(board);
-  add(box(W + 0.1, H + 0.1, 0.05, 0.02), std('#d9a63e', 0.3, { metalness: 0.6 }), X, Y, WZ + 0.07, scene, flat); // khung vàng
-  add(box(W + 0.3, 0.12, 0.12, 0.03), std('#5b341c', 0.55), X, Y + H / 2 + 0.1, WZ + 0.1, scene, flat); // mái gỗ trên bảng
-  out.honorBoard = { draw, mesh: board };
-  const hit = new THREE.Mesh(new THREE.BoxGeometry(W + 0.1, H + 0.1, 0.3), new THREE.MeshBasicMaterial({ visible: false }));
-  hit.position.set(X, Y, WZ + 0.15); hit.userData.action = 'honor'; scene.add(hit); out.clickables.push(hit);
+  add(box(W + 0.1, H + 0.1, 0.05, 0.02), std('#d9a63e', 0.3, { metalness: 0.6 }), X, Y, WZ + 0.07, scene, flat);
+  out.ideasBoard = { draw, mesh: board };
+  // thùng thư đỏ trên cột (kiểu hộp thư bưu điện)
+  const MZ = WZ + 0.5;
+  const red = std('#d4231c', 0.45, { metalness: 0.15 });
+  const dark = std('#3a1210', 0.6);
+  add(box(0.09, 0.78, 0.09, 0.02), std('#2d3440', 0.5, { metalness: 0.5 }), X, 0.39, MZ);
+  add(new THREE.CylinderGeometry(0.2, 0.22, 0.04, 20), std('#2d3440', 0.5, { metalness: 0.5 }), X, 0.02, MZ, scene, flat);
+  add(box(0.56, 0.42, 0.4, 0.04), red, X, 0.99, MZ);
+  const lid = add(new THREE.CylinderGeometry(0.2, 0.2, 0.56, 24, 1, false, 0, Math.PI), red, X, 1.2, MZ);
+  lid.rotation.z = Math.PI / 2; // nắp cong nửa trụ
+  add(box(0.34, 0.035, 0.02, 0.008), dark, X, 1.1, MZ + 0.205, scene, flat); // khe bỏ thư
+  const letter = add(box(0.22, 0.12, 0.006), std('#fffdf5', 0.8), X + 0.02, 1.15, MZ + 0.215, scene, flat); letter.rotation.z = -0.12; // lá thư đang thò ra
+  add(box(0.08, 0.05, 0.008), std('#e8493f', 0.6), X + 0.03, 1.16, MZ + 0.219, scene, flat); // tem
+  const lc = document.createElement('canvas'); lc.width = 256; lc.height = 96;
+  const lg = lc.getContext('2d'); lg.fillStyle = '#ffd56a'; lg.fillRect(0, 0, 256, 96); lg.fillStyle = '#7a1410'; lg.font = '900 50px "Segoe UI", Arial, sans-serif'; lg.textAlign = 'center'; lg.textBaseline = 'middle'; lg.fillText('GÓP Ý', 128, 52);
+  const ltex = new THREE.CanvasTexture(lc); ltex.colorSpace = THREE.SRGBColorSpace;
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.11), new THREE.MeshStandardMaterial({ map: ltex, roughness: 0.6 }));
+  label.position.set(X, 0.93, MZ + 0.202); scene.add(label);
+  // cờ vàng bên hông (dựng lên = có thư mới)
+  const flag = new THREE.Group(); flag.position.set(X + 0.29, 1.02, MZ); scene.add(flag);
+  // cờ quay được → không đưa vào khối gộp (tạo mesh trực tiếp, không qua add)
+  for (const [g, m, y, z] of [[new THREE.BoxGeometry(0.02, 0.3, 0.02), std('#9aa3b0', 0.4, { metalness: 0.6 }), 0.15, 0], [new THREE.BoxGeometry(0.012, 0.1, 0.14), std('#f5c518', 0.5), 0.26, 0.07]]) {
+    const mesh = new THREE.Mesh(g, m); mesh.position.set(0, y, z); mesh.castShadow = true; flag.add(mesh);
+  }
+  flag.rotation.z = -Math.PI / 2 + 0.15; // hạ cờ – dựng lên khi có góp ý IT chưa xem
+  out.ideasFlag = flag;
+  block(X - 0.32, MZ - 0.25, X + 0.32, MZ + 0.25);
+  for (const [w2, h2, y2, z2] of [[W + 0.1, H + 0.1, Y, WZ + 0.15], [0.7, 1.45, 0.72, MZ]]) {
+    const hit = new THREE.Mesh(new THREE.BoxGeometry(w2, h2, 0.5), new THREE.MeshBasicMaterial({ visible: false }));
+    hit.position.set(X, y2, z2); hit.userData.action = 'ideas'; scene.add(hit); out.clickables.push(hit);
+  }
 }
 
 // ================= khu Game (bên phải, trong nhà) =================

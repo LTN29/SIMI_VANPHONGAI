@@ -343,29 +343,38 @@
     stop.observe($('#modal'), { attributes: true, attributeFilter: ['class'] });
   }
 
-  // ================= 🏆 Bảng vàng (treo tường cạnh ống quẻ) =================
-  const honorOn = () => L.features.has('honor') && L.me && L.status.state === 'online';
-  async function loadHonor(force) {
-    if (!honorOn()) return;
-    if (!force && L.honorAt && Date.now() - L.honorAt < 4 * 60_000) return;
-    L.honorAt = Date.now();
-    try { L.honor = await window.vp.lobby.honor({ period: 'week' }); if (L.scene) L.scene.setHonor(L.honor); } catch { /* Gateway bận: lần sau tải lại */ }
+  // ================= 📮 Hòm thư góp ý SIMI (biển hiệu + thùng thư cạnh ống quẻ) =================
+  const ideasOn = () => L.features.has('ideas') && L.me && L.status.state === 'online';
+  async function loadIdeas() {
+    if (!ideasOn()) return null;
+    const d = await window.vp.lobby.ideas();
+    L.ideas = d; if (L.scene) L.scene.setIdeas(d.summary);
+    return d;
   }
-  setInterval(() => { if (L.shown) loadHonor(false); }, 60_000);
-  async function honorDo(kind) {
-    if (!honorOn()) return;
-    try {
-      const r = await window.vp.lobby.honorDo(kind);
-      if (kind === 'pray' && r && r.counted) setTimeout(() => toast(`🙏 +${r.gain || 5} điểm Tài lộc · đã khấn ${r.prays}/${r.max} hôm nay`), 2600);
-      if (kind === 'fortune' && r && r.first) setTimeout(() => toast(`🏆 +${r.points} điểm Tài lộc vào Bảng vàng tuần này`), 600);
-      if ((kind === 'pray' && r.counted) || (kind === 'fortune' && r.first)) loadHonor(true);
-    } catch { /* không tính điểm được thì thôi */ }
+  function openIdeas(tab) {
+    if (!window.VPIdeas) return;
+    if (!L.features.has('ideas')) { toast('Gateway chưa có Hòm thư góp ý – báo IT cập nhật Gateway nhé'); return; }
+    if (!L.me || L.status.state !== 'online') { toast('Vào Sảnh (online) để gửi góp ý'); return; }
+    window.VPIdeas.open({
+      tab,
+      load: loadIdeas,
+      act: (action, body) => window.vp.lobby.ideaDo(action, body),
+      upload: async (file) => { const f = await prepImage(file); return (await window.vp.lobby.upload({ room: 'all', full: f.full, thumb: f.thumb, w: f.w, h: f.h })).id; },
+      img: (im, thumb) => imgUrl(im.id, thumb && im.thumb !== false),
+      view: (im) => openViewer(im),
+    });
   }
-  function openHonor() {
-    if (!window.VPHonor) return;
-    if (!L.features.has('honor')) { toast('Gateway chưa có Bảng vàng – báo admin cập nhật Gateway nhé'); return; }
-    if (!L.me || L.status.state !== 'online') { toast('Vào Sảnh (online) để xem Bảng vàng'); return; }
-    window.VPHonor.open({ me: L.me, load: (q) => window.vp.lobby.honor(q).then((d) => { if (q.period === 'week' && !q.offset) { L.honor = d; L.honorAt = Date.now(); if (L.scene) L.scene.setHonor(d); } return d; }) });
+  // góp ý mới / IT vừa trả lời: cập nhật biển hiệu, báo người gửi và IT
+  function onIdea(d) {
+    if (d.summary) { if (L.ideas) L.ideas.summary = d.summary; if (L.scene) L.scene.setIdeas(d.summary); }
+    if (window.VPIdeas) window.VPIdeas.refresh();
+    const mine = L.me && d.owner === L.me.id;
+    if (d.action === 'update' && mine && d.status && d.status !== 'new' && L.ideaSeen !== d.id + d.status) {
+      L.ideaSeen = d.id + d.status;
+      const st = (window.VPIdeas && window.VPIdeas.STATUS[d.status]) || d.status;
+      U.toast(`📮 IT đã cập nhật góp ý "${String(d.title || '').slice(0, 40)}": ${st}`);
+    }
+    if (d.action === 'new' && !mine && L.ideas && L.ideas.canReview) U.toast(`📮 Góp ý mới: ${String(d.title || '').slice(0, 50)}`);
   }
 
   // ================= cảnh 3D =================
@@ -380,9 +389,8 @@
         onCatClick: (x, y) => openCat(x, y),
         onNpcClick: () => window.VPNpc && window.VPNpc.open(),
         onTableClick: (t, x, y) => window.VPPoolUI && window.VPPoolUI.tableMenu(t, x, y),
-        onFortune: () => window.VPFortune && window.VPFortune.open({ me: L.me, share: L.me && L.status.state === 'online' ? (text) => quickSay(text) : null, onDrawn: () => honorDo('fortune') }),
-        onHonor: () => openHonor(),
-        onPray: () => honorDo('pray'),
+        onFortune: () => window.VPFortune && window.VPFortune.open({ me: L.me, share: L.me && L.status.state === 'online' ? (text) => quickSay(text) : null }),
+        onIdeas: () => openIdeas(),
         npcGreeting: () => `Chào ${L.me ? L.me.name : 'bạn'}! Cần giúp gì không? Bấm vào mình nhé 👋`,
         onDance: (style, byMove) => { L.myDance = style; renderDancePick(); if (!byMove && L.status.state === 'online' && L.features.has('dance')) window.vp.lobby.presence({ dance: style }); },
         onFloor: (on) => { L.onFloor = on; renderDancePick(); },
@@ -392,7 +400,7 @@
       L.scene.setSkew(L.skew || 0);
       if (L.catState) L.scene.setCat(L.catState);
       L.scene.setNpc(L.npc || null);
-      if (L.honor) L.scene.setHonor(L.honor);
+      if (L.ideas) L.scene.setIdeas(L.ideas.summary);
       window.__lobby = L.scene;
       syncScene();
       if (window.VPPoolUI) window.VPPoolUI.syncScene();
@@ -1264,7 +1272,7 @@
       if (d.cat) { L.catState = d.cat; if (L.scene) L.scene.setCat(d.cat); }
       if ('npc' in d) { L.npc = d.npc; if (window.VPNpc) window.VPNpc.setInfo(d.npc); }
       if (window.VPPoolUI) window.VPPoolUI.onHello(d.games || []);
-      loadHonor(true);
+      loadIdeas().catch(() => {});
       if (window.VPNpc && L.shown) window.VPNpc.maybeTour(d.me && d.me.name);
       // nhân vật đã chọn trên máy này nhưng chưa lưu lên Gateway (lần đầu vào Sảnh)
       const local = ls.get('vp.myAvatar', null);
@@ -1280,6 +1288,7 @@
     if (ev === 'personal') { applyPersonal(d); renderRooms(); return; }
     if (ev === 'message-delete') { removeMsg(d.room, d.id); return; }
     if (ev === 'message-react') { applyReact(d.room, d.id, d.reactions); return; }
+    if (ev === 'idea') { onIdea(d); return; }
     if (ev === 'announce') { if (d.popup) announce(d); return; }
     if (ev === 'npc') { L.npc = d.npc; if (window.VPNpc) window.VPNpc.setInfo(d.npc); return; }
     if (ev === 'npc-guides') { if (window.VPNpc) window.VPNpc.reloadGuides(); return; }
