@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('vp', {
     cinemaState: () => ipcRenderer.invoke('lobby:cinemaState'),
     upload: (payload) => ipcRenderer.invoke('lobby:upload', payload),
     deleteMsg: (room, id) => ipcRenderer.invoke('lobby:deleteMsg', room, id),
+    react: (room, id, emoji) => ipcRenderer.invoke('lobby:react', room, id, emoji),
     admin: () => ipcRenderer.invoke('lobby:admin'),
     adminDo: (payload) => ipcRenderer.invoke('lobby:adminDo', payload),
     saveImage: (id) => ipcRenderer.invoke('lobby:saveImage', id),

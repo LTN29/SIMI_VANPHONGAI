@@ -429,3 +429,64 @@ body.cbw-dragging { cursor: col-resize; user-select: none; }
 .cbw-pip-host { height: 250px; background: var(--bg2); }
 .ch-bar .cb.web.busy { color: var(--accent); border-color: var(--accent2); animation: cbwPulseBtn 1.4s ease-in-out infinite; }
 @keyframes cbwPulseBtn { 50% { box-shadow: 0 0 0 4px var(--accentSoft); } }
+
+/* ===== Danh sách đoạn chat kiểu ChatGPT Work / Codex: phẳng, gọn, Đã ghim → Dự án → Đoạn chat ===== */
+.ch-side { gap: 4px; padding: 10px 8px 10px; }
+.ch-side-top { gap: 2px; align-items: center; }
+.ch-side-top .ch-new { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; border: 0; background: transparent; color: var(--text); padding: 8px 10px; border-radius: 10px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; text-align: left; box-shadow: none; }
+.ch-side-top .ch-new:hover { background: var(--hover); }
+.ch-new .ic svg, .ch-ib .ic svg, .ch-proj .ic svg, .ch-archived .ic svg { width: 17px; height: 17px; display: block; }
+.ch-ib { flex: none; width: 32px; height: 32px; display: inline-grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; font-weight: 700; }
+.ch-ib:hover { background: var(--hover); color: var(--text); }
+.ch-ib.on { background: var(--accentSoft); color: var(--accent); }
+.ch-side-top .ch-fold { width: 32px; height: 32px; border: 0; background: transparent; }
+.ch-findrow { padding: 2px 2px 4px; }
+.ch-findrow .ch-search { width: 100%; box-sizing: border-box; border-radius: 10px; padding: 7px 10px; font-size: 13px; }
+.ch-list { margin: 0 -2px; padding: 0 2px 6px; }
+.ch-sec { display: flex; align-items: center; margin-top: 14px; margin-bottom: 2px; }
+.ch-list > .ch-sec:first-child { margin-top: 4px; }
+.ch-sec .sname { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; border: 0; background: none; padding: 4px 10px; cursor: pointer; color: var(--dim); font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; border-radius: 8px; }
+.ch-sec .sname:hover { color: var(--text); }
+.ch-sec .caret { display: inline-block; font-size: 14px; line-height: 1; transform: rotate(90deg); transition: transform .15s, opacity .15s; opacity: 0; }
+.ch-sec:not(.open) .caret { transform: none; opacity: 1; }
+.ch-sec:hover .caret { opacity: 1; }
+.ch-sec .sact { width: 26px; height: 26px; border: 0; background: none; border-radius: 8px; color: var(--dim); font-size: 17px; line-height: 1; cursor: pointer; opacity: 0; }
+.ch-sec:hover .sact, .ch-sec .sact:focus-visible { opacity: 1; }
+.ch-sec .sact:hover { background: var(--hover); color: var(--text); }
+.ch-proj { display: flex; align-items: center; gap: 0; border-radius: 10px; }
+.ch-proj:hover { background: var(--hover); }
+.ch-proj .pname { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; border: 0; background: none; padding: 7px 10px; cursor: pointer; color: var(--text); font: inherit; font-size: 13.5px; font-weight: 500; text-align: left; }
+.ch-proj .pname .ic { color: var(--muted); flex: none; }
+.ch-proj .pn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-proj .pname .pinned { color: var(--dim); margin-left: auto; }
+.ch-proj .pname .pinned svg { width: 13px; height: 13px; }
+.ch-proj .pact { flex: none; width: 26px; height: 26px; display: inline-grid; place-items: center; border: 0; background: none; border-radius: 7px; color: var(--muted); cursor: pointer; opacity: 0; font-size: 15px; letter-spacing: 1px; }
+.ch-proj .pact:last-child { margin-right: 4px; }
+.ch-proj .pact .ic svg { width: 15px; height: 15px; }
+.ch-proj:hover .pact, .ch-proj .pact:focus-visible { opacity: 1; }
+.ch-proj .pact:hover { background: var(--panel); color: var(--text); }
+.ch-item { gap: 6px; padding: 6px 8px 6px 10px; border-radius: 10px; min-height: 32px; box-sizing: border-box; }
+.ch-item.in { padding-left: 37px; }
+.ch-item .tt { font-weight: 500; font-size: 13.5px; color: var(--muted); }
+.ch-item.ext .tt { color: var(--muted); font-weight: 500; }
+.ch-item:hover .tt, .ch-item.ext:hover .tt { color: var(--text); }
+.ch-item.active { background: var(--hover); box-shadow: none; }
+.ch-item.active .tt { color: var(--text); font-weight: 600; }
+.ch-item .tm { display: none; }
+.ch-item .tp { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--dim); }
+.ch-item .del { display: block; opacity: 0; padding: 0 4px; }
+.ch-item:hover .del, .ch-item .del:focus-visible { opacity: 1; }
+.ch-item:focus-visible, .ch-proj .pname:focus-visible, .ch-sec .sname:focus-visible { outline: 2px solid var(--accent2); outline-offset: -2px; }
+.ch-more { padding: 4px 10px 6px; font-weight: 500; }
+.ch-more.in { padding-left: 37px; }
+.ch-empty { padding: 4px 10px 6px; font-weight: 500; }
+.ch-empty.in { padding-left: 37px; }
+.ch-addproj { margin: 4px 2px; width: calc(100% - 4px); font-weight: 600; }
+.ch-archived { margin: 14px 0 0; width: 100%; gap: 10px; padding: 7px 10px; font-weight: 500; font-size: 13px; color: var(--muted); }
+.ch-archived:hover { color: var(--text); }
+.chatview.side-mini .ch-side-top .ch-new { flex: none; width: 40px; height: 40px; padding: 0; justify-content: center; }
+.chatview.side-mini .ch-findbtn { display: none; }
+@media (max-width: 1280px) {
+  .chatview.with-browser .ch-side-top .ch-new { flex: none; width: 40px; height: 40px; padding: 0; justify-content: center; }
+  .chatview.with-browser .ch-findbtn { display: none; }
+}

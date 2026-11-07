@@ -154,6 +154,20 @@ run(async () => {
     await win.fill('#lbInput', 'Em đây anh Bảo ơi!'); await win.press('#lbInput', 'Enter');
     const got = await bao.waitFor('message', (d) => d.text === 'Em đây anh Bảo ơi!');
     check(got.name === 'Ngọc' && got.room === 'all', 'đồng nghiệp nhận tin của mình đúng tên');
+    // 😊 thả cảm xúc: đồng nghiệp thả → mình thấy ngay; mình bấm chip để thả theo, chọn thêm từ bảng
+    await bao.post('messages/react', { room: 'all', id: got.id, emoji: '🔥' });
+    const myMsg = win.locator(`.lb-msg[data-id="${got.id}"]`);
+    await myMsg.locator('.lb-react', { hasText: '🔥' }).waitFor({ timeout: 8000 });
+    check((await myMsg.locator('.lb-react').innerText()).includes('1'), 'đồng nghiệp thả 🔥 → tin của mình hiện ngay');
+    await myMsg.locator('.lb-react', { hasText: '🔥' }).click();
+    await win.waitForFunction((id) => { const b = document.querySelector(`.lb-msg[data-id="${id}"] .lb-react.on`); return b && b.innerText.includes('2'); }, got.id, { timeout: 8000 });
+    check(true, 'bấm chip 🔥 → thả theo (2), chip sáng lên');
+    const theirs = win.locator('.lb-msg', { hasText: 'ai rảnh test' });
+    await theirs.hover(); await theirs.locator('.lb-rbtn').click();
+    await win.locator('.lb-rpick button[title="❤️"]').click();
+    await theirs.locator('.lb-react.on', { hasText: '❤️' }).waitFor({ timeout: 8000 });
+    const seen = await bao.waitFor('message-react', (d) => d.reactions && d.reactions['❤️']);
+    check(seen.reactions['❤️'][0].name === 'Ngọc', 'chọn ❤️ từ bảng → đồng nghiệp nhận được, đúng tên');
     await shot('02-chat');
 
     // tủ đồ

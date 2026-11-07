@@ -6,6 +6,7 @@
     view: 'office', threads: [], cur: null, models: [], modelsAt: 0, modelsErr: '', skills: [], status: null,
     running: new Set(), atts: [], open: {}, more: {}, skillIdx: 0, pop: null, imgCache: new Map(),
     external: [], extAt: 0, extLoading: false, extErr: '', importing: null, // đoạn chat của ChatGPT Work chưa mở trong app
+    codexProjects: [], searchOpen: false, // dự án bên ChatGPT Work (đọc từ máy) · ô tìm kiếm đang mở
   };
   const ls = { get: (k, d) => U.store.get(k, d), set: (k, v) => U.store.set(k, v) }; // lưu tùy chọn nhỏ trên máy
   const EFFORTS = [['', 'Mặc định'], ['low', 'Nhanh'], ['medium', 'Vừa'], ['high', 'Kỹ'], ['xhigh', 'Rất kỹ']];
@@ -47,9 +48,11 @@
 
     const side = el('aside', { class: 'ch-side' },
       el('div', { class: 'ch-side-top' },
-        el('button', { class: 'btn primary ch-new', title: 'Đoạn chat mới', onclick: () => newThread() }, icon('plus'), el('span', { class: 'ch-new-t', text: 'Đoạn chat mới' })),
-        el('button', { class: 'ch-fold', id: 'chFold', title: 'Thu gọn danh sách đoạn chat', 'aria-label': 'Thu gọn danh sách đoạn chat', onclick: () => foldSide() }, '«')),
-      el('input', { class: 'ch-search', id: 'chSearch', placeholder: 'Tìm đoạn chat…', oninput: renderSide }),
+        el('button', { class: 'ch-new', title: 'Đoạn chat mới (Ctrl+N)', onclick: () => newThread() }, icon('compose'), el('span', { class: 'ch-new-t', text: 'Đoạn chat mới' })),
+        el('button', { class: 'ch-ib ch-findbtn', id: 'chFindBtn', title: 'Tìm đoạn chat (Ctrl+K)', 'aria-label': 'Tìm đoạn chat', onclick: () => toggleSearch() }, icon('search')),
+        el('button', { class: 'ch-ib ch-fold', id: 'chFold', title: 'Thu gọn danh sách đoạn chat', 'aria-label': 'Thu gọn danh sách đoạn chat', onclick: () => foldSide() }, '«')),
+      el('div', { class: 'ch-findrow hidden', id: 'chFindRow' },
+        el('input', { class: 'ch-search', id: 'chSearch', placeholder: 'Tìm đoạn chat…', 'aria-label': 'Tìm đoạn chat', oninput: renderSide, onkeydown: (e) => { if (e.key === 'Escape') { e.target.value = ''; toggleSearch(false); } } })),
       el('div', { class: 'ch-list', id: 'chList' }),
       el('div', { class: 'ch-ext', id: 'chExt' }),
       el('button', { class: 'ch-status', id: 'chStatus', onclick: () => U.openAccounts() }));
@@ -76,6 +79,11 @@
     $('main.layout').after(view);
     try { if (localStorage.getItem('vp.chatSideMini') === '1') foldSide(true); } catch { /* bỏ qua */ }
 
+    document.addEventListener('keydown', (e) => {
+      if (C.view !== 'chat' || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+      if (e.key === 'k' || e.key === 'K') { e.preventDefault(); toggleSearch(true); }
+      else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); newThread(); }
+    });
     const ta = $('#chInput');
     ta.addEventListener('input', onInput);
     ta.addEventListener('keydown', onKey);
@@ -129,20 +137,39 @@
       U.el('small', { text: ok ? `${C.models.length} model · ${C.skills.filter((s) => s.simi).length} skill SIMI` : 'Bấm để cài đặt' })), U.el('i', { class: 'dot' }));
   }
 
-  // ================= thanh bên =================
-  // nhóm theo dự án: Chung → dự án đã lưu + thư mục của các đoạn chat (kể cả từ ChatGPT Work), mới hoạt động lên trước
+  // ================= thanh bên (giống ChatGPT Work / Codex) =================
+  // Đã ghim → Dự án (thư mục, đoạn chat thụt vào dưới) → Đoạn chat (không thuộc dự án). Dự án lấy từ app + ChatGPT Work.
+  const pinnedProjects = () => ls.get('vp.pinProj', []);
+  const secOpen = (k) => ls.get('vp.chatSecs', {})[k] !== false;
+  function setSec(k, on) { const v = ls.get('vp.chatSecs', {}); v[k] = on; ls.set('vp.chatSecs', v); renderSide(); }
+  function knownProjects() {
+    const out = new Map();
+    projects().forEach((p) => out.set(p.dir, { name: p.name, dir: p.dir, saved: true }));
+    C.codexProjects.forEach((p) => { if (!out.has(p.dir)) out.set(p.dir, { name: p.name, dir: p.dir, codex: true }); });
+    return out;
+  }
   function sideGroups(items) {
-    const saved = projects();
-    const groups = new Map([['', { name: 'Chung', dir: '', saved: false, items: [] }]]);
-    saved.forEach((p) => groups.set(p.dir, { name: p.name, dir: p.dir, saved: true, items: [] }));
+    const known = knownProjects();
+    const groups = new Map([...known.values()].map((p) => [p.dir, { ...p, items: [] }]));
+    const chats = [];
     for (const t of items) {
       const dir = t.project || '';
-      if (!groups.has(dir)) groups.set(dir, { name: dir.split(/[\\/]/).filter(Boolean).pop() || dir, dir, saved: false, items: [] });
+      if (!dir) { chats.push(t); continue; }
+      if (!groups.has(dir)) groups.set(dir, { name: dir.split(/[\\/]/).filter(Boolean).pop() || dir, dir, items: [] });
       groups.get(dir).items.push(t);
     }
     const recent = (g) => (g.items[0] ? g.items[0].updatedAt : 0);
-    const [chung, ...rest] = [...groups.values()];
-    return [chung, ...rest.sort((a, b) => recent(b) - recent(a))];
+    return { projects: [...groups.values()].sort((a, b) => recent(b) - recent(a)), chats };
+  }
+
+  function toggleSearch(on) {
+    C.searchOpen = on === undefined ? !C.searchOpen : !!on;
+    const inp = $('#chSearch');
+    if (!C.searchOpen) inp.value = '';
+    $('#chFindRow').classList.toggle('hidden', !C.searchOpen);
+    $('#chFindBtn').classList.toggle('on', C.searchOpen);
+    if (C.searchOpen) setTimeout(() => inp.focus(), 0);
+    renderSide();
   }
 
   // thu gọn / mở rộng cột danh sách đoạn chat (nhớ cho lần sau) – chừa chỗ cho khung chat / trình duyệt
@@ -156,29 +183,63 @@
   }
 
   function renderSide() {
-    const { el } = U;
+    const { el, icon } = U;
     const q = ($('#chSearch').value || '').trim().toLowerCase();
     const all = [...C.threads.filter((t) => !t.archived), ...C.external]
       .filter((t) => !q || (t.title || '').toLowerCase().includes(q))
-      .sort((a, b) => (!!b.pinned - !!a.pinned) || b.updatedAt - a.updatedAt);
+      .sort((a, b) => b.updatedAt - a.updatedAt);
     const list = $('#chList'); list.replaceChildren();
-    for (const g of sideGroups(all)) {
-      if (!g.items.length && (q || (!g.saved && g.dir))) continue;
-      const key = g.dir || '_';
-      const isOpen = C.open[key] !== false;
-      list.append(el('div', { class: 'ch-grp' + (isOpen ? ' open' : '') },
-        el('button', { class: 'gname', title: g.dir || 'Thư mục mặc định trong Documents\\VanPhongAI\\Chat', onclick: () => { C.open[key] = !isOpen; renderSide(); } }, el('span', { class: 'caret', text: '▸' }), g.dir ? '📁 ' : '💬 ', el('span', { text: g.name })),
-        g.items.length || g.saved ? el('button', { class: 'gact more', title: 'Lưu trữ / xóa dự án', onclick: (e) => groupMenu(e.currentTarget, g) }, '⋯') : null,
-        el('button', { class: 'gact', title: 'Đoạn chat mới trong ' + g.name, onclick: () => newThread({ project: g.dir }) }, '+')));
-      if (!isOpen) continue;
-      if (!g.items.length) list.append(el('div', { class: 'ch-empty', text: 'Chưa có đoạn chat' }));
-      const limit = C.more[key] || q ? g.items.length : 5;
-      g.items.slice(0, limit).forEach((t) => list.append(sideItem(t)));
-      if (g.items.length > limit) list.append(el('button', { class: 'ch-more', onclick: () => { C.more[key] = true; renderSide(); } }, `Hiển thị thêm (${g.items.length - limit})`));
+    const sec = (key, label, extra) => {
+      const open = q || secOpen(key);
+      list.append(el('div', { class: 'ch-sec' + (open ? ' open' : '') },
+        el('button', { class: 'sname', 'aria-expanded': String(!!open), onclick: () => setSec(key, !open) }, el('span', { text: label }), el('span', { class: 'caret', text: '›' })),
+        extra || null));
+      return open;
+    };
+    const more = (key, n, total, indent) => {
+      if (total <= n && !C.more[key]) return;
+      list.append(el('button', { class: 'ch-more' + (indent ? ' in' : ''), onclick: () => { C.more[key] = !C.more[key]; renderSide(); } }, C.more[key] ? 'Thu gọn' : `Hiện thêm (${total - n})`));
+    };
+    const projBlock = (g, pinned) => {
+      const key = g.dir;
+      const isOpen = q ? true : C.open[key] !== false;
+      list.append(el('div', { class: 'ch-proj' + (isOpen ? ' open' : '') },
+        el('button', { class: 'pname', title: g.dir, 'aria-expanded': String(isOpen), onclick: () => { C.open[key] = !isOpen; renderSide(); } }, icon('folder'), el('span', { class: 'pn', text: g.name }), pinned ? icon('pin', 'pinned') : null),
+        el('button', { class: 'pact more', title: 'Tuỳ chọn dự án', 'aria-label': 'Tuỳ chọn dự án ' + g.name, onclick: (e) => groupMenu(e.currentTarget, g) }, '⋯'),
+        el('button', { class: 'pact', title: 'Đoạn chat mới trong ' + g.name, 'aria-label': 'Đoạn chat mới trong ' + g.name, onclick: () => newThread({ project: g.dir }) }, icon('compose'))));
+      if (!isOpen) return;
+      if (!g.items.length) { list.append(el('div', { class: 'ch-empty in', text: 'Chưa có đoạn chat' })); return; }
+      const n = C.more['p:' + key] || q ? g.items.length : 5;
+      g.items.slice(0, n).forEach((t) => list.append(sideItem(t, true)));
+      if (!q) more('p:' + key, 5, g.items.length, true);
+    };
+    const { projects: groups, chats } = sideGroups(all);
+    if (q) { // tìm kiếm: 1 danh sách phẳng, có tên dự án nhỏ bên cạnh
+      if (!all.length) list.append(el('div', { class: 'ch-empty', text: `Không thấy đoạn chat nào có "${q}"` }));
+      all.slice(0, 80).forEach((t) => list.append(sideItem(t, false, true)));
+    } else {
+      const pinProj = new Set(pinnedProjects());
+      const pinGroups = groups.filter((g) => pinProj.has(g.dir));
+      const pinChats = all.filter((t) => t.pinned && !(t.project && pinProj.has(t.project)));
+      if (pinGroups.length || pinChats.length) {
+        if (sec('pin', 'Đã ghim')) { pinGroups.forEach((g) => projBlock(g, true)); pinChats.forEach((t) => list.append(sideItem(t, false))); }
+      }
+      const restGroups = groups.filter((g) => !pinProj.has(g.dir) && (g.items.length || g.saved || g.codex));
+      const pAdd = el('button', { class: 'sact', title: 'Thêm dự án (chọn thư mục)', 'aria-label': 'Thêm dự án', onclick: addProject }, '+');
+      if (sec('proj', 'Dự án', pAdd)) {
+        restGroups.forEach((g) => projBlock({ ...g, items: g.items.filter((t) => !t.pinned) }, false));
+        if (!restGroups.length) list.append(el('button', { class: 'ch-addproj', onclick: addProject }, '＋ Thêm dự án (thư mục)'));
+      }
+      const plain = chats.filter((t) => !t.pinned);
+      if (sec('chats', 'Đoạn chat', el('button', { class: 'sact', title: 'Đoạn chat mới', 'aria-label': 'Đoạn chat mới', onclick: () => newThread() }, '+'))) {
+        if (!plain.length) list.append(el('div', { class: 'ch-empty', text: 'Chưa có đoạn chat' }));
+        const n = C.more.chats ? plain.length : 20;
+        plain.slice(0, n).forEach((t) => list.append(sideItem(t, false)));
+        more('chats', 20, plain.length, false);
+      }
     }
-    list.append(el('button', { class: 'ch-addproj', onclick: addProject }, '＋ Thêm dự án (thư mục)'));
     const nArch = C.threads.filter((t) => t.archived).length;
-    list.append(el('button', { class: 'ch-archived', onclick: openArchived, title: 'Đoạn chat đã lưu trữ (của app và ChatGPT Work)' }, '📦 Đã lưu trữ', nArch ? el('em', { text: String(nArch) }) : null));
+    list.append(el('button', { class: 'ch-archived', onclick: openArchived, title: 'Đoạn chat đã lưu trữ (của app và ChatGPT Work)' }, icon('archive'), 'Đã lưu trữ', nArch ? el('em', { text: String(nArch) }) : null));
     const ext = $('#chExt');
     ext.replaceChildren(el('span', { text: C.extErr ? '⚠️ ' + C.extErr : C.extLoading ? 'Đang đọc lịch sử ChatGPT Work…' : `🔗 Liên thông ChatGPT Work · ${C.external.length} đoạn chưa mở` }),
       el('button', { class: 'linkbtn small', title: 'Đọc lại lịch sử từ ChatGPT Work / Codex', disabled: C.extLoading, onclick: () => loadExternal(true) }, '⟳'));
@@ -186,19 +247,21 @@
     const dot = $('#chatRunDot'); if (dot) dot.classList.toggle('hidden', !C.running.size);
   }
 
-  function sideItem(t) {
+  function sideItem(t, indent, showProj) {
     const { el } = U;
-    const a = t.agentId ? U.agentById(t.agentId) : null;
     const busy = C.running.has(t.id) || C.importing === t.codexId;
+    const proj = showProj && t.project ? projName(t.project) : '';
     return el('div', {
-      class: 'ch-item' + (C.cur && C.cur.id === t.id ? ' active' : '') + (busy ? ' running' : '') + (t.external ? ' ext' : ''),
-      title: t.external ? 'Từ ChatGPT Work – bấm để mở và chat tiếp' : t.title,
+      class: 'ch-item' + (indent ? ' in' : '') + (C.cur && C.cur.id === t.id ? ' active' : '') + (busy ? ' running' : '') + (t.external ? ' ext' : ''),
+      title: `${t.title || 'Đoạn chat'}\n${t.external ? 'Từ ChatGPT Work – bấm để mở và chat tiếp · ' : ''}${ago(t.updatedAt)}${proj ? ' · ' + proj : ''}`,
+      role: 'button', tabindex: '0',
       onclick: () => (t.external ? openExternal(t) : openThread(t.id)),
+      onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.click(); } },
     },
-    a ? U.avatar(a, 22) : el('span', { class: 'ti', text: t.pinned ? '📌' : t.external || t.origin === 'codex' ? '↗' : '' }),
     el('span', { class: 'tt', text: t.title || 'Đoạn chat' }),
-    busy ? el('span', { class: 'spin' }) : el('small', { text: ago(t.updatedAt) }),
-    el('button', { class: 'del', title: 'Ghim, lưu trữ, xóa', onclick: (e) => { e.stopPropagation(); itemMenu(e.currentTarget, t); } }, '⋯'));
+    proj ? el('span', { class: 'tp', text: proj }) : null,
+    busy ? el('span', { class: 'spin' }) : el('small', { class: 'tm', text: ago(t.updatedAt) }),
+    el('button', { class: 'del', title: 'Ghim, lưu trữ, xóa', 'aria-label': 'Tuỳ chọn', onclick: (e) => { e.stopPropagation(); itemMenu(e.currentTarget, t); } }, '⋯'));
   }
 
   // ---------- menu nhỏ: lưu trữ / xóa (đoạn chat, dự án) ----------
@@ -218,6 +281,7 @@
     if (t.external) {
       return popMenu(anchor, [
         { icon: '↗', label: 'Mở trong app', run: () => openExternal(t) },
+        { icon: '📌', label: 'Ghim lên đầu', title: 'Mở trong app rồi ghim', run: () => pinExternal(t) },
         { icon: '📦', label: 'Lưu trữ', run: () => archiveExt(t, true) },
         '-',
         { icon: '🗑', label: 'Xóa…', danger: true, run: () => askDelete([t]) },
@@ -231,10 +295,20 @@
     ]);
   }
 
+  async function pinExternal(t) {
+    if (C.importing) return;
+    C.importing = t.codexId; renderSide();
+    try { const nt = await window.vp.chat.importExternal(t.codexId); await window.vp.chat.update(nt.id, { pinned: true }); }
+    catch (e) { U.toast('Không ghim được: ' + U.cleanErr(e), true); }
+    C.importing = null; await loadThreads(); loadExternal(true);
+  }
+
   function groupMenu(anchor, g) {
     const items = g.items.filter((t) => !C.running.has(t.id));
+    const pinned = pinnedProjects().includes(g.dir);
     popMenu(anchor, [
       { icon: '➕', label: 'Đoạn chat mới trong dự án', run: () => newThread({ project: g.dir }) },
+      { icon: '📌', label: pinned ? 'Bỏ ghim dự án' : 'Ghim dự án lên đầu', run: () => { ls.set('vp.pinProj', pinned ? pinnedProjects().filter((d) => d !== g.dir) : [...pinnedProjects(), g.dir]); renderSide(); } },
       g.dir ? { icon: '📂', label: 'Mở thư mục', run: () => window.vp.chat.openDir(g.dir) } : null,
       '-',
       { icon: '📦', label: `Lưu trữ cả dự án (${items.length} đoạn chat)`, disabled: !items.length, run: () => archiveThreads(items, true, g.name) },
@@ -312,7 +386,7 @@
     if (!force && Date.now() - C.extAt < 30000) return;
     C.extLoading = true; C.extAt = Date.now(); renderSide();
     const r = await window.vp.chat.external().catch((e) => ({ threads: [], error: U.cleanErr(e) }));
-    C.extLoading = false; C.external = r.threads || []; C.extErr = r.error || '';
+    C.extLoading = false; C.external = r.threads || []; C.extErr = r.error || ''; C.codexProjects = r.projects || C.codexProjects;
     renderSide();
     if (C.extAgain) { C.extAgain = false; loadExternal(true); }
   }

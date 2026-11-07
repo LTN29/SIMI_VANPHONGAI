@@ -55,6 +55,10 @@
     door: '<path d="M14 4H6.5A1.5 1.5 0 0 0 5 5.5v15h9zM14 4l5 1.5v15H14M11 12.5h.01"/>',
     link: '<path d="M14 4h6v6M20 4l-9 9M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/>',
     game: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v5.3"/>',
+    compose: '<path d="M12 4H6.5A2.5 2.5 0 0 0 4 6.5v11A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5V12"/><path d="M17.6 3.6a2 2 0 0 1 2.8 2.8L12.5 14.3 9 15l.7-3.5z"/>',
+    search: '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
+    pin: '<path d="M9 4h6l-1 5 3.5 3.5V14H6.5v-1.5L10 9z"/><path d="M12 14v6"/>',
+    archive: '<rect x="3.5" y="4.5" width="17" height="4" rx="1"/><path d="M5 8.5v10a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5v-10M10 12.5h4"/>',
   };
   const icon = (name, cls = '') => el('i', { class: 'ic ' + cls, html: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${P[name] || ''}</svg>` });
   function hydrateIcons(root = document) { root.querySelectorAll('i[data-ic]').forEach((n) => { n.replaceWith(icon(n.dataset.ic)); }); }

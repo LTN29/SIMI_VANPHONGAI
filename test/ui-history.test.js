@@ -25,7 +25,13 @@ run(async () => {
     { dir: path.join(work, 'LDPlayer'), prompt: 'Kiểm tra hướng dẫn setup', name: 'Kiểm tra hướng dẫn setup' },
     { dir: path.join(work, 'LDPlayer'), prompt: 'Chào hỏi', name: 'Chào hỏi' },
     { dir: path.join(work, 'SIMI'), prompt: 'Lập bảng markdown kế hoạch tuần', name: 'Kế hoạch tuần SIMI' },
+    { dir: path.join(work, 'nhap', 'xem-l-i-nh-ng-vi'), prompt: 'Đánh giá hằng tuần', name: 'Đánh giá hằng tuần' },
   ]);
+  // danh sách dự án như ChatGPT Work lưu (đoạn chat ở thư mục khác → mục "Đoạn chat", không thành dự án rác)
+  fs.writeFileSync(path.join(home, '.codex-global-state.json'), JSON.stringify({
+    'local-projects': { p1: { id: 'p1', name: 'SIMI', rootPaths: [path.join(work, 'SIMI')] }, p2: { id: 'p2', name: 'LDPlayer', rootPaths: [path.join(work, 'LDPlayer')] } },
+    'project-order': ['p1', 'p2'], 'pinned-thread-ids': [],
+  }));
   const sep = process.platform === 'win32' ? ';' : ':';
   const { app, win, errors, shot } = await launch({ prefix: 'history', env: { ...GATEWAY_ENV, CODEX_HOME: home, PATH: path.dirname(codexBin) + sep + process.env.PATH } });
   await win.waitForSelector('.welcome', { timeout: 20000 });
@@ -33,8 +39,16 @@ run(async () => {
   await win.click('.viewtabs button[data-v="chat"]');
 
   await win.waitForSelector('.ch-item.ext', { timeout: 60000 });
-  const groups = await win.locator('.ch-grp .gname').allTextContents();
+  const groups = await win.locator('.ch-proj .pname').allTextContents();
   check(groups.some((g) => g.includes('LDPlayer')) && groups.some((g) => g.includes('SIMI')), 'nhóm theo dự án như ChatGPT Work (LDPlayer, SIMI)');
+  check(!groups.some((g) => /xem-l-i|nhap/i.test(g)), 'thư mục nháp không thành dự án');
+  check(await win.locator('.ch-sec', { hasText: 'Đoạn chat' }).count() === 1 && await win.locator('.ch-item.ext:not(.in)', { hasText: 'Đánh giá hằng tuần' }).count() === 1, 'đoạn chat ngoài dự án nằm ở mục Đoạn chat');
+  check(await win.locator('.ch-item.ext.in').count() === 3, 'đoạn chat trong dự án thụt vào dưới thư mục');
+  // gỡ đoạn nháp cho các bước sau (đếm như cũ)
+  await win.locator('.ch-item.ext', { hasText: 'Đánh giá hằng tuần' }).hover();
+  await win.locator('.ch-item.ext', { hasText: 'Đánh giá hằng tuần' }).locator('.del').click();
+  await win.locator('.ctx-menu button', { hasText: 'Lưu trữ' }).click();
+  await win.waitForFunction(() => document.querySelectorAll('.ch-item.ext').length === 3, null, { timeout: 30000 });
   check(await win.locator('.ch-item.ext').count() === 3, 'hiện đủ 3 đoạn chat từ ChatGPT Work');
   check(await win.locator('.ch-item.ext', { hasText: 'Kế hoạch tuần SIMI' }).count() === 1, 'dùng đúng tên đoạn chat bên kia');
   await shot('01-sidebar');
@@ -73,23 +87,23 @@ run(async () => {
   check((await listCodex(true)).includes(id), 'lưu trữ đồng bộ sang ChatGPT Work');
   check(/1/.test(await win.locator('.ch-archived').innerText()), 'mục "Đã lưu trữ" đếm đúng');
   // lưu trữ cả dự án LDPlayer qua menu ⋯ của nhóm
-  const grp = win.locator('.ch-grp', { hasText: 'LDPlayer' });
-  await grp.hover(); await grp.locator('.gact.more').click();
+  const grp = win.locator('.ch-proj', { hasText: 'LDPlayer' });
+  await grp.hover(); await grp.locator('.pact.more').click();
   await shot('04-group-menu');
   await win.locator('.ctx-menu button', { hasText: 'Lưu trữ cả dự án' }).click();
   await win.waitForFunction(() => !document.querySelector('.ch-item.ext'), null, { timeout: 30000 });
-  check((await listCodex(false)).length === 0 && (await listCodex(true)).length === 3, 'lưu trữ cả dự án (2 đoạn bên ChatGPT Work)');
+  check((await listCodex(false)).length === 0 && (await listCodex(true)).length === 4, 'lưu trữ cả dự án (2 đoạn bên ChatGPT Work)');
   // xem "Đã lưu trữ" → bỏ lưu trữ 1 đoạn, xóa hẳn 1 đoạn
   await win.click('.ch-archived');
   await win.waitForSelector('.arch-row', { timeout: 30000 });
-  check(await win.locator('.arch-row').count() === 3, 'danh sách đã lưu trữ gồm của app và ChatGPT Work');
+  check(await win.locator('.arch-row').count() === 4, 'danh sách đã lưu trữ gồm của app và ChatGPT Work');
   await shot('05-archived');
   await win.locator('.arch-row', { hasText: 'Chào hỏi' }).locator('button', { hasText: 'Bỏ lưu trữ' }).click();
-  await win.waitForFunction(() => document.querySelectorAll('.arch-row').length === 2, null, { timeout: 30000 });
+  await win.waitForFunction(() => document.querySelectorAll('.arch-row').length === 3, null, { timeout: 30000 });
   await win.locator('.ch-item', { hasText: 'Chào hỏi' }).waitFor({ timeout: 30000 });
   check(true, 'bỏ lưu trữ đoạn của app → hiện lại');
   await win.locator('.arch-row', { hasText: 'Kiểm tra hướng dẫn setup' }).locator('button', { hasText: 'Bỏ lưu trữ' }).click();
-  await win.waitForFunction(() => document.querySelectorAll('.arch-row').length === 1, null, { timeout: 30000 });
+  await win.waitForFunction(() => document.querySelectorAll('.arch-row').length === 2, null, { timeout: 30000 });
   await win.locator('.ch-item.ext', { hasText: 'Kiểm tra hướng dẫn setup' }).waitFor({ timeout: 30000 });
   check((await listCodex(false)).length === 2, 'bỏ lưu trữ đoạn ChatGPT Work → hiện lại + đồng bộ');
   await win.locator('.arch-row', { hasText: 'Kế hoạch tuần SIMI' }).locator('button.danger').click();

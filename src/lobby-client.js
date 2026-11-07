@@ -129,6 +129,7 @@ class LobbyClient {
   cinema(payload) { return this.call('cinema', payload); }
   cinemaState() { return this.call('cinema', undefined, 'GET'); }
   deleteMsg(room, id) { return this.call('messages/delete', { room, id }); }
+  react(room, id, emoji) { return this.call('messages/react', { room, id, emoji }); }
   // hỏi NPC: AI có thể nghĩ lâu → chờ tới 100 giây
   npcAsk(payload) { const { base, h } = this.headers(true); return fetchJson(`${base}/npc/ask`, { method: 'POST', body: payload, headers: h, name: 'Trợ lý', timeoutMs: 100000 }); }
   admin() { return this.call('admin', undefined, 'GET'); }

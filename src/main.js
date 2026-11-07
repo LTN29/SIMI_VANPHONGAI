@@ -289,6 +289,7 @@ function registerIpc() {
   handle('lobby:cinemaState', () => lobby.cinemaState());
   handle('lobby:upload', (payload) => lobby.upload(payload || {}));
   handle('lobby:deleteMsg', (room, id) => lobby.deleteMsg(room, id));
+  handle('lobby:react', (room, id, emoji) => lobby.react(String(room || ''), String(id || ''), String(emoji || '')));
   handle('lobby:admin', () => lobby.admin());
   handle('lobby:adminDo', (payload) => lobby.adminDo(payload || {}));
   handle('lobby:cat', (payload) => lobby.call('cat', payload || {}));
@@ -363,7 +364,8 @@ function registerIpc() {
   handle('update:now', () => updater.updateNow());
 
   // chat
-  handle('chat:list', () => chat.store.list());
+  // đoạn chat mở từ ChatGPT Work: chia nhóm theo dự án của Codex (thư mục nháp → mục Đoạn chat)
+  handle('chat:list', () => chat.store.list().map((t) => (t.origin === 'codex' ? { ...t, project: chat.projectFor(t.cwd || t.project) } : t)));
   handle('chat:get', (id) => chat.store.get(id));
   handle('chat:create', (o) => chat.create(o || {}));
   handle('chat:update', (id, patch) => chat.update(id, patch || {}));
@@ -373,7 +375,8 @@ function registerIpc() {
   handle('chat:deleteExternal', (codexId) => chat.deleteExternal(String(codexId || '')));
   handle('chat:archived', () => chat.listArchived());
   handle('chat:external', async () => {
-    try { return { threads: await chat.listExternal() }; } catch (e) { return { threads: [], error: e.message.split('\n')[0] }; }
+    const projects = (() => { try { return chat.codexProjects(); } catch { return []; } })();
+    try { return { threads: await chat.listExternal(), projects }; } catch (e) { return { threads: [], projects, error: e.message.split('\n')[0] }; }
   });
   handle('chat:import', (codexId) => chat.importExternal(codexId));
   handle('chat:sync', (id) => chat.sync(id));

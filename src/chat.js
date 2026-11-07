@@ -91,7 +91,7 @@ class ChatStore {
       if (!f.endsWith('.json')) continue;
       try {
         const t = JSON.parse(fs.readFileSync(path.join(this.dir, f), 'utf8'));
-        out.push({ id: t.id, title: t.title, project: t.project, agentId: t.agentId || null, model: t.model, updatedAt: t.updatedAt, pinned: !!t.pinned, archived: !!t.archived, n: (t.messages || []).length, codexThread: t.codexThread || null, origin: t.origin || 'app' });
+        out.push({ id: t.id, title: t.title, project: t.project, cwd: t.cwd || '', agentId: t.agentId || null, model: t.model, updatedAt: t.updatedAt, pinned: !!t.pinned, archived: !!t.archived, n: (t.messages || []).length, codexThread: t.codexThread || null, origin: t.origin || 'app' });
       } catch { /* bỏ file hỏng */ }
     }
     return out.sort((a, b) => (b.pinned - a.pinned) || b.updatedAt - a.updatedAt);
@@ -294,6 +294,44 @@ function cleanUserText(text) {
 const normPath = (p) => { const r = path.resolve(String(p || '')).replace(/[\\/]+$/, ''); return process.platform === 'win32' ? r.toLowerCase() : r; };
 const samePath = (a, b) => normPath(a) === normPath(b);
 const underPath = (base, p) => normPath(p) === normPath(base) || normPath(p).startsWith(normPath(base) + path.sep);
+
+// ---- dự án & đoạn chat ghim của ChatGPT Work (Codex desktop) – để danh sách chat trong app chia nhóm giống Codex ----
+const codexHome = () => process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+let uiCache = { at: 0, mtime: -1, v: null };
+function codexUiState() {
+  const file = path.join(codexHome(), '.codex-global-state.json');
+  let st = null; try { st = fs.statSync(file); } catch { /* chưa có Codex desktop */ }
+  if (uiCache.v && (st ? st.mtimeMs : 0) === uiCache.mtime) return uiCache.v;
+  const v = { ok: false, projects: [], pinned: new Set() };
+  let j = null;
+  try { j = st ? JSON.parse(fs.readFileSync(file, 'utf8')) : null; } catch { j = null; }
+  if (j && typeof j === 'object') {
+    v.ok = true;
+    const lp = j['local-projects'];
+    if (lp && typeof lp === 'object') { // bản mới: { id: { name, rootPaths } } + project-order
+      const order = Array.isArray(j['project-order']) ? j['project-order'].filter((id) => lp[id]) : [];
+      for (const id of [...order, ...Object.keys(lp).filter((id) => !order.includes(id))]) {
+        const p = lp[id] || {}; const roots = (Array.isArray(p.rootPaths) ? p.rootPaths : []).filter((x) => typeof x === 'string' && x);
+        if (roots.length) v.projects.push({ name: String(p.name || path.basename(roots[0])).slice(0, 80), dir: roots[0], roots });
+      }
+    }
+    if (!v.projects.length) { // bản cũ: danh sách thư mục đã mở
+      const labels = j['electron-workspace-root-labels'] && typeof j['electron-workspace-root-labels'] === 'object' ? j['electron-workspace-root-labels'] : {};
+      const roots = [...(Array.isArray(j['electron-saved-workspace-roots']) ? j['electron-saved-workspace-roots'] : []), ...(Array.isArray(j['active-workspace-roots']) ? j['active-workspace-roots'] : [])];
+      for (const r of roots) if (typeof r === 'string' && r && !v.projects.some((p) => samePath(p.dir, r))) v.projects.push({ name: String(labels[r] || path.basename(r)).slice(0, 80), dir: r, roots: [r] });
+    }
+    // đoạn chat ghim: tên khoá khác nhau giữa các bản → nhận mọi khoá có chữ "pinned" chứa id đoạn chat
+    for (const [k, val] of Object.entries(j)) {
+      if (!/pinned/i.test(k)) continue;
+      const ids = Array.isArray(val) ? val : val && typeof val === 'object' ? Object.keys(val).filter((x) => val[x]) : [];
+      for (const x of ids) if (typeof x === 'string' && /^[0-9a-f-]{16,}$/i.test(x)) v.pinned.add(x.toLowerCase());
+    }
+  }
+  uiCache = { at: Date.now(), mtime: st ? st.mtimeMs : 0, v };
+  return v;
+}
+// thư mục nháp Codex tự tạo cho đoạn chat không thuộc dự án (Documents\Codex\<ngày>\…, ~/.codex, thư mục tạm)
+const codexScratch = (cwd) => !cwd || underPath(path.join(os.homedir(), 'Documents', 'Codex'), cwd) || underPath(codexHome(), cwd) || underPath(os.tmpdir(), cwd) || /[\\/]Codex[\\/]\d{4}-\d{2}-\d{2}(?:[\\/]|$)/i.test(String(cwd));
 
 function threadTitle(th) {
   const t = th.name || cleanUserText(th.preview).replace(/\s+/g, ' ').trim();
@@ -506,18 +544,28 @@ class ChatEngine {
 
   // ---------- liên thông với ChatGPT Work / Codex Desktop ----------
   // đoạn chat của Codex chưa có trong app (đã có thì hiện như đoạn chat bình thường)
+  // thư mục làm việc của Codex → dự án hiển thị trong app: dự án của ChatGPT Work / dự án đã lưu trong app; còn lại là đoạn chat thường
+  projectFor(cwd) {
+    if (!cwd || samePath(cwd, this.defaultDir())) return '';
+    const ui = codexUiState();
+    const cx = ui.projects.find((p) => p.roots.some((r) => underPath(r, cwd)));
+    if (cx) return cx.dir;
+    const pr = (this.getConfig().chatProjects || []).find((p) => underPath(p.dir, cwd));
+    if (pr) return pr.dir;
+    return ui.ok || codexScratch(cwd) ? '' : cwd; // có danh sách dự án của Codex → đi theo Codex; không có thì giữ thư mục thật
+  }
+
+  codexProjects() { return codexUiState().projects.map((p) => ({ name: p.name, dir: p.dir })); }
+
   async listExternal() {
     const linked = new Set(this.store.list().map((t) => t.codexThread).filter(Boolean));
     const hidden = this.store.hidden();
     const skip = this.hiddenDirs();
-    const projects = this.getConfig().chatProjects || [];
+    const pinned = codexUiState().pinned;
     const threads = await this.codex.listThreads();
     return threads
       .filter((th) => !linked.has(th.id) && !hidden.has(th.id) && !th.parentThreadId && !skip.some((d) => underPath(d, th.cwd)))
-      .map((th) => {
-        const pr = projects.find((p) => samePath(p.dir, th.cwd));
-        return { id: 'cx' + th.id.replace(/-/g, ''), codexId: th.id, title: threadTitle(th), project: samePath(th.cwd, this.defaultDir()) ? '' : pr ? pr.dir : th.cwd, updatedAt: th.updatedAt * 1000, external: true, model: th.model || '' };
-      });
+      .map((th) => ({ id: 'cx' + th.id.replace(/-/g, ''), codexId: th.id, title: threadTitle(th), project: this.projectFor(th.cwd), updatedAt: th.updatedAt * 1000, external: true, model: th.model || '', ...(pinned.has(String(th.id).toLowerCase()) ? { pinned: true } : {}) }));
   }
 
   // mở 1 đoạn chat của Codex trong app: nạp toàn bộ hội thoại, liên kết để chat tiếp bằng `codex exec resume`
@@ -525,8 +573,8 @@ class ChatEngine {
     const existing = this.store.list().find((t) => t.codexThread === codexId);
     if (existing) return this.sync(existing.id);
     const th = await this.codex.readThread(codexId);
-    const t = this.create({ project: samePath(th.cwd, this.defaultDir()) ? '' : th.cwd, model: th.model || '', title: threadTitle(th) });
-    Object.assign(t, { codexThread: th.id, origin: 'codex', messages: messagesFromThread(th, (u) => this._saveDataImage(t.id, u)), codexUpdatedAt: th.updatedAt });
+    const t = this.create({ project: this.projectFor(th.cwd), model: th.model || '', title: threadTitle(th) });
+    Object.assign(t, { codexThread: th.id, origin: 'codex', cwd: th.cwd || '', ...(codexUiState().pinned.has(String(th.id).toLowerCase()) ? { pinned: true } : {}), messages: messagesFromThread(th, (u) => this._saveDataImage(t.id, u)), codexUpdatedAt: th.updatedAt });
     return this.store.save(t);
   }
 
@@ -625,7 +673,8 @@ class ChatEngine {
   }
 
   dirOf(t) {
-    const d = t.project && fs.existsSync(t.project) ? t.project : this.defaultDir();
+    // đoạn chat mở từ ChatGPT Work chạy tiếp đúng thư mục cũ của nó (kể cả thư mục nháp Codex tự tạo)
+    const d = t.cwd && fs.existsSync(t.cwd) ? t.cwd : t.project && fs.existsSync(t.project) ? t.project : this.defaultDir();
     fs.mkdirSync(d, { recursive: true });
     return d;
   }

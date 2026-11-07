@@ -628,12 +628,62 @@
     }
     if (msg.images && msg.images.length) body.append(imageGrid(msg.images));
     if (msg.text) body.append(el('div', { class: 'lb-t' }, ...richText(msg)));
+    const rx = reactRow(msg); if (rx) body.append(rx);
     const acts = el('div', { class: 'lb-acts' },
+      L.features.has('react') ? el('button', { class: 'lb-rbtn', title: 'Thả cảm xúc', 'aria-label': 'Thả cảm xúc', onclick: (e) => reactPicker(e.currentTarget, msg) }, '😊') : '',
       el('button', { title: 'Trả lời', 'aria-label': 'Trả lời', onclick: () => setReply(msg) }, '↩'));
     const room = roomOf(msg.room);
     if (mine || (L.admin && room && room.kind !== 'dm')) acts.append(delBtn(msg, mine));
     return el('div', { class: 'lb-msg' + (mine ? ' mine' : '') + (cont ? ' cont' : '') + (tagged ? ' tagged' : ''), 'data-id': msg.id },
       cont ? el('span', { class: 'sp' }) : face(mine ? { ...L.me, avatar: myAvatar() } : who, 26), body, acts);
+  }
+
+  // ---------- thả cảm xúc (👍 ❤️ 😂 …) ----------
+  const QUICK_REACTS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '🎉'];
+  const MORE_REACTS = ['😍', '🥰', '😆', '🤣', '😎', '🤔', '😅', '🥲', '😡', '👏', '💪', '🤝', '✅', '💯', '💰', '🧧', '🍀', '🚀', '⭐', '🎯', '☕', '🍻', '👀', '🫡'];
+  function reactRow(msg) {
+    const r = msg.reactions; if (!r || !Object.keys(r).length) return null;
+    const { el } = U;
+    return el('div', { class: 'lb-reacts' }, ...Object.entries(r).map(([emo, list]) => {
+      const mine = L.me && list.some((p) => p.id === L.me.id);
+      const names = list.map((p) => (L.me && p.id === L.me.id ? 'Bạn' : p.name));
+      return el('button', { class: 'lb-react' + (mine ? ' on' : ''), title: `${names.slice(0, 12).join(', ')}${names.length > 12 ? ` và ${names.length - 12} người khác` : ''} đã thả ${emo}`, 'aria-pressed': String(!!mine), onclick: () => sendReact(msg, emo) },
+        el('span', { class: 'e', text: emo }), el('b', { text: String(list.length) }));
+    }));
+  }
+  async function sendReact(msg, emo) {
+    document.querySelectorAll('.lb-rpick').forEach((n) => n.remove());
+    try { const r = await window.vp.lobby.react(msg.room, msg.id, emo); applyReact(msg.room, msg.id, r.reactions); }
+    catch (e) { U.toast(U.cleanErr(e), true); }
+  }
+  function reactPicker(anchor, msg) {
+    const { el } = U;
+    document.querySelectorAll('.lb-rpick').forEach((n) => n.remove());
+    const more = el('div', { class: 'lb-rmore hidden' }, ...MORE_REACTS.map((e) => el('button', { title: e, onclick: () => sendReact(msg, e) }, e)));
+    const pick = el('div', { class: 'lb-rpick', role: 'menu', 'aria-label': 'Thả cảm xúc' },
+      el('div', { class: 'lb-rq' }, ...QUICK_REACTS.map((e) => el('button', { title: e, onclick: () => sendReact(msg, e) }, e)),
+        el('button', { class: 'plus', title: 'Thêm cảm xúc', onclick: () => { more.classList.toggle('hidden'); place(); } }, '＋')), more);
+    document.body.append(pick);
+    const place = () => {
+      const r = anchor.getBoundingClientRect();
+      pick.style.left = Math.max(8, Math.min(r.left - pick.offsetWidth / 2 + r.width / 2, innerWidth - pick.offsetWidth - 8)) + 'px';
+      pick.style.top = (r.top - pick.offsetHeight - 6 < 8 ? r.bottom + 6 : r.top - pick.offsetHeight - 6) + 'px';
+    };
+    place();
+    const off = (e) => { if (!pick.contains(e.target)) { pick.remove(); document.removeEventListener('mousedown', off, true); document.removeEventListener('keydown', esc, true); } };
+    const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); pick.remove(); document.removeEventListener('mousedown', off, true); document.removeEventListener('keydown', esc, true); } };
+    setTimeout(() => { document.addEventListener('mousedown', off, true); document.addEventListener('keydown', esc, true); }, 0);
+  }
+  // cập nhật cảm xúc của 1 tin (của mình vừa bấm hoặc người khác thả) – chỉ vẽ lại hàng cảm xúc
+  function applyReact(room, id, reactions) {
+    const list = L.msgs.get(room); const msg = list && list.find((m) => m.id === id); if (!msg) return;
+    if (reactions && Object.keys(reactions).length) msg.reactions = reactions; else delete msg.reactions;
+    if (room !== L.room || !L.shown) return;
+    const n = $(`#lbMsgs .lb-msg[data-id="${CSS.escape(id)}"] .lb-b`); if (!n) return;
+    const stick = nearBottom();
+    const old = n.querySelector('.lb-reacts'); const row = reactRow(msg);
+    if (old && row) old.replaceWith(row); else if (old) old.remove(); else if (row) n.append(row);
+    if (stick) scrollBottom();
   }
 
   // bấm 2 lần để xoá (không dùng hộp thoại hệ thống)
@@ -1229,6 +1279,7 @@
     if (ev === 'me') { L.me = { ...L.me, ...d }; renderMe(); syncScene(); return; }
     if (ev === 'personal') { applyPersonal(d); renderRooms(); return; }
     if (ev === 'message-delete') { removeMsg(d.room, d.id); return; }
+    if (ev === 'message-react') { applyReact(d.room, d.id, d.reactions); return; }
     if (ev === 'announce') { if (d.popup) announce(d); return; }
     if (ev === 'npc') { L.npc = d.npc; if (window.VPNpc) window.VPNpc.setInfo(d.npc); return; }
     if (ev === 'npc-guides') { if (window.VPNpc) window.VPNpc.reloadGuides(); return; }
