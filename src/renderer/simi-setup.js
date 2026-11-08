@@ -4,7 +4,8 @@
 (function () {
   const STEPS = [
     { id: 'key', label: 'Kiểm tra key team', only: 'install' },
-    { id: 'get', label: 'Tải bộ cài chính thức từ ai.simi.vn' },
+    { id: 'prep', label: 'Chuẩn bị máy: curl, Python, Node.js', linux: true, re: /Chuẩn bị máy/i },
+    { id: 'get', label: 'Tải bộ cài chính thức từ ai.simi.vn', re: /dùng API key|dung API key|Kiem tra|Kiểm tra|\[[1-5]\/7\]/i },
     { id: 'codex', label: 'Cài Codex & tạo file cấu hình', re: /codex cli|cài codex|installing codex|codex standalone/i },
     { id: 'tools', label: 'Cài công cụ Word · Excel · PDF', re: /runtime|node\.js|python|thư viện|word\/excel|ltn-pdf|ltn-9router|pdf/i },
     { id: 'skills', label: 'Cài skill SIMI & trình duyệt', re: /skill|chrome|browser|plugin|mcp/i },
@@ -13,11 +14,12 @@
   // một lần cài / cập nhật đang chạy (đóng bảng vẫn chạy tiếp, mở lại thấy đúng tiến độ)
   const R = { mode: null, running: false, at: 0, log: '', result: null, step: -1, body: null, paint: null };
 
-  const steps = () => STEPS.filter((s) => !s.only || s.only === R.mode);
+  const IS_LINUX = /linux/i.test(navigator.platform || navigator.userAgent);
+  const steps = () => STEPS.filter((s) => (!s.only || s.only === R.mode) && (!s.linux || IS_LINUX));
 
   function onEvent(e) {
     if (e.type !== 'simi-update') return;
-    if (e.ev === 'start') { R.running = true; R.result = null; R.log = ''; if (e.mode) R.mode = e.mode; R.step = Math.max(R.step, idx('get')); }
+    if (e.ev === 'start') { R.running = true; R.result = null; R.log = ''; if (e.mode) R.mode = e.mode; R.step = Math.max(R.step, steps().findIndex((s) => s.id !== 'key')); }
     else if (e.ev === 'line') {
       R.log = (R.log + e.line + '\n').slice(-12000);
       const list = steps();
@@ -25,11 +27,13 @@
     } else if (e.ev === 'done') { R.running = false; R.result = { ok: e.ok, error: e.error || '' }; if (e.ok) R.step = steps().length; }
     if (R.paint) R.paint();
   }
-  const idx = (id) => steps().findIndex((s) => s.id === id);
 
   // lỗi kỹ thuật → câu dễ hiểu
   function friendly(err) {
     const t = String(err || '');
+    if (/pkexec-cancel/.test(t)) return 'Bạn đã bấm Huỷ ở hộp nhập mật khẩu – bấm Thử lại và nhập mật khẩu đăng nhập máy.';
+    if (/pkexec-missing/.test(t)) return 'Máy không hiện được hộp nhập mật khẩu để cài curl / Python / Node.js – nhờ IT cài giúp rồi bấm Thử lại.';
+    if (/apt-lock|Could not get lock|dpkg.*lock/i.test(t)) return 'Ubuntu đang tự cài bản cập nhật – đợi vài phút rồi bấm Thử lại.';
     if (/ENOTFOUND|EAI_AGAIN|timed? ?out|không kết nối|network|Unable to connect|could not resolve/i.test(t)) return 'Mạng chập chờn nên chưa tải được – kiểm tra Wi-Fi rồi bấm Thử lại.';
     if (/\b40[13]\b|key không đúng|invalid api key|unauthori[sz]ed|không tìm thấy API key/i.test(t)) return 'Key team không đúng hoặc đã bị khoá – hỏi lại IT nhé.';
     if (/access is denied|permission|quyền|UAC|elevat/i.test(t)) return 'Windows chặn quyền cài đặt – bấm Thử lại và chọn "Yes" nếu Windows hỏi.';
@@ -93,7 +97,7 @@
           const state = done || i < R.step ? 'done' : i === R.step ? (R.result && !R.result.ok ? 'fail' : 'now') : 'todo';
           return el('li', { class: 'ss-step ' + state }, el('span', { class: 'ss-dot' }, state === 'done' ? '✓' : state === 'fail' ? '!' : state === 'now' ? el('span', { class: 'spin' }) : String(i + 1)), el('span', { text: s.label }));
         })),
-        R.running ? el('p', { class: 'ss-hint', text: '⏳ Thường mất 2–5 phút. Bạn cứ làm việc khác – đóng bảng này app vẫn cài tiếp. Nếu Windows hỏi quyền, chọn "Yes".' }) : null,
+        R.running ? el('p', { class: 'ss-hint', text: IS_LINUX ? '⏳ Thường mất 2–5 phút. Nếu Ubuntu hỏi mật khẩu, nhập mật khẩu đăng nhập máy (chỉ hỏi 1 lần để cài phần còn thiếu).' : '⏳ Thường mất 2–5 phút. Bạn cứ làm việc khác – đóng bảng này app vẫn cài tiếp. Nếu Windows hỏi quyền, chọn "Yes".' }) : null,
         R.running ? el('p', { class: 'ss-safe', text: '🛡️ Bộ cài chính thức của SIMI, tải trực tiếp từ ai.simi.vn.' }) : null].filter(Boolean));
     };
 

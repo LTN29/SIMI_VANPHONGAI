@@ -332,7 +332,54 @@ async function checkKey(gateway, key) {
   finally { clearTimeout(t); }
 }
 
+// ---------- Ubuntu "trắng": thiếu curl / Python / Node.js → bộ cài báo "Thieu dependency" ----------
+// Cài trước bằng hộp nhập mật khẩu của Ubuntu (pkexec, 1 lần) – không cần Terminal / sudo.
+const LINUX_PKGS = [['curl', 'curl'], ['python3', 'python3'], ['node', 'nodejs'], ['npm', 'npm']];
+function hasCmd(cmd) {
+  for (const d of String(process.env.PATH || '').split(path.delimiter)) { try { if (d && fs.statSync(path.join(d, cmd)).isFile()) return true; } catch { /* không có */ } }
+  return false;
+}
+function pyModule(mod) {
+  try { require('child_process').execFileSync('python3', ['-c', `import ${mod}`], { stdio: 'ignore', timeout: 15000 }); return true; } catch { return false; }
+}
+/** gói apt còn thiếu (has/py để test) */
+function linuxMissing({ has = hasCmd, py = pyModule } = {}) {
+  const out = LINUX_PKGS.filter(([cmd]) => !has(cmd)).map(([, pkg]) => pkg);
+  const hasPy = has('python3');
+  if (!hasPy || !py('ensurepip')) out.push('python3-venv');
+  if (!hasPy || !py('pip')) out.push('python3-pip');
+  return [...new Set(out)];
+}
+function prepareLinux(onLine) {
+  if (process.platform !== 'linux' || process.env.VP_SIMI_SKIP_PREP === '1') return Promise.resolve({ ok: true });
+  const pkgs = linuxMissing();
+  if (!pkgs.length) return Promise.resolve({ ok: true });
+  if (!hasCmd('apt-get')) return Promise.resolve({ ok: false, error: `Máy thiếu: ${pkgs.join(', ')} – nhờ IT cài giúp rồi bấm Thử lại.` });
+  onLine(`Chuẩn bị máy Ubuntu: cài ${pkgs.join(', ')}`);
+  const { spawn } = require('child_process');
+  const script = `export DEBIAN_FRONTEND=noninteractive; apt-get -o DPkg::Lock::Timeout=180 update -q && apt-get -o DPkg::Lock::Timeout=180 install -y -q ${pkgs.join(' ')}`;
+  const [cmd, args] = process.getuid && process.getuid() === 0 ? ['sh', ['-c', script]] : ['pkexec', ['sh', '-c', script]];
+  return new Promise((resolve) => {
+    let out = '';
+    let c;
+    try { c = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] }); } catch (e) { return resolve({ ok: false, error: e.message }); }
+    const keep = (d) => { out = (out + d).slice(-8000); String(d).split(/\r?\n/).filter(Boolean).forEach((l) => onLine(l)); };
+    c.stdout.on('data', keep); c.stderr.on('data', keep);
+    c.on('error', (e) => resolve({ ok: false, error: e.code === 'ENOENT' ? 'pkexec-missing' : e.message }));
+    c.on('close', (code) => {
+      if (code === 0) return resolve({ ok: true });
+      if (code === 126) return resolve({ ok: false, error: 'pkexec-cancel' });
+      if (code === 127) return resolve({ ok: false, error: 'pkexec-missing' });
+      resolve({ ok: false, error: /lock/i.test(out) ? 'apt-lock' : firstLine(out.split('\n').filter((l) => /^E:|error/i.test(l)).pop() || `apt-get thoát mã ${code}`) });
+    });
+  });
+}
+
 function runUpdate(gateway, onLine, { mode = 'update', key = '' } = {}) {
+  return prepareLinux(onLine).then((prep) => (prep.ok ? runInstaller(gateway, onLine, { mode, key }) : prep));
+}
+
+function runInstaller(gateway, onLine, { mode = 'update', key = '' } = {}) {
   const { spawn } = require('child_process');
   const { cmd, args, fakeNode } = updateCommand(gateway, mode);
   const env = { ...process.env, NO_COLOR: '1', TERM: 'dumb', CODEX_NON_INTERACTIVE: '1', ...(fakeNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}) };
@@ -401,4 +448,4 @@ function gatewayAuth() {
   return { baseUrl: cfg.baseUrl || '', key: readKey(), clientId: readClientId() };
 }
 
-module.exports = { checkKey, updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };
+module.exports = { checkKey, linuxMissing, updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };

@@ -52,7 +52,8 @@ run(async () => {
   await shot('02-running');
   check(!(await win.locator('#modal').innerText()).includes('Repair: dùng API key'), 'không hiện dòng chạy của bộ cài');
   await win.waitForSelector('.ss-done', { timeout: 30000 });
-  check(await win.locator('.ss-step.done').count() === 6, 'đủ 6 bước có dấu ✓');
+  const nStep = await win.locator('.ss-step').count();
+  check(nStep >= 6 && await win.locator('.ss-step.done').count() === nStep, `đủ ${nStep} bước có dấu ✓ (Linux có thêm bước chuẩn bị máy)`);
   check(fs.readFileSync(keyOut, 'utf8') === GOOD, 'bộ cài nhận đúng key qua biến môi trường (không qua dòng lệnh)');
   check(await win.locator('.ss-key').count() === 0, 'không còn hiện key sau khi cài');
   await shot('03-done');
