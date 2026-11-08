@@ -183,6 +183,7 @@ async function status(codexCmd = 'codex') {
     hasKey: !!readKey(),
     hasClientId: !!readClientId(),
     browserMcp: !!cfg.browserMcp,
+    desktop: !!desktopCodex(), // đã có app Codex / ChatGPT (để ẩn nút "Tải Codex")
     defaultModel: cfg.defaultModel || '',
     skills: skills.filter((s) => s.simi).length,
     skillsTotal: skills.length,
@@ -294,9 +295,13 @@ function chatCodexCmd(cliCmd, pref = 'auto') {
   return cliCmd || 'codex';
 }
 
-// ---------- cập nhật SIMI 1 nút (chạy ngầm, không cần chọn menu trong Terminal) ----------
-// Windows: tải bộ cài đầy đủ rồi chạy -Mode update; macOS/Linux: codex.sh --update. Key đã lưu nên không hỏi gì.
-function updateCommand(gateway) {
+// ---------- cài / cập nhật SIMI 1 nút (chạy ngầm, không mở Terminal, không hiện dòng lệnh) ----------
+// Windows: tải bộ cài đầy đủ rồi chạy -Mode <mode>; macOS/Linux: codex.sh --<mode>.
+// Cài mới: key người dùng nhập trong app → biến môi trường LTN_TEAM_API_KEY của riêng tiến trình bộ cài (không nằm trên dòng lệnh)
+// + chế độ "repair" (= cài đầy đủ, lấy key từ biến đó thay vì hỏi trong Terminal).
+function updateCommand(gateway, mode = 'update') {
+  // test giao diện: bộ cài giả (không cài thật vào máy chạy test)
+  if (process.env.VP_SIMI_FAKE_INSTALLER) return { cmd: process.execPath, args: [process.env.VP_SIMI_FAKE_INSTALLER, mode], fakeNode: true };
   const o = gatewayOrigin(gateway || (readCodexConfig().baseUrl || ''));
   if (IS_WIN) {
     const script = [
@@ -304,19 +309,37 @@ function updateCommand(gateway) {
       `$f=Join-Path $env:TEMP ('simi-update-'+[guid]::NewGuid().ToString('N')+'.ps1')`,
       `Invoke-WebRequest -UseBasicParsing -Uri '${o}/install/codex-full.ps1' -OutFile $f -MaximumRedirection 0`,
       '$t=[IO.File]::ReadAllText($f,[Text.UTF8Encoding]::new($false,$true)); [IO.File]::WriteAllText($f,$t,[Text.UTF8Encoding]::new($true))',
-      "& (Get-Process -Id $PID).Path -NoLogo -NoProfile -ExecutionPolicy Bypass -File $f -Mode update; $c=$LASTEXITCODE; Remove-Item $f -Force -ErrorAction SilentlyContinue; exit $c",
+      `& (Get-Process -Id $PID).Path -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $f -Mode ${mode}; $c=$LASTEXITCODE; Remove-Item $f -Force -ErrorAction SilentlyContinue; exit $c`,
     ].join('; ');
     return { cmd: 'powershell.exe', args: ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')] };
   }
-  return { cmd: 'bash', args: ['-lc', `curl -fsSL ${o}/install/codex.sh | bash -s -- --update`] };
+  return { cmd: 'bash', args: ['-lc', `curl -fsSL ${o}/install/codex.sh | bash -s -- --${mode}`] };
 }
 
-function runUpdate(gateway, onLine) {
+// kiểm tra key team trước khi cài (báo "key sai" ngay, khỏi chạy bộ cài vài phút rồi mới lỗi)
+async function checkKey(gateway, key) {
+  key = String(key || '').trim();
+  if (!/^[\x21-\x7e]{16,512}$/.test(key)) return { ok: false, error: 'Key chưa đúng dạng – sao chép lại nguyên key IT gửi (không có dấu cách).' };
+  const o = gatewayOrigin(gateway || (readCodexConfig().baseUrl || ''));
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 20000);
+  try {
+    const r = await fetch(`${o}/v1/models`, { headers: { authorization: `Bearer ${key}` }, signal: ctl.signal });
+    if (r.status === 401 || r.status === 403) return { ok: false, error: 'Key không đúng hoặc đã bị khoá – hỏi lại IT nhé.' };
+    if (!r.ok) return { ok: false, error: `SIMI Gateway đang bận (mã ${r.status}), thử lại sau ít phút.` };
+    const j = await r.json().catch(() => ({}));
+    return { ok: true, models: Array.isArray(j.data) ? j.data.length : 0 };
+  } catch { return { ok: false, error: `Không kết nối được ${o.replace(/^https?:\/\//, '')} – kiểm tra mạng rồi thử lại.` }; }
+  finally { clearTimeout(t); }
+}
+
+function runUpdate(gateway, onLine, { mode = 'update', key = '' } = {}) {
   const { spawn } = require('child_process');
-  const { cmd, args } = updateCommand(gateway);
+  const { cmd, args, fakeNode } = updateCommand(gateway, mode);
+  const env = { ...process.env, NO_COLOR: '1', TERM: 'dumb', CODEX_NON_INTERACTIVE: '1', ...(fakeNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}) };
+  if (key) { env.LTN_TEAM_API_KEY = String(key).trim(); delete env.NINEROUTER_KEY; }
   return new Promise((resolve) => {
     let child;
-    try { child = spawn(cmd, args, { windowsHide: true, cwd: HOME, env: { ...process.env, NO_COLOR: '1', TERM: 'dumb' } }); } catch (e) { return resolve({ ok: false, error: e.message }); }
+    try { child = spawn(cmd, args, { windowsHide: true, cwd: HOME, env }); } catch (e) { return resolve({ ok: false, error: e.message }); }
     let tail = ''; let buf = '';
     const feed = (d) => {
       buf += d.toString('utf8');
@@ -378,4 +401,4 @@ function gatewayAuth() {
   return { baseUrl: cfg.baseUrl || '', key: readKey(), clientId: readClientId() };
 }
 
-module.exports = { updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };
+module.exports = { checkKey, updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };

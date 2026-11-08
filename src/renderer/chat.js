@@ -534,13 +534,14 @@
         el('h2', { text: 'Kết nối SIMI Gateway để bắt đầu' }),
         el('p', { text: 'Một key team là dùng được mọi model trong Combo, kèm toàn bộ skill SIMI (tạo ảnh, video, đọc PDF, trình duyệt…).' }),
         el('ol', { class: 'setup-steps' },
-          el('li', {}, el('b', { text: 'Sao chép API key team ' }), 'mà admin đã cấp cho bạn.'),
-          el('li', {}, 'Bấm ', el('b', { text: 'Cài đặt SIMI' }), ', trong cửa sổ hiện ra chọn ', el('b', { text: '1 (Install)' }), ' rồi Enter để lấy key từ Clipboard.'),
-          el('li', {}, 'Chờ cài xong, quay lại đây bấm ', el('b', { text: 'Kiểm tra lại' }), '.')),
-        el('div', { class: 'row' },
-          el('button', { class: 'btn primary', onclick: async () => { const cmd = await window.vp.simi.install(); U.toast('Đã mở bộ cài: ' + cmd); } }, icon('term'), 'Cài đặt SIMI'),
-          el('button', { class: 'btn', onclick: () => loadMeta(true).then(() => { renderMain(); U.refreshAccounts(); }) }, icon('refresh'), 'Kiểm tra lại')),
-        el('small', { class: 'dim', text: st.codex && !st.codex.installed ? 'Máy chưa có Codex – bộ cài SIMI sẽ tự cài.' : st.configured && !st.hasKey ? 'Đã có cấu hình nhưng thiếu key team – chọn 1 (Install) để nhập lại key.' : '' }));
+          el('li', {}, el('b', { text: 'Sao chép key team ' }), 'mà IT đã gửi cho bạn.'),
+          el('li', {}, 'Bấm ', el('b', { text: 'Cài đặt SIMI' }), ', dán key vào ô rồi bấm ', el('b', { text: 'Cài đặt' }), ' – app tự cài, không cần mở PowerShell.'),
+          el('li', {}, 'Thấy ', el('b', { text: '🎉 Xong' }), ' là bắt đầu chat được.')),
+        el('div', { class: 'row' }, ...[
+          el('button', { class: 'btn primary', onclick: () => window.VPSimiSetup.open({ mode: 'install', status: st }) }, icon('bolt'), 'Cài đặt SIMI'),
+          !st.desktop ? el('button', { class: 'btn', title: 'App Codex chính thức của OpenAI (Microsoft Store)', onclick: () => window.vp.simi.getCodex().then(() => U.toast('Đã mở trang tải Codex')).catch(() => {}) }, '⬇️ Tải Codex') : null,
+          el('button', { class: 'btn', onclick: () => loadMeta(true).then(() => { renderMain(); U.refreshAccounts(); }) }, icon('refresh'), 'Kiểm tra lại')].filter(Boolean)),
+        el('small', { class: 'dim', text: st.codex && !st.codex.installed ? 'Máy chưa có Codex – SIMI sẽ tự cài khi bạn bấm Cài đặt.' : st.configured && !st.hasKey ? 'Đã có cấu hình nhưng thiếu key team – bấm Cài đặt SIMI và dán lại key.' : '' }));
     }
     const sk = QUICK.map((n) => C.skills.find((s) => s.name === n)).filter(Boolean).slice(0, 8);
     return el('div', { class: 'ch-hello' },
@@ -878,25 +879,11 @@
   }
   const slugify = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64).replace(/-+$/, '');
 
-  // cập nhật skill / công cụ / plugin SIMI ngay trong app (không cần chọn menu trong Terminal)
-  let simiUpd = null;
-  async function runSimiUpdate() {
-    const { el } = U;
-    if (simiUpd) return simiUpd.show();
-    const log = el('pre', { class: 'su-log' });
-    const bar = el('div', { class: 'su-bar' }, el('i'));
-    const body = el('div', { class: 'su' }, el('p', { text: 'Đang tải skill, công cụ, plugin và danh sách model mới nhất từ SIMI Gateway… Key đã lưu nên không cần nhập lại.' }), bar, log);
-    simiUpd = { log, bar, body, show: () => U.openModal('🔄 Cập nhật SIMI', body) };
-    simiUpd.show();
-    const r = await window.vp.simi.update().catch((e) => ({ ok: false, error: U.cleanErr(e) }));
-    bar.classList.add(r.ok ? 'ok' : 'bad');
-    body.prepend(el('div', { class: r.ok ? 'su-ok' : 'su-bad', text: r.ok ? '✓ Đã cập nhật SIMI xong' : '⚠️ Chưa cập nhật được: ' + (r.error || '') }));
-    simiUpd = null;
-    loadMeta(true); U.refreshAccounts && U.refreshAccounts();
-  }
+  // cập nhật skill / công cụ / plugin SIMI ngay trong app – bảng các bước dễ hiểu (simi-setup.js), không hiện dòng lệnh
+  function runSimiUpdate() { window.VPSimiSetup.open({ mode: 'update' }); }
   function onSimiUpdate(e) {
-    if (!simiUpd) return;
-    if (e.ev === 'line') { simiUpd.log.textContent = (simiUpd.log.textContent + e.line + '\n').slice(-6000); simiUpd.log.scrollTop = simiUpd.log.scrollHeight; }
+    window.VPSimiSetup.onEvent(e);
+    if (e.ev === 'done') { loadMeta(true); U.refreshAccounts && U.refreshAccounts(); }
   }
 
   // ================= đính kèm =================
@@ -1049,6 +1036,7 @@
     if (e.type !== 'chat') return;
     if (e.ev === 'start') C.running.add(e.threadId);
     if (e.ev === 'done') { C.running.delete(e.threadId); if (U.sfx) U.sfx(e.message && e.message.error ? 'pop' : 'chime'); }
+    if (e.ev === 'done' && e.message && /chưa có Codex|Không tìm thấy Codex/.test(e.message.error || '') && window.VPSimiSetup && !window.VPSimiSetup.state.running) window.VPSimiSetup.open({ mode: 'install' });
     if (!C.cur || C.cur.id !== e.threadId) { if (e.ev !== 'blocks') renderSide(); return; }
     const msgs = C.cur.messages;
     if (e.ev === 'start') { msgs.push(e.user, e.message); renderMain(2); renderSide(); return; }

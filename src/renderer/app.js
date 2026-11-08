@@ -450,10 +450,12 @@
     const allSim = S.cfg.agents.every((a) => a.source === 'sim');
     const broken = S.cfg.agents.filter((a) => connected(a.source) === false);
     b.replaceChildren();
-    if (S.acc && !anyAcc) {
-      b.append(icon('plug'), el('span', {}, el('b', { text: 'Chưa kết nối tài khoản AI nào. ' }), 'Cả phòng đang chạy Giả lập. Kết nối Claude, ChatGPT hoặc Gemini để làm việc thật.'),
-        el('button', { class: 'btn small primary', text: 'Kết nối ngay', onclick: openAccounts }));
-    } else if (S.acc && allSim) {
+    // máy chưa cài SIMI (kể cả chưa có Codex) → mời cài 1 nút, không để nhân viên gặp lỗi "thiếu Codex"
+    if (S.acc && connected('simi') !== true && allSim) {
+      b.append(icon('plug'), el('span', {}, el('b', { text: 'Chưa cài SIMI AI. ' }), 'Cả phòng đang chạy Giả lập. Dán key team là app tự cài Codex và mọi thứ cần thiết – không cần PowerShell.'),
+        el('button', { class: 'btn small primary', text: '🚀 Cài đặt SIMI', onclick: () => window.VPSimiSetup.open({ mode: 'install' }) }),
+        anyAcc ? el('button', { class: 'btn small', text: 'Gán model cho đội', onclick: openTeam }) : el('button', { class: 'btn small', text: 'Tài khoản khác', onclick: openAccounts }));
+    } else if (S.acc && anyAcc && allSim) {
       b.append(icon('users'), el('span', {}, el('b', { text: 'Đã có tài khoản kết nối. ' }), 'Gán model cho từng người trong phòng để bắt đầu làm việc thật.'),
         el('button', { class: 'btn small primary', text: 'Gán model cho đội', onclick: openTeam }));
     } else if (S.acc && broken.length) {
@@ -805,17 +807,11 @@
     const msg = el('div', { class: 'acc-msg' });
     const chk = (ok, label, hint) => el('li', { class: ok ? 'ok' : ok === null ? 'wait' : 'bad' }, el('span', { text: ok ? '✓' : ok === null ? '…' : '✕' }), el('b', { text: label }), hint ? el('small', { text: hint }) : null);
     const ready = st && st.loggedIn;
-    const install = el('button', { class: 'btn small' + (ready ? '' : ' primary') }, icon(ready ? 'refresh' : 'term'), ready ? 'Cập nhật SIMI' : 'Cài đặt SIMI');
-    install.addEventListener('click', async () => {
-      // đã cài: cập nhật ngầm ngay trong app (key đã lưu, không cần chọn menu)
-      if (ready && window.VPChat) { closeModal(); window.VPChat.runSimiUpdate(); return; }
-      try {
-        const cmd = await window.vp.simi.install();
-        msg.replaceChildren(icon('term'), el('span', {}, 'Đã mở bộ cài: ', el('code', { text: cmd }), ready ? '. Chọn 5 (Update) để cập nhật skill & danh sách model.' : '. Sao chép key team trước, chọn 1 (Install) rồi Enter để lấy key từ Clipboard.'));
-        msg.className = 'acc-msg show'; startPolling();
-      } catch (e) { toast(cleanErr(e), true); }
-    });
+    // cài / cập nhật ngay trong app: nhập key trên giao diện, không mở PowerShell, không hiện dòng lệnh
+    const install = el('button', { class: 'btn small' + (ready ? '' : ' primary') }, icon(ready ? 'refresh' : 'bolt'), ready ? 'Cập nhật SIMI' : 'Cài đặt SIMI');
+    install.addEventListener('click', () => window.VPSimiSetup.open({ mode: ready ? 'update' : 'install', status: st }));
     const btns = el('div', { class: 'acc-btns' }, install);
+    if (st && !st.desktop) btns.append(el('button', { class: 'btn small', title: 'App Codex chính thức của OpenAI (Microsoft Store) – giúp AI điều khiển máy tính', onclick: async () => { await window.vp.simi.getCodex().catch(() => {}); toast('Đã mở trang tải Codex'); } }, '⬇️ Tải Codex'));
     if (ready) {
       const test = el('button', { class: 'btn small' }, icon('bolt'), 'Thử');
       test.addEventListener('click', async () => {
@@ -1009,7 +1005,7 @@
       el('div', { class: 'wfaces' }, S.cfg.agents.slice(0, 6).map((a) => avatar(a, 46))),
       el('p', { class: 'lead', text: 'Giao việc cho cả một phòng AI: mỗi người một model, tự chia việc, hỏi nhau, kiểm tra rồi nộp kết quả.' }),
       el('div', { class: 'feats' },
-        feat('plug', '1. Kết nối', 'SIMI Gateway bằng key team, hoặc Claude / ChatGPT / Gemini bạn đã có.'),
+        feat('plug', '1. Cài SIMI AI', 'Dán key team IT gửi – app tự cài Codex & mọi thứ cần thiết, không cần PowerShell.'),
         feat('users', '2. Gán model cho đội', 'Chọn từ danh sách model thật của tài khoản.'),
         feat('send', '3. Giao việc', 'Gõ việc, bấm Giao ngay và xem cả phòng làm.')),
       el('div', { class: 'wbrands' }, ['uniq', 'crenot', 'simi'].map((k) => el('span', { class: 'bl ' + k }, el('img', { src: `brand/${k}.png`, alt: k })))),
@@ -1017,7 +1013,8 @@
     const close = () => { store.set('vp.welcomed', 1); closeModal(); };
     openModal('Bắt đầu', body, [
       el('div', { class: 'left' }, el('button', { class: 'linkbtn', text: 'Xem thử chế độ Giả lập trước', onclick: close })),
-      el('button', { class: 'btn primary', onclick: () => { store.set('vp.welcomed', 1); openAccounts(); } }, icon('plug'), 'Kết nối tài khoản'),
+      el('button', { class: 'btn', onclick: () => { store.set('vp.welcomed', 1); openAccounts(); } }, icon('plug'), 'Tài khoản khác'),
+      el('button', { class: 'btn primary', onclick: () => { store.set('vp.welcomed', 1); window.VPSimiSetup.open({ mode: 'install' }); } }, icon('bolt'), 'Cài đặt SIMI AI'),
     ]);
   }
 

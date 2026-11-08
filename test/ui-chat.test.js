@@ -22,7 +22,7 @@ run(async () => {
   const { app, win, errors, shot } = await launch({ prefix: 'chat', env: { ...GATEWAY_ENV, CODEX_HOME: codexHome, PATH: codexDir + sep + process.env.PATH } });
 
   await win.waitForSelector('.welcome', { timeout: 20000 });
-  await win.click('.sheet footer .btn.primary'); // Kết nối tài khoản
+  await win.click('.sheet footer .btn:has-text("Tài khoản khác")'); // mở bảng Kết nối
   await win.waitForSelector('.acc-card.simi .pill.on', { timeout: 60000 });
   check(await win.locator('.acc-card.simi .simi-checks li.ok').count() >= 4, 'thẻ SIMI nhận Codex, Gateway, key, skill');
   await win.waitForTimeout(1500); await shot('01-accounts');

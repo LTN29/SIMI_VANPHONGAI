@@ -66,7 +66,7 @@ const TOOL_HINT = {
 };
 const PLUGIN_HINT = (m) => (/computer-use/.test(m.id) ? 'Người dùng chọn plugin Computer Use OpenAI: dùng node_repl + @oai/sky theo skill computer-use cho yêu cầu này.' : `Người dùng gọi plugin ${m.name}: dùng plugin này cho yêu cầu.`);
 const BROWSER_HOST = /browser access host|browser[- ]host is unavailable/i;
-const NO_CODEX = 'Không tìm thấy Codex trên máy. Bấm "Cài đặt SIMI" ở mục Kết nối.';
+const NO_CODEX = 'Máy chưa có Codex. Bấm "Cài đặt SIMI", dán key team – app tự cài Codex, không cần PowerShell.';
 const STOPPED = 'Đã dừng';
 const STOP_GRACE_MS = 4000; // bấm Dừng mà Codex chưa ngắt được lượt sau chừng này → app tự kết thúc lượt
 

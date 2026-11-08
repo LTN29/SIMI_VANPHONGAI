@@ -1,7 +1,7 @@
 {
   "name": "vanphong-ai",
   "productName": "VanPhongAI",
-  "version": "0.9.45",
+  "version": "0.9.46",
   "description": "Văn phòng AI - giao việc cho các agent như một trò chơi",
   "main": "src/boot.js",
   "author": "LTN",
@@ -27,6 +27,7 @@
     "test:tools": "node test/ui-tools.test.js",
     "test:computer-setup": "node test/ui-computer-setup.test.js",
     "test:flicker": "node test/ui-flicker.test.js",
+    "test:simi-setup": "node test/ui-simi-setup.test.js",
     "release": "node scripts/release.mjs"
   },
   "build": {

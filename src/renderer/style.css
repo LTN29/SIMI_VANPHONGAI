@@ -507,3 +507,50 @@ code, .cmd { font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace
 .credit { display: block; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; color: var(--dim); opacity: .85; }
 .welcome .credit { margin-top: 14px; }
 .acc-info.warn { color: var(--err); opacity: 1; font-weight: 700; line-height: 1.45; }
+
+/* 🚀 Cài / cập nhật SIMI AI trong app: nhập key → các bước có dấu ✓, không hiện dòng lệnh */
+.sheet.ss-sheet { width: min(560px, calc(100vw - 40px)); }
+.ss { display: flex; flex-direction: column; gap: 14px; }
+.ss-hero { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 18px; background: linear-gradient(135deg, var(--accentSoft), transparent); }
+.ss-logo { width: 52px; height: 52px; border-radius: 14px; flex: none; padding: 7px; box-sizing: border-box; object-fit: contain; background: #0a78f0; box-shadow: 0 6px 16px rgba(10, 120, 240, .25); }
+.ss-hero b { display: block; font-size: 17px; font-weight: 900; }
+.ss-hero small { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.ss-codex { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border: 1.5px dashed var(--line2); border-radius: 14px; }
+.ss-codex.ok { border-style: solid; border-color: rgba(22, 163, 74, .35); background: rgba(22, 163, 74, .06); }
+.ss-codex > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ss-codex b { font-size: 13.5px; }
+.ss-codex small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.ss-ci { font-size: 20px; width: 28px; text-align: center; }
+.ss-codex.ok .ss-ci { color: var(--ok, #16a34a); font-weight: 900; }
+.ss-form { display: flex; flex-direction: column; gap: 8px; }
+.ss-lb { font-weight: 800; font-size: 13px; }
+.ss-keyrow { display: flex; gap: 6px; align-items: center; }
+.ss-key { flex: 1; min-width: 0; border: 2px solid var(--line2); background: var(--input); color: var(--text); border-radius: 12px; padding: 11px 13px; font: inherit; font-size: 14.5px; letter-spacing: .02em; }
+.ss-key:focus { outline: none; border-color: var(--accent2); box-shadow: 0 0 0 4px var(--accentSoft); }
+.ss-eye { width: 40px; height: 42px; border: 0; background: var(--hover); border-radius: 11px; cursor: pointer; font-size: 17px; }
+.ss-err { margin: 0; color: var(--err); font-weight: 700; font-size: 13px; }
+.ss-note { color: var(--muted); font-size: 12px; }
+.ss-go { align-self: stretch; justify-content: center; padding: 12px; font-size: 15px; margin-top: 4px; }
+.ss-run { display: flex; flex-direction: column; gap: 12px; }
+.ss-bar { height: 8px; border-radius: 99px; background: var(--hover); overflow: hidden; }
+.ss-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent2), var(--accent)); transition: width .6s ease; }
+.ss-bar.ok i { background: var(--ok, #16a34a); }
+.ss-bar.bad i { background: var(--err); }
+.ss-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ss-step { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 12px; font-size: 14px; color: var(--muted); }
+.ss-step.now { background: var(--accentSoft); color: var(--text); font-weight: 700; }
+.ss-step.done { color: var(--text); }
+.ss-step.fail { background: rgba(220, 38, 38, .08); color: var(--err); font-weight: 700; }
+.ss-dot { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 900; background: var(--hover); color: var(--muted); }
+.ss-step.done .ss-dot { background: var(--ok, #16a34a); color: #fff; }
+.ss-step.now .ss-dot { background: var(--panel); }
+.ss-step.fail .ss-dot { background: var(--err); color: #fff; }
+.ss-dot .spin { width: 14px; height: 14px; }
+.ss-hint, .ss-safe { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.ss-done, .ss-fail { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 8px 4px 2px; }
+.ss-big { font-size: 46px; line-height: 1; }
+.ss-done b { font-size: 17px; }
+.ss-done small { color: var(--muted); }
+.ss-fail { align-items: stretch; text-align: left; padding: 12px 14px; border-radius: 14px; background: rgba(220, 38, 38, .07); }
+.ss-fail b { color: var(--err); }
+.ss-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }

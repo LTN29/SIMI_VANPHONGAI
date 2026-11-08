@@ -346,18 +346,34 @@ function registerIpc() {
   });
   handle('skills:openDir', () => { const d = skillsAdmin.skillsDir(); fs.mkdirSync(d, { recursive: true }); return shell.openPath(d); });
   handle('simi:install', () => simi.openInstaller(store.getConfig().simiGateway));
-  // cập nhật skill, công cụ, plugin, danh sách model của SIMI – chạy ngầm, hiện tiến độ trong app
-  handle('simi:update', async () => {
+  // cài mới / cập nhật SIMI – chạy ngầm (không mở Terminal), app chỉ hiện các bước dễ hiểu
+  const runSimi = (mode, key) => {
     if (simiUpdating) return simiUpdating;
-    emit({ type: 'simi-update', ev: 'start' });
-    simiUpdating = simi.runUpdate(store.getConfig().simiGateway, (line) => emit({ type: 'simi-update', ev: 'line', line })).then((r) => {
+    emit({ type: 'simi-update', ev: 'start', mode });
+    simiUpdating = simi.runUpdate(store.getConfig().simiGateway, (line) => emit({ type: 'simi-update', ev: 'line', line }), { mode: key ? 'repair' : 'update', key }).then((r) => {
       simiUpdating = null;
       modelCache.delete('simi');
+      simi.refreshEnv();
       codexServer.stop(); // nạp lại cấu hình, skill, plugin mới
-      emit({ type: 'simi-update', ev: 'done', ok: r.ok, error: r.error || '' });
+      emit({ type: 'simi-update', ev: 'done', ok: r.ok, error: r.error || '', mode });
       return r;
     });
     return simiUpdating;
+  };
+  handle('simi:update', () => runSimi('update'));
+  handle('simi:checkKey', (key) => simi.checkKey(store.getConfig().simiGateway, key));
+  handle('simi:setup', async (key) => {
+    const chk = await simi.checkKey(store.getConfig().simiGateway, key);
+    if (!chk.ok) return { ok: false, error: chk.error, step: 'key' };
+    return runSimi('install', String(key).trim());
+  });
+  // tải app Codex (ChatGPT) chính thức: Windows mở Microsoft Store, máy khác mở trang tải của OpenAI
+  handle('simi:getCodex', async () => {
+    if (process.platform === 'win32') {
+      try { await shell.openExternal('ms-windows-store://pdp/?productid=9PLM9XGG6VKS'); return { ok: true, via: 'store' }; } catch { /* không có Store → trang tải */ }
+      await shell.openExternal('https://get.microsoft.com/installer/download/9PLM9XGG6VKS?cid=website_cta_psi'); return { ok: true, via: 'web' };
+    }
+    await shell.openExternal('https://openai.com/codex/'); return { ok: true, via: 'web' };
   });
 
   // tự cập nhật app

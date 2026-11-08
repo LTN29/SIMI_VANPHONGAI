@@ -104,7 +104,9 @@ function runProcess(cmd, args, input, { cwd, timeoutMs = 60000, signal, shell, a
     if (signal) { if (signal.aborted) return onAbort(); signal.addEventListener('abort', onAbort); }
     child.stdout.on('data', (d) => { out += d.toString('utf8'); });
     child.stderr.on('data', (d) => { err += d.toString('utf8'); });
-    child.on('error', (e) => finish(reject, new Error(e.code === 'ENOENT' ? `Không tìm thấy lệnh "${cmd}". Đã cài CLI này chưa?` : e.message)));
+    child.on('error', (e) => finish(reject, new Error(e.code !== 'ENOENT' ? e.message
+      : /(^|[\\/])codex(\.cmd|\.exe)?$/i.test(cmd) ? 'Máy chưa có Codex. Bấm "Cài đặt SIMI", dán key team – app tự cài Codex, không cần PowerShell.'
+        : `Không tìm thấy lệnh "${cmd}". Đã cài CLI này chưa?`)));
     child.on('close', (code) => {
       const notFound = NOT_FOUND.test(err + out);
       if (code === 0 || (allowFail && !notFound)) return finish(resolve, { out, err, code });

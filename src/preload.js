@@ -55,6 +55,9 @@ contextBridge.exposeInMainWorld('vp', {
     skills: () => ipcRenderer.invoke('simi:skills'),
     install: () => ipcRenderer.invoke('simi:install'),
     update: () => ipcRenderer.invoke('simi:update'),
+    checkKey: (key) => ipcRenderer.invoke('simi:checkKey', key),
+    setup: (key) => ipcRenderer.invoke('simi:setup', key),
+    getCodex: () => ipcRenderer.invoke('simi:getCodex'),
   },
   fortune: { ask: (p) => ipcRenderer.invoke('fortune:ask', p) },
   browser: {
