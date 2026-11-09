@@ -19,6 +19,7 @@ const CHAT_GUIDE = [
   'Bạn đang chạy trong app Văn Phòng AI. Thao tác máy tính diễn ra trên máy người dùng, không phải máy Gateway.',
   'Ưu tiên tốc độ: việc chỉ cần chữ (dịch, tóm tắt, viết lại, soạn thảo, giải thích, trả lời câu hỏi) thì trả lời thẳng ngay trong chat ở 1 lượt – không mở skill, không chạy lệnh, không tìm file, không tạo file trừ khi người dùng yêu cầu file. Ảnh và PDF đính kèm: đọc trực tiếp, không chạy OCR bằng script.',
   'Tìm web, đọc trang công khai, tạo / sửa ảnh, chép lời file ghi âm / video: gọi thẳng công cụ MCP simi_browser web_search / web_fetch / image_generate / audio_transcribe (mỗi việc 1 lần gọi, chạy ngoài sandbox) thay cho tự chạy khối lệnh trong skill hay tự viết code; chỉ dùng khối lệnh khi phiên không có các công cụ này.',
+  'Tạo ảnh: image_generate tự chọn model ảnh theo model chat người dùng đang chọn (GPT → gpt-image, Gemini → Gemini). Muse (công cụ muse_image, skill muse-tao-anh) CHỈ dùng khi người dùng chọn skill Muse hoặc ghi đích danh chữ "Muse"; image_generate lỗi thì báo người dùng, không tự chuyển sang Muse.',
   'Chỉnh ảnh có sẵn mà phải giữ đúng chi tiết (làm nét, chỉnh sáng / màu, cắt, xoay, xoá / viết lại chữ, logo bị mờ, che vùng, chèn logo): dùng simi_browser image_retouch (vài giây, chạy trên máy), không dùng model tạo ảnh (vẽ lại cả ảnh, chậm, sai chi tiết) và không tự viết script Python.',
   'Ảnh có chữ / bố cục (poster, banner, bài đăng MXH, thumbnail, infographic, thiệp, menu, chứng nhận, logo chữ, ảnh quảng cáo): ưu tiên tự thiết kế bằng HTML / CSS / SVG rồi gọi vp_browser design_render (chữ tiếng Việt đúng 100%, nét, đúng màu, sửa được) – xem ảnh xem trước, chỉnh tới khi đẹp. Cần ảnh chụp / tranh vẽ chân thực thì image_generate tạo phần ảnh KHÔNG chữ rồi đặt làm nền trong HTML và phủ chữ bằng design_render.',
   'Tạo ảnh: viết prompt tiếng Anh chi tiết (chủ thể, bố cục, phong cách, ánh sáng, màu; chữ trong ảnh giữ tiếng Việt trong ngoặc kép, thật ngắn) – yêu cầu chung chung thì tự bổ sung chi tiết cho đẹp, không chuyển nguyên câu ngắn của người dùng.',
@@ -199,6 +200,18 @@ const FAST_GUIDE = [
 ].join('\n');
 const FAST_FIRST_BYTE_MS = Number(process.env.VP_FAST_FIRST_BYTE_MS) || 45000; // chờ Gateway / model bắt đầu phản hồi
 const FAST_IDLE_MS = Number(process.env.VP_FAST_IDLE_MS) || 60000; // đang trả lời mà im lặng quá lâu
+// model chat chuyên vẽ ảnh (vd muse-image-chat): vẽ xong mới trả về → im lặng lâu là bình thường
+const IMAGE_CHAT = /image|muse/i;
+const IMAGE_WAIT_MS = Number(process.env.VP_IMAGE_WAIT_MS) || 240000;
+// báo cho công cụ tạo ảnh (image_generate) biết model chat người dùng ĐANG chọn → ảnh đi theo đúng hãng (GPT / Gemini…)
+function noteChatModel(model) {
+  if (!model) return;
+  try {
+    const home = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(path.join(home, 'ltn-chat-model.json'), JSON.stringify({ model, at: Date.now() }));
+  } catch { /* không ghi được thì công cụ ảnh tự đoán như cũ */ }
+}
 const FAST_FILE_OK = /\.(png|jpe?g|webp|gif)$/i;
 // gọi skill: $simi-tao-anh (cách app chèn) hoặc /simi-tao-anh
 const SKILL_CALL = /(^|\s)[/$][a-z][a-z0-9-]{1,40}(\s|$)/i;
@@ -977,6 +990,7 @@ class ChatEngine {
         if (run.stopped) return finish(STOPPED);
         const input = [{ type: 'text', text: prompt, text_elements: [] }, ...atts.filter((a) => a.image).map((a) => ({ type: 'localImage', path: a.path })),
           ...ments.filter((m) => m.kind === 'plugin').map((m) => ({ type: 'mention', name: m.name, path: `plugin://${m.id}` }))];
+        noteChatModel(set.model);
         const r = await srv.request('turn/start', { threadId: t.codexThread, input, cwd: dir, model: set.model, effort: set.effort, approvalPolicy: set.approvalPolicy, sandboxPolicy: set.sandboxPolicy }, 60000);
         run.turnId = r.turn && r.turn.id;
         if (run.stopped && run.turnId) srv.request('turn/interrupt', { threadId: run.codexId, turnId: run.turnId }).catch(() => finish(STOPPED));
@@ -1007,7 +1021,9 @@ class ChatEngine {
       if (auth.clientId) headers['x-ltn-client-id'] = auth.clientId;
       // chờ quá lâu mà không có dữ liệu gì → báo rõ cho user (chuyển sang Codex lúc này chỉ làm chờ gấp đôi vì cùng model, cùng máy chủ)
       const watch = (ms) => { clearTimeout(idle); idle = setTimeout(() => { stalled = Math.max(1, Math.round((Date.now() - t0) / 1000)); ac.abort(); }, ms); };
-      watch(FAST_FIRST_BYTE_MS);
+      const slow = IMAGE_CHAT.test(model || '');
+      noteChatModel(model);
+      watch(slow ? IMAGE_WAIT_MS : FAST_FIRST_BYTE_MS);
       let res;
       try { res = await fetch(`${auth.baseUrl}/responses`, { method: 'POST', headers, body: JSON.stringify(body), signal: ac.signal }); } catch (e) { clearTimeout(idle); throw e; }
       firstByteMs = Date.now() - t0;
@@ -1018,7 +1034,7 @@ class ChatEngine {
       }
       const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
       for (;;) {
-        watch(FAST_IDLE_MS);
+        watch(slow ? IMAGE_WAIT_MS : FAST_IDLE_MS);
         const { value, done } = await reader.read();
         if (done) break;
         buf += dec.decode(value, { stream: true });
@@ -1057,7 +1073,7 @@ class ChatEngine {
       this.running.delete(t.id);
       if (shown) show(true);
       const err = shown
-        ? `Model ${model} ngừng trả lời giữa chừng (không có dữ liệu ${Math.round(FAST_IDLE_MS / 1000)} giây). Bấm gửi lại nếu cần phần còn lại.`
+        ? `Model ${model} ngừng trả lời giữa chừng (không có dữ liệu ${Math.round((IMAGE_CHAT.test(model || '') ? IMAGE_WAIT_MS : FAST_IDLE_MS) / 1000)} giây). Bấm gửi lại nếu cần phần còn lại.`
         : `Model ${model} chưa trả lời sau ${stalled} giây – máy chủ AI đang chậm hoặc model đang quá tải. Bấm gửi lại, hoặc chọn model khác (model có nhãn ⚡ nhanh).`;
       return new Promise((resolve) => this._finish(t, msg, { error: err, ms: Date.now() - t0 }, emit, resolve));
     }
