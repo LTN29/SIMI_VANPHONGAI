@@ -76,15 +76,7 @@ function addResultIndex(r) {
 const isResultFile = (p) => typeof p === 'string' && (insideOutput(p) || readResultIndex().some((x) => path.resolve(x.file) === path.resolve(p)));
 
 // PDF: in trang HTML bằng Chromium của app (cửa sổ ẩn, tắt JavaScript)
-async function printPdf(html) {
-  const tmp = path.join(workDir(), `in-pdf-${Date.now()}.html`);
-  fs.writeFileSync(tmp, html, 'utf8');
-  const w = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
-  try {
-    await w.loadFile(tmp);
-    return await w.webContents.printToPDF({ pageSize: 'A4', printBackground: true, margins: { marginType: 'default' } });
-  } finally { w.destroy(); fs.rm(tmp, { force: true }, () => {}); }
-}
+const printPdf = (html) => exporter.pdfFromHtml(html, workDir());
 
 // thư mục dự án người dùng chọn cho file kết quả: phải là thư mục có thật
 function taskDir(d) {

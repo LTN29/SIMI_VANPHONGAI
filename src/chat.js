@@ -20,6 +20,7 @@ const CHAT_GUIDE = [
   'Ưu tiên tốc độ: việc chỉ cần chữ (dịch, tóm tắt, viết lại, soạn thảo, giải thích, trả lời câu hỏi) thì trả lời thẳng ngay trong chat ở 1 lượt – không mở skill, không chạy lệnh, không tìm file, không tạo file trừ khi người dùng yêu cầu file. Ảnh và PDF đính kèm: đọc trực tiếp, không chạy OCR bằng script.',
   'Tìm web, đọc trang công khai, tạo / sửa ảnh, chép lời file ghi âm / video: gọi thẳng công cụ MCP simi_browser web_search / web_fetch / image_generate / audio_transcribe (mỗi việc 1 lần gọi, chạy ngoài sandbox) thay cho tự chạy khối lệnh trong skill hay tự viết code; chỉ dùng khối lệnh khi phiên không có các công cụ này.',
   'Tạo ảnh: image_generate tự chọn model ảnh theo model chat người dùng đang chọn (GPT → gpt-image, Gemini → Gemini). Muse (công cụ muse_image, skill muse-tao-anh) CHỈ dùng khi người dùng chọn skill Muse hoặc ghi đích danh chữ "Muse"; image_generate lỗi thì báo người dùng, không tự chuyển sang Muse.',
+  'Tạo file Word / Excel / PDF / CSV / HTML từ nội dung bạn soạn (báo cáo, hợp đồng, công văn, bảng tính, danh sách…): gọi vp_browser document_create (viết nội dung Markdown: # tiêu đề, bảng | cột | cột |; đuôi path quyết định định dạng) – chạy trong app, không cần Python, tiếng Việt chuẩn. KHÔNG tự viết script python-docx / openpyxl / reportlab / zipfile / PowerShell để tạo file mới, không kiểm tra Python trước. Chỉ dùng script khi phải sửa file có sẵn giữ nguyên định dạng, hoặc cần công thức / mẫu Excel riêng.',
   'Chỉnh ảnh có sẵn mà phải giữ đúng chi tiết (làm nét, chỉnh sáng / màu, cắt, xoay, xoá / viết lại chữ, logo bị mờ, che vùng, chèn logo): dùng simi_browser image_retouch (vài giây, chạy trên máy), không dùng model tạo ảnh (vẽ lại cả ảnh, chậm, sai chi tiết) và không tự viết script Python.',
   'Ảnh có chữ / bố cục (poster, banner, bài đăng MXH, thumbnail, infographic, thiệp, menu, chứng nhận, logo chữ, ảnh quảng cáo): ưu tiên tự thiết kế bằng HTML / CSS / SVG rồi gọi vp_browser design_render (chữ tiếng Việt đúng 100%, nét, đúng màu, sửa được) – xem ảnh xem trước, chỉnh tới khi đẹp. Cần ảnh chụp / tranh vẽ chân thực thì image_generate tạo phần ảnh KHÔNG chữ rồi đặt làm nền trong HTML và phủ chữ bằng design_render.',
   'Tạo ảnh: viết prompt tiếng Anh chi tiết (chủ thể, bố cục, phong cách, ánh sáng, màu; chữ trong ảnh giữ tiếng Việt trong ngoặc kép, thật ngắn) – yêu cầu chung chung thì tự bổ sung chi tiết cho đẹp, không chuyển nguyên câu ngắn của người dùng.',
@@ -51,6 +52,7 @@ function docGuide(f = {}) {
     'Tạo file tài liệu tiếng Việt (bắt buộc, tránh lỗi font):',
     '- Chuẩn hoá mọi chữ về Unicode NFC trước khi ghi (Python: unicodedata.normalize("NFC", s)); không dùng font/bảng mã VNI, TCVN3 (.VnTime).',
     '- PDF: KHÔNG dùng font có sẵn của thư viện (Helvetica, Times-Roman, Courier, font mặc định của fpdf / pdfkit / jsPDF) vì không có chữ tiếng Việt → ô vuông. Phải nhúng font TrueType' + (have.length ? ' có sẵn trên máy này – ' + have.join('; ') : ' hỗ trợ tiếng Việt (Arial, Times New Roman, DejaVu Sans, Noto Sans)') + '. reportlab: pdfmetrics.registerFont(TTFont("VN", đường_dẫn)) rồi dùng "VN" cho mọi đoạn chữ (cả bảng, tiêu đề). Hoặc tạo .docx/.html rồi chuyển sang PDF bằng Word / LibreOffice / Chrome.',
+    '- File mới Word / Excel / PDF từ nội dung bạn viết: dùng vp_browser document_create (không cần mục dưới). Chỉ khi sửa file có sẵn bằng script mới theo các lưu ý sau.',
     '- Word (.docx, python-docx): đặt font cho style Normal và tiêu đề (Times New Roman hoặc Arial), gán cả w:eastAsia và w:cs trong rFonts, ngôn ngữ vi-VN.',
     '- Ảnh / biểu đồ có chữ (PIL, matplotlib): chỉ định đúng file font ở trên (PIL ImageFont.truetype, matplotlib rcParams["font.family"]).',
     '- CSV cho Excel: ghi UTF-8 có BOM (Python encoding="utf-8-sig"). File .txt/.md/.html/.json: UTF-8, HTML có <meta charset="utf-8">.',
@@ -123,6 +125,12 @@ function snapshot(dir, limit = 4000) {
 // lẫn lịch sử từ app-server (commandExecution, aggregatedOutput…).
 const snake = (t) => String(t || '').replace(/[A-Z]/g, (m) => '_' + m.toLowerCase());
 const STATUS = { inProgress: 'in_progress', in_progress: 'in_progress', failed: 'failed', declined: 'failed' };
+// file công cụ vừa tạo: đường dẫn thật trong kết quả (đuôi có thể đổi) → không có thì lấy theo tham số
+function docPath(it) {
+  const txt = ((it.result && it.result.content) || []).map((c) => c.text || '').join(' ');
+  const m = txt.match(/Đã (?:tạo|lưu) \w+: (.+?\.(?:docx|xlsx|pdf|html|csv|txt|md|png|jpe?g)) \(/i);
+  return m ? m[1] : String(it.arguments.path);
+}
 function stepFromItem(it) {
   const status = STATUS[it.status] || 'completed';
   switch (snake(it.type)) {
@@ -130,7 +138,7 @@ function stepFromItem(it) {
       return { sk: 'cmd', title: shownCmd(it.command) || 'Chạy lệnh', output: String(it.aggregated_output ?? it.aggregatedOutput ?? '').slice(-4000), exit: it.exit_code ?? it.exitCode, status };
     case 'mcp_tool_call':
     case 'dynamic_tool_call':
-      return { sk: 'tool', server: it.server || it.namespace || '', title: [TOOL_SHORT[it.server] || it.server || it.namespace, it.server === VPC ? vpcLabel(it.tool, it.arguments) : it.tool === 'design_render' ? '🎨 Xuất thiết kế ' + String((it.arguments && it.arguments.path) || '').split(/[\\/]/).pop() : it.tool].filter(Boolean).join(' · ') || 'Công cụ', output: it.error ? String(it.error.message || JSON.stringify(it.error)).slice(0, 800) : '', status: it.error ? 'failed' : status, ...(it.tool === 'design_render' && !it.error && status === 'completed' && it.arguments && it.arguments.path ? { files: [String(it.arguments.path)] } : {}) };
+      return { sk: 'tool', server: it.server || it.namespace || '', title: [it.tool === 'document_create' ? '' : TOOL_SHORT[it.server] || it.server || it.namespace, it.server === VPC ? vpcLabel(it.tool, it.arguments) : it.tool === 'design_render' ? '🎨 Xuất thiết kế ' + String((it.arguments && it.arguments.path) || '').split(/[\\/]/).pop() : it.tool === 'document_create' ? '📄 Tạo file ' + String((it.arguments && it.arguments.path) || '').split(/[\\/]/).pop() : it.tool].filter(Boolean).join(' · ') || 'Công cụ', output: it.error ? String(it.error.message || JSON.stringify(it.error)).slice(0, 800) : '', status: it.error ? 'failed' : status, ...(/^(design_render|document_create)$/.test(it.tool) && !it.error && status === 'completed' && it.arguments && it.arguments.path ? { files: [docPath(it)] } : {}) };
     case 'web_search':
       return { sk: 'web', title: it.query || 'Tìm trên web', status };
     case 'file_change': {

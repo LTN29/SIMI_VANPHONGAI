@@ -310,24 +310,52 @@ code{background:#f2f2f2;padding:1px 4px;border-radius:4px;font-family:Consolas,m
 }
 
 // ---------------- ghi file ----------------
-// printPdf(html) → Buffer: do main.js truyền vào (cửa sổ Electron ẩn); không có thì lưu HTML thay PDF
-async function writeResult({ content, format, dir, name, title, printPdf }) {
+// nội dung Markdown → dữ liệu file theo định dạng; PDF cần printPdf(html) (không có thì lưu HTML thay)
+async function build(format, content, title, printPdf) {
   const fmt = FORMATS[format] ? format : 'md';
+  if (fmt === 'docx') return { data: toDocx(content, title), ext: 'docx' };
+  if (fmt === 'xlsx') return { data: toXlsx(content, title), ext: 'xlsx' };
+  if (fmt === 'csv') return { data: toCsv(content, title), ext: 'csv' };
+  if (fmt === 'txt') return { data: toTxt(content), ext: 'txt' };
+  if (fmt === 'html') return { data: toHtml(content, title), ext: 'html' };
+  if (fmt === 'pdf') return printPdf ? { data: await printPdf(toHtml(content, title)), ext: 'pdf' } : { data: toHtml(content, title), ext: 'html' };
+  return { data: String(content || ''), ext: 'md' };
+}
+
+// văn phòng: tên + thư mục, không ghi đè file đã có
+async function writeResult({ content, format, dir, name, title, printPdf }) {
   fs.mkdirSync(dir, { recursive: true });
-  let ext = FORMATS[fmt].ext;
-  let data;
-  if (fmt === 'docx') data = toDocx(content, title);
-  else if (fmt === 'xlsx') data = toXlsx(content, title);
-  else if (fmt === 'csv') data = toCsv(content, title);
-  else if (fmt === 'txt') data = toTxt(content);
-  else if (fmt === 'html') data = toHtml(content, title);
-  else if (fmt === 'pdf') {
-    if (printPdf) data = await printPdf(toHtml(content, title));
-    else { data = toHtml(content, title); ext = 'html'; }
-  } else data = content;
+  const { data, ext } = await build(format, content, title, printPdf);
   const file = uniquePath(dir, name, ext);
   fs.writeFileSync(file, data);
   return file;
+}
+
+// công cụ cho AI trong tab Chat: ghi đúng đường dẫn (đuôi file quyết định định dạng)
+async function writeDocument({ content, file, title, printPdf, overwrite = true }) {
+  const format = formatFromName(file);
+  if (!format) throw new Error('Đường dẫn phải có đuôi .docx, .xlsx, .pdf, .html, .csv, .txt hoặc .md');
+  if (!String(content || '').trim()) throw new Error('Nội dung đang trống');
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true });
+  const { data, ext } = await build(format, content, title || path.basename(file).replace(/\.[^.]+$/, ''), printPdf);
+  const base = path.basename(file).replace(/\.[^.]+$/, '');
+  const out = overwrite ? path.join(dir, `${base}.${ext}`) : uniquePath(dir, base, ext);
+  fs.writeFileSync(out, data);
+  return { file: out, format: ext, bytes: data.length };
+}
+
+// PDF khổ A4 in bằng Chromium của Electron (cửa sổ ẩn, tắt JavaScript)
+async function pdfFromHtml(html, tmpDir = require('os').tmpdir()) {
+  const { BrowserWindow } = require('electron');
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const tmp = path.join(tmpDir, `vp-in-pdf-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.html`);
+  fs.writeFileSync(tmp, html, 'utf8');
+  const w = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false, partition: 'vp-print' } });
+  try {
+    await w.loadFile(tmp);
+    return await w.webContents.printToPDF({ pageSize: 'A4', printBackground: true, margins: { marginType: 'default' } });
+  } finally { w.destroy(); fs.rm(tmp, { force: true }, () => {}); }
 }
 
 // dặn AI trình bày hợp với file sẽ xuất
@@ -346,4 +374,4 @@ function formatBrief(format, fileName) {
   return `KẾT QUẢ CUỐI SẼ ĐƯỢC LƯU THÀNH FILE ${f.name.toUpperCase()} ${name}: ${how} Không tự tạo file, không kể quy trình – chỉ trả nội dung.`;
 }
 
-module.exports = { FORMATS, detectFormat, safeName, formatFromName, uniquePath, parseMd, toDocx, toXlsx, toCsv, toTxt, toHtml, writeResult, formatBrief, crc32 };
+module.exports = { FORMATS, detectFormat, safeName, formatFromName, uniquePath, parseMd, toDocx, toXlsx, toCsv, toTxt, toHtml, writeResult, writeDocument, pdfFromHtml, formatBrief, crc32 };

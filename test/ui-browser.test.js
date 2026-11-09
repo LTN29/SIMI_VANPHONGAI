@@ -66,7 +66,20 @@ run(async () => {
   const init = await rpc(mcp, { id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
   check(init.result.serverInfo.name === 'vp_browser' && /đăng nhập/.test(init.result.instructions), 'MCP vp_browser khởi động, có hướng dẫn cho AI');
   const list = await rpc(mcp, { id: 2, method: 'tools/list' });
-  check(list.result.tools.map((t) => t.name).join() === 'browser_open,browser_snapshot,browser_act,browser_read,browser_screenshot,design_render,browser_js,browser_tabs', 'đủ 8 công cụ (7 trình duyệt + xuất thiết kế)');
+  check(list.result.tools.map((t) => t.name).join() === 'browser_open,browser_snapshot,browser_act,browser_read,browser_screenshot,design_render,document_create,browser_js,browser_tabs', 'đủ 9 công cụ (7 trình duyệt + xuất thiết kế + tạo file)');
+
+  // 📄 tạo file Word / Excel / PDF ngay trong app (máy không có Python vẫn được)
+  const docDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vp-doc-out-'));
+  const md = '# Báo cáo tuần\n\n## Doanh số\n\n| Ngày | Doanh số |\n|---|---|\n| Thứ 2 | 1.250.000 |\n\n- Ý chính có **đậm**';
+  for (const [i, ext, magic] of [[31, 'docx', 'PK'], [32, 'xlsx', 'PK'], [33, 'pdf', '%P']]) {
+    const r = await rpc(mcp, { id: i, method: 'tools/call', params: { name: 'document_create', arguments: { path: path.join(docDir, `Báo cáo tuần.${ext}`), content: md } } });
+    const f = path.join(docDir, `Báo cáo tuần.${ext}`);
+    check(!r.result.isError && /Đã tạo/.test(r.result.content[0].text) && fs.readFileSync(f).subarray(0, 2).toString() === magic, `document_create → .${ext}`);
+  }
+  check(!(await win.locator('#chBrowser:not(.hidden)').count()), 'tạo file không bật khung trình duyệt');
+  const bad = await rpc(mcp, { id: 34, method: 'tools/call', params: { name: 'document_create', arguments: { path: path.join(docDir, 'x.exe'), content: 'a' } } });
+  check(bad.result.isError && /đuôi/.test(bad.result.content[0].text), 'đuôi lạ bị từ chối');
+  fs.rmSync(docDir, { recursive: true, force: true });
 
   // 🎨 thiết kế kiểu Claude Desktop: HTML → PNG nét gấp 2 / PDF, cảnh báo chữ tràn, PNG trong suốt
   check(list.result.tools.some((t) => t.name === 'design_render' && /Claude Desktop/.test(t.description)), 'có công cụ design_render');

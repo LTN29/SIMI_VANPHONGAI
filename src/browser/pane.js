@@ -195,6 +195,26 @@ function normUrl(u) {
   return 'https://www.google.com/search?q=' + encodeURIComponent(s);
 }
 
+// 📄 AI trong tab Chat tạo file Word / Excel / PDF từ Markdown – chạy trong app, không cần Python trên máy
+async function createDocument(args = {}) {
+  const ex = require('../export');
+  let file = String(args.path || '').trim();
+  if (!file) throw new Error('Cần path (đường dẫn file kết quả, vd C:\\…\\Báo cáo.docx)');
+  if (!path.isAbsolute(file)) file = path.join(require('electron').app.getPath('documents'), 'VanPhongAI', 'Chat', 'outputs', file);
+  let content = args.content;
+  if (!content && args.content_path) {
+    const src = path.resolve(String(args.content_path));
+    if (!fs.existsSync(src)) throw new Error('Không thấy file nội dung: ' + src);
+    content = fs.readFileSync(src, 'utf8');
+  }
+  const r = await ex.writeDocument({ content, file, title: args.title, overwrite: args.overwrite !== false, printPdf: (html) => ex.pdfFromHtml(html) });
+  const blocks = ex.parseMd(content);
+  const tables = blocks.filter((b) => b.type === 'table');
+  const note = r.format === 'xlsx' ? (tables.length ? `${tables.length} sheet từ ${tables.length} bảng` : 'không có bảng Markdown → mỗi dòng nội dung 1 hàng (muốn chia cột thì viết bảng | … |)')
+    : `${blocks.filter((b) => b.type === 'h').length} tiêu đề, ${tables.length} bảng`;
+  return [{ type: 'text', text: `Đã tạo ${r.format.toUpperCase()}: ${r.file} (${Math.max(1, Math.round(r.bytes / 1024))} KB · ${note}). Gửi đường dẫn này cho người dùng; cần sửa thì gọi lại cùng path.` }];
+}
+
 class BrowserPane {
   constructor({ getWindow, emit, connFile }) {
     this.downloads = []; this.dlWait = [];
@@ -536,6 +556,7 @@ class BrowserPane {
 
   async call(tool, args = {}) {
     if (tool === 'design_render') { this.emit({ type: 'toast', text: '🎨 SIMI đang xuất thiết kế…' }); return require('./design').render(args); }
+    if (tool === 'document_create') return createDocument(args);
     this.busy = (this.busy || 0) + 1; clearTimeout(this.idleT);
     if (this.busy === 1) { this.emit({ type: 'browser', ev: 'busy', on: true }); this.cdpIntercept(true); }
     try { return await this.callInner(tool, args); } finally {

@@ -1198,6 +1198,7 @@
     if (b.sk === 'plan') return '🗺️ Đang lên kế hoạch';
     const t = String(b.title || '');
     if (/Xuất thiết kế/.test(t)) return '🎨 Đang xuất thiết kế';
+    if (/Tạo file/.test(t)) return '📄 Đang tạo file';
     if (/^Tạo ảnh/.test(t)) return '🎨 Đang tạo ảnh';
     if (b.server === 'vp_browser' || b.server === 'simi_browser' || /Trình duyệt/.test(t)) return '🌐 Đang thao tác trên web';
     if (b.server === 'vp_computer' || /Computer Use|Điều khiển máy/.test(t)) return '🖥️ Đang điều khiển máy tính';
