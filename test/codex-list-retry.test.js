@@ -7,10 +7,14 @@ const os = require('os');
 const path = require('path');
 const { CodexAppServer } = require('../src/codex-server');
 
+// commit từ Windows thì file mất quyền chạy (+x) → CI Linux báo EACCES; đặt lại trước khi chạy
+const FAKE = path.join(__dirname, 'fixtures', 'fake-codex-app-server.js');
+try { fs.chmodSync(FAKE, 0o755); } catch { /* Windows */ }
+
 test('thread/list treo → khởi động lại Codex, đọc lại được danh sách', { skip: process.platform === 'win32' }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vp-cx-list-'));
   process.env.FAKE_CODEX_COUNT = path.join(dir, 'count');
-  const cx = new CodexAppServer(() => path.join(__dirname, 'fixtures', 'fake-codex-app-server.js'));
+  const cx = new CodexAppServer(() => FAKE);
   try {
     const list = await cx.listThreads(10);
     assert.deepEqual(list.map((t) => t.id), ['t-1']);
@@ -21,7 +25,7 @@ test('thread/list treo → khởi động lại Codex, đọc lại được dan
 test('đang có lượt chạy thì không khởi động lại Codex (không cắt ngang lượt)', { skip: process.platform === 'win32' }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vp-cx-list-'));
   process.env.FAKE_CODEX_COUNT = path.join(dir, 'count');
-  const cx = new CodexAppServer(() => path.join(__dirname, 'fixtures', 'fake-codex-app-server.js'));
+  const cx = new CodexAppServer(() => FAKE);
   try {
     await cx.start(); cx.hold();
     await assert.rejects(cx.listThreads(10), /không phản hồi \(thread\/list\)/);
