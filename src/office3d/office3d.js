@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { NavGrid } from './nav.js';
 import { Cat } from './cat.js';
 import { Person } from './person.js';
+import { dodgePlates } from './dodge.js';
 import { ROOM, SLOTS, DESK, SEAT_DZ, DOOR, POI, OBSTACLES, buildRoom, buildDesk, drawScreen } from './world.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -305,6 +306,8 @@ class Office3D {
     const src = p.plate.querySelector('.pl-src');
     src.className = 'pl-src src-' + (a.source || 'sim').split('-')[0];
     src.textContent = window.shortSource ? window.shortSource(a.source, a.model) : a.source;
+    p.plate.title = `${a.name} – ${a.title}${a.model ? '\n' + a.model : ''}\nBấm: tương tác · Bấm đúp vào tên: đổi tên`;
+    p.plateH = 0;
   }
 
   setBoard(b) { this.board = { ...this.board, ...b }; this.world.drawBoard(this.board); }
@@ -380,6 +383,7 @@ class Office3D {
     drawScreen(p.desk, this.t || 0, true);
     p.plate.classList.toggle('working', state === 'working');
     p.plate.classList.toggle('error', state === 'error');
+    p.plateH = 0;
     p.plate.title = state === 'error' && note ? 'Lỗi: ' + note : 'Bấm: cấu hình bàn · Bấm đúp: đổi tên';
     if (state === 'working' && !p.seated && !p.locks) this.recall(p);
     this.setHover(null);
@@ -644,7 +648,7 @@ class Office3D {
 
   positionBubble(b) {
     const p = b._p;
-    const s = p.anchor || this.project(p.person.headWorld(this.tmpV));
+    const s = p.spot || p.anchor || this.project(p.person.headWorld(this.tmpV));
     const top = s.y - (p.plateH || 34) - 10;
     const W = this.canvas.clientWidth;
     const x = Math.max(130, Math.min(W - 130, s.x));
@@ -653,22 +657,33 @@ class Office3D {
   }
 
   placeDom() {
+    const list = [];
     for (const p of this.people.values()) {
       const hw = p.person.headWorld(this.tmpV); hw.y += 0.12;
-      const h = this.project(hw);
-      p.anchor = h;
-      if (!p.plateH) p.plateH = p.plate.offsetHeight || 34;
-      const tx = Math.round(h.x * 2) / 2, ty = Math.round(h.y * 2) / 2;
-      if (tx !== p.tx || ty !== p.ty) { // chỉ ghi style khi thật sự dịch chuyển
-        p.tx = tx; p.ty = ty;
+      p.anchor = this.project(hw);
+      if (!p.plateH) { p.plateH = p.plate.offsetHeight || 34; p.plateW = p.plate.offsetWidth || 90; }
+      list.push(p);
+    }
+    // bảng tên không chồng lên nhau: người gần camera (thấp hơn trên màn hình) giữ chỗ, người sau né lên trên / sang bên
+    const placed = dodgePlates(list.map((p) => ({ p, x: p.anchor.x, y: p.anchor.y, w: p.plateW, h: p.plateH, prev: p.dodge })));
+    for (const { p, x, y } of placed) {
+      p.dodge = { x: x - p.anchor.x, y: y - p.anchor.y };
+      p.spot = { x, y };
+      const tx = Math.round(x * 2) / 2, ty = Math.round(y * 2) / 2;
+      const dx = Math.round(p.anchor.x - tx), dy = Math.round(p.anchor.y - ty);
+      if (tx !== p.tx || ty !== p.ty || dx !== p.ldx || dy !== p.ldy) { // chỉ ghi style khi thật sự dịch chuyển
+        p.tx = tx; p.ty = ty; p.ldx = dx; p.ldy = dy;
         p.plate.style.transform = `translate3d(${tx}px, ${ty}px, 0) translate(-50%, -100%)`;
-        p.plate.style.zIndex = String(Math.round(ty));
+        p.plate.style.zIndex = String(Math.round(p.anchor.y));
+        const len = Math.hypot(dx, dy);
+        p.plate.classList.toggle('moved', len > 6);
+        if (len > 6) { p.plate.style.setProperty('--ll', len.toFixed(1) + 'px'); p.plate.style.setProperty('--la', (Math.atan2(-dx, dy) * 180 / Math.PI).toFixed(1) + 'deg'); }
       }
     }
     if (this.bubbles) for (const b of this.bubbles) this.positionBubble(b);
     for (const e of this.emotes) {
       if (e._get) { const a = e._get(); e.style.transform = `translate(${a.x}px, ${a.y}px) translate(-50%, -100%)`; continue; }
-      const a = e._p.anchor; if (!a) continue;
+      const a = e._p.spot || e._p.anchor; if (!a) continue;
       e.style.transform = `translate(${a.x + 26}px, ${a.y - (e._p.plateH || 34) - 4}px) translate(-50%, -100%)`;
     }
   }

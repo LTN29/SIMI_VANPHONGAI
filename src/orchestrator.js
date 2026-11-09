@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { callAgent } = require('./providers');
+const exporter = require('./export');
 
 const BOSS = 'boss';
 
@@ -50,6 +51,12 @@ async function runTask(task, deps) {
   const target = byId[task.targetId] || manager || agents[0];
   let budget = Math.max(0, Number(config.maxRounds) || 0); // lượt hỏi/sửa thêm cho cả task
   const transcript = [];
+  // file kết quả: định dạng người dùng chọn → đuôi tên file → lệnh trong nội dung ("xuất file Excel") → Markdown
+  const fileName = exporter.safeName(task.fileName || '');
+  const format = exporter.FORMATS[task.format] && task.format !== 'auto' ? task.format
+    : exporter.formatFromName(task.fileName) || exporter.detectFormat(task.text) || 'md';
+  const fmtNote = exporter.formatBrief(format, fileName);
+  const brief = fmtNote ? `${task.text}\n\n(${fmtNote})` : task.text;
   const ctx = { config, signal, getSecret: deps.getSecret, workDir: deps.workDir, simSpeed: deps.simSpeed };
 
   const say = (from, to, text, kind = 'say') => {
@@ -80,7 +87,7 @@ async function runTask(task, deps) {
     for (;;) {
       const canAsk = budget > 0 && colleagues.length > 0;
       const user = [
-        `VIỆC CHUNG SẾP GIAO:\n"""${task.text}"""`,
+        `VIỆC CHUNG SẾP GIAO:\n"""${brief}"""`,
         `VIỆC CỦA BẠN (do ${nameOf(giver)} giao):\n"""${assignment}"""`,
         prior.length ? `KẾT QUẢ ĐỒNG NGHIỆP ĐÃ LÀM TRƯỚC:\n${prior.map((p) => `### ${who(p.agent)}\n${p.output}`).join('\n\n')}` : '',
         talk.length ? `TRAO ĐỔI CỦA BẠN VỚI ĐỒNG NGHIỆP:\n${talk.join('\n')}` : '',
@@ -98,7 +105,7 @@ async function runTask(task, deps) {
         say(worker.id, mate.id, q, 'ask');
         const ans = await call(mate, [
           `Đồng nghiệp ${who(worker)} đang làm việc: """${assignment}"""`,
-          `Bối cảnh chung (việc sếp giao): """${task.text}"""`,
+          `Bối cảnh chung (việc sếp giao): """${brief}"""`,
           `Họ hỏi bạn: """${q}"""`,
           'Trả lời ngắn gọn, đúng trọng tâm.',
         ].join('\n\n'), { kind: 'answer' }, `Trả lời ${worker.name}`);
@@ -116,7 +123,7 @@ async function runTask(task, deps) {
     for (;;) {
       const canRevise = budget > 0;
       const out = await call(reviewer, [
-        `VIỆC SẾP GIAO:\n"""${task.text}"""`,
+        `VIỆC SẾP GIAO:\n"""${brief}"""`,
         `KẾT QUẢ CỦA ĐỘI:\n${results.map((r) => `### ${who(r.agent)}\n${r.output}`).join('\n\n')}`,
         'Hãy kiểm tra độ chính xác, đầy đủ và trình bày.',
         canRevise
@@ -130,7 +137,7 @@ async function runTask(task, deps) {
         const fb = fix[2].trim() || out;
         say(reviewer.id, last.agent.id, `Cần sửa: ${fb}`, 'review');
         const revised = await call(last.agent, [
-          `VIỆC SẾP GIAO:\n"""${task.text}"""`,
+          `VIỆC SẾP GIAO:\n"""${brief}"""`,
           `BẢN TRƯỚC CỦA BẠN:\n${last.output}`,
           `GÓP Ý CỦA ${who(reviewer).toUpperCase()}:\n${fb}`,
           'Hãy sửa theo góp ý và trả về bản hoàn chỉnh (toàn bộ nội dung, không chỉ phần sửa).',
@@ -157,7 +164,7 @@ async function runTask(task, deps) {
     stage('plan');
     if (workers.length) {
       const planText = await call(manager, [
-        `SẾP GIAO VIỆC:\n"""${task.text}"""`,
+        `SẾP GIAO VIỆC:\n"""${brief}"""`,
         `ĐỘI CỦA BẠN:\n${workers.map((w) => `- ${w.id}: ${who(w)} – ${w.role}`).join('\n')}`,
         reviewer ? `(${who(reviewer)} sẽ tự kiểm tra ở cuối, không cần giao cho người này.)` : '',
         'Hãy lập kế hoạch và giao việc. Chỉ giao cho người thật sự cần, theo đúng thứ tự cần làm (người sau nhận được kết quả của người trước).',
@@ -169,7 +176,7 @@ async function runTask(task, deps) {
         .filter((g) => g && byId[g.cho] && !byId[g.cho].isManager && g.viec);
       if (!list.length) {
         emit({ type: 'log', level: 'warn', text: 'Trưởng phòng không trả về kế hoạch đúng mẫu, giao toàn bộ việc cho 1 người.' });
-        list = [{ cho: workers[workers.length - 1].id, viec: task.text }];
+        list = [{ cho: workers[workers.length - 1].id, viec: brief }];
       }
       say(manager.id, BOSS, `Kế hoạch: ${plan?.ke_hoach || 'giao việc cho đội'}`, 'plan');
       stage('work');
@@ -181,7 +188,7 @@ async function runTask(task, deps) {
         say(w.id, manager.id, `Xong phần việc: ${out}`, 'done');
       }
     } else {
-      const out = await doWork(manager, task.text, BOSS, [], 0);
+      const out = await doWork(manager, brief, BOSS, [], 0);
       results.push({ agent: manager, assignment: task.text, output: out });
     }
     stage('review');
@@ -190,7 +197,7 @@ async function runTask(task, deps) {
     else {
       stage('final');
       content = await call(manager, [
-        `VIỆC SẾP GIAO:\n"""${task.text}"""`,
+        `VIỆC SẾP GIAO:\n"""${brief}"""`,
         `KẾT QUẢ CÁC THÀNH VIÊN:\n${results.map((r) => `### ${who(r.agent)}\n${r.output}`).join('\n\n')}`,
         rv.note ? `NHẬN XÉT KIỂM TRA:\n${rv.note}` : '',
         'Hãy tổng hợp thành sản phẩm cuối cùng hoàn chỉnh để nộp cho sếp, định dạng Markdown. Chỉ trả về sản phẩm, không kể lại quy trình làm việc.',
@@ -201,7 +208,7 @@ async function runTask(task, deps) {
     say(manager.id, BOSS, `Đã xong: ${content}`, 'done');
   } else {
     stage('work');
-    const out = await doWork(target, task.text, BOSS, [], 0);
+    const out = await doWork(target, brief, BOSS, [], 0);
     results.push({ agent: target, assignment: task.text, output: out });
     stage('review');
     await review(results);
@@ -209,19 +216,37 @@ async function runTask(task, deps) {
     say(target.id, BOSS, `Đã xong: ${content}`, 'done');
   }
 
-  // Lưu kết quả + nhật ký ra thư mục
+  // Lưu kết quả (đúng định dạng, thư mục dự án, tên file người dùng chọn) + bản xem trước .md + nhật ký
+  const outDir = task.outDir || deps.outputDir;
   let base = `${stamp()}-${slugify(task.title)}`;
   for (let n = 2; fs.existsSync(path.join(deps.outputDir, `${base}.md`)); n++) base = `${stamp()}-${slugify(task.title)}-${n}`;
-  const file = path.join(deps.outputDir, `${base}.md`);
-  fs.writeFileSync(file, content, 'utf8');
   const logDir = path.join(deps.outputDir, 'nhat-ky');
   fs.mkdirSync(logDir, { recursive: true });
-  const logMd = [`# Nhật ký: ${task.title}`, '', `Việc sếp giao: ${task.text}`, '',
+  let file; let previewFile;
+  if (format === 'md' && !fileName && !task.outDir) {
+    file = path.join(deps.outputDir, `${base}.md`);
+    fs.writeFileSync(file, content, 'utf8');
+    previewFile = file;
+  } else {
+    const opts = { content, format, title: task.title, printPdf: deps.printPdf };
+    try {
+      file = await exporter.writeResult({ ...opts, dir: outDir, name: fileName || exporter.safeName(String(task.title).replace(/…$/, '')) || base });
+    } catch (e) {
+      // thư mục dự án không ghi được (quyền, ổ mạng rớt…) → vẫn giữ kết quả trong thư mục kết quả của app
+      if (outDir === deps.outputDir) throw e;
+      emit({ type: 'log', level: 'warn', text: `Không lưu được vào ${outDir} (${e.message}) – đã lưu vào thư mục kết quả của app.` });
+      file = await exporter.writeResult({ ...opts, dir: deps.outputDir, name: fileName || base });
+    }
+    previewFile = path.join(logDir, `${base}.ket-qua.md`);
+    fs.writeFileSync(previewFile, content, 'utf8');
+  }
+  const logMd = [`# Nhật ký: ${task.title}`, '', `Việc sếp giao: ${task.text}`, '', `File kết quả: ${file}`, '',
     ...transcript.map((m) => `**${nameOf(m.from)} → ${nameOf(m.to)}** _(${m.kind}, ${m.t})_\n\n${m.text}\n`)].join('\n');
   fs.writeFileSync(path.join(logDir, `${base}.nhat-ky.md`), logMd, 'utf8');
-  emit({ type: 'result', taskId: task.id, title: task.title, file, content });
-  emit({ type: 'task', id: task.id, status: 'done', file });
-  return { file, content };
+  if (deps.onResult) deps.onResult({ file, preview: previewFile, title: task.title, format });
+  emit({ type: 'result', taskId: task.id, title: task.title, file, preview: previewFile, content });
+  emit({ type: 'task', id: task.id, status: 'done', file, preview: previewFile });
+  return { file, preview: previewFile, content };
 }
 
 module.exports = { runTask, BOSS, extractJson, slugify };

@@ -68,6 +68,7 @@
     cfg: null, sources: {}, secrets: {}, outputDir: '', platform: '',
     acc: null, accLoading: false,
     drafts: store.get('vp.drafts', []),
+    outDir: store.get('vp.taskDir', ''), taskDirs: store.get('vp.taskDirs', []),
     tasks: store.get('vp.tasks', []),
     log: store.get('vp.log', []),
     runningId: null, runStart: 0,
@@ -322,17 +323,81 @@
     } }, el('span', { text: emo }), name)));
   }
 
+  // ---------------- xuất kết quả: định dạng, tên file, thư mục dự án ----------------
+  const FMT = { md: ['Markdown', 'md', '📄'], docx: ['Word', 'docx', '📝'], xlsx: ['Excel', 'xlsx', '📊'], pdf: ['PDF', 'pdf', '📕'], html: ['HTML', 'html', '🌐'], csv: ['CSV', 'csv', '🧾'], txt: ['Văn bản', 'txt', '🗒️'] };
+  // giống src/export.js: "xuất ra file Excel", "lưu file word", "dạng PDF"…
+  function detectFormat(text) {
+    const t = String(text || '').toLowerCase();
+    const near = (re) => new RegExp(`(file|tệp|tep|xuất|xuat|lưu|luu|định dạng|dang|bảng tính|export|save|dạng)[^.\\n]{0,24}(${re})|\\.(${re})\\b`, 'i').test(t);
+    if (near('excel|xlsx|bảng tính|spreadsheet')) return 'xlsx';
+    if (near('word|docx|doc\\b')) return 'docx';
+    if (near('pdf')) return 'pdf';
+    if (near('csv')) return 'csv';
+    if (near('html|trang web|web page')) return 'html';
+    if (near('txt|văn bản thuần|text thuần')) return 'txt';
+    if (near('markdown|\\bmd\\b')) return 'md';
+    return '';
+  }
+  const fmtFromName = (n) => { const m = String(n || '').match(/\.(md|docx?|xlsx?|pdf|html?|csv|txt)$/i); if (!m) return ''; const e = m[1].toLowerCase(); return e === 'doc' ? 'docx' : e === 'xls' ? 'xlsx' : e === 'htm' ? 'html' : e; };
+  const cleanName = (n) => String(n || '').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().replace(/\.(md|docx?|xlsx?|pdf|html?|csv|txt)$/i, '');
+  const baseName = (p) => String(p || '').split(/[\\/]/).filter(Boolean).pop() || p;
+  function effectiveFormat(o) {
+    if (o.format && o.format !== 'auto') return { f: o.format, why: '' };
+    const byName = fmtFromName(o.fileName); if (byName) return { f: byName, why: 'theo tên file' };
+    const byText = detectFormat(o.text); if (byText) return { f: byText, why: 'theo lệnh' };
+    return { f: 'md', why: '' };
+  }
+  function outOpts() { return { format: $('#outFmt').value, fileName: $('#outName').value.trim(), outDir: S.outDir || '' }; }
+  function renderOut() {
+    const o = { ...outOpts(), text: $('#cardText').value };
+    const { f, why } = effectiveFormat(o);
+    const [name, ext, emo] = FMT[f];
+    const fname = cleanName(o.fileName) || cleanName($('#cardTitle').value) || '';
+    $('#outHint').textContent = `${emo} ${fname ? fname + '.' + ext : name}${o.format === 'auto' && why ? ' · ' + why : ''}`;
+    $('#outHint').title = `Kết quả sẽ lưu thành file ${name} (.${ext})`;
+    const b = $('#outDir');
+    b.querySelector('.od-name').textContent = S.outDir ? baseName(S.outDir) : 'Thư mục kết quả của app';
+    b.title = 'Lưu file kết quả vào: ' + (S.outDir || S.outputDir || '') + '\nBấm để chọn thư mục dự án';
+    b.classList.toggle('custom', !!S.outDir);
+  }
+  function setOutDir(dir) {
+    S.outDir = dir || '';
+    store.set('vp.taskDir', S.outDir);
+    if (dir) { S.taskDirs = [dir, ...S.taskDirs.filter((d) => d !== dir)].slice(0, 6); store.set('vp.taskDirs', S.taskDirs); }
+    renderOut(); sfx('click');
+  }
+  function outDirMenu(anchor) {
+    document.querySelectorAll('.menu').forEach((m) => m.remove());
+    const r = anchor.getBoundingClientRect();
+    const row = (emo, title, sub, on, onclick) => el('button', { type: 'button', class: on ? 'on' : '', onclick: () => { m.remove(); onclick(); } },
+      el('span', { text: emo }), el('span', { style: 'min-width:0' }, el('b', { text: title }), sub ? el('small', { class: 'md-path', text: sub }) : null));
+    const projects = (S.cfg.chatProjects || []).filter((p) => p && p.dir && !S.taskDirs.includes(p.dir)).slice(0, 6);
+    const m = el('div', { class: 'menu', style: `left:${r.left}px;top:${r.bottom + 4}px;max-width:${Math.max(280, r.width)}px` },
+      row('🏠', 'Thư mục kết quả của app', S.outputDir || '', !S.outDir, () => setOutDir('')),
+      S.taskDirs.length ? [el('div', { class: 'menu-sep' }), el('div', { class: 'menu-h', text: 'Dùng gần đây' }),
+        ...S.taskDirs.map((d) => row(d === S.outDir ? '✅' : '📁', baseName(d), d, d === S.outDir, () => setOutDir(d)))] : null,
+      projects.length ? [el('div', { class: 'menu-sep' }), el('div', { class: 'menu-h', text: 'Dự án' }),
+        ...projects.map((p) => row('📂', p.name || baseName(p.dir), p.dir, p.dir === S.outDir, () => setOutDir(p.dir)))] : null,
+      el('div', { class: 'menu-sep' }),
+      row('➕', 'Chọn thư mục khác…', '', false, async () => { const d = await window.vp.chooseDir(); if (d) setOutDir(d); }),
+      S.outDir ? row('🧹', 'Xoá khỏi danh sách gần đây', baseName(S.outDir), false, () => { S.taskDirs = S.taskDirs.filter((d) => d !== S.outDir); store.set('vp.taskDirs', S.taskDirs); setOutDir(''); }) : null);
+    document.body.append(m);
+    const mr = m.getBoundingClientRect();
+    if (mr.bottom > innerHeight - 8) m.style.top = Math.max(8, r.top - mr.height - 4) + 'px';
+    setTimeout(() => document.addEventListener('click', function off(e) { if (!m.contains(e.target)) { m.remove(); document.removeEventListener('click', off); } }), 0);
+  }
+
   function readComposer() {
     const text = $('#cardText').value.trim();
     if (!text) { $('#cardText').focus(); $('#cardText').classList.add('shake'); setTimeout(() => $('#cardText').classList.remove('shake'), 500); return null; }
-    return { title: $('#cardTitle').value.trim() || autoTitle(text), text };
+    return { title: $('#cardTitle').value.trim() || autoTitle(text), text, ...outOpts() };
   }
-  function clearComposer() { $('#cardText').value = ''; $('#cardTitle').value = ''; }
+  function clearComposer() { $('#cardText').value = ''; $('#cardTitle').value = ''; $('#outName').value = ''; $('#outFmt').value = 'auto'; renderOut(); }
+  const outOf = (o) => ({ format: o.format || 'auto', fileName: o.fileName || '', outDir: o.outDir || '' });
 
   async function goNow() {
     const c = readComposer(); if (!c) return;
-    await submitTask(c.title, c.text, S.assignTo);
-    clearComposer();
+    if (await submitTask(c.title, c.text, S.assignTo, outOf(c))) clearComposer();
   }
   function saveDraft() {
     const c = readComposer(); if (!c) return;
@@ -340,12 +405,13 @@
     toast('Đã lưu thẻ – kéo thả vào bàn để giao');
   }
 
-  async function submitTask(title, text, agentId) {
+  async function submitTask(title, text, agentId, out = {}) {
     try {
-      const id = await window.vp.addTask({ title, text, targetId: agentId });
+      const o = outOf(out);
+      const id = await window.vp.addTask({ title, text, targetId: agentId, ...o });
       const ex = S.tasks.find((t) => t.id === id);
-      if (ex) Object.assign(ex, { title, text, targetId: agentId });
-      else S.tasks.push({ id, title, text, targetId: agentId, status: 'queued' });
+      if (ex) Object.assign(ex, { title, text, targetId: agentId, ...o });
+      else S.tasks.push({ id, title, text, targetId: agentId, status: 'queued', ...o });
       save(); renderCards();
       sfx('send');
       toast(`📨 Đã giao "${title}" cho ${nameOf(agentId)}`);
@@ -356,7 +422,7 @@
   async function assignCard(cardId, agentId) {
     const d = S.drafts.find((x) => x.id === cardId);
     if (!d) return;
-    if (await submitTask(d.title, d.text, agentId)) { S.drafts = S.drafts.filter((x) => x.id !== cardId); save(); renderCards(); }
+    if (await submitTask(d.title, d.text, agentId, outOf(d))) { S.drafts = S.drafts.filter((x) => x.id !== cardId); save(); renderCards(); }
   }
 
   // ---------------- danh sách việc ----------------
@@ -376,6 +442,7 @@
         el('button', { class: 'del', title: 'Xóa thẻ', text: '✕', onclick: (e) => { e.stopPropagation(); S.drafts = S.drafts.filter((x) => x.id !== d.id); save(); renderCards(); } }),
         el('div', { class: 'ct', text: d.title }),
         el('div', { class: 'cx', text: d.text }),
+        fileBadge(d),
         el('div', { class: 'cm' }, el('button', { class: 'btn mini', text: 'Giao cho ▸', onclick: (e) => { e.stopPropagation(); assignMenu(e.currentTarget, d.id); } })));
       card.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/vp-card', d.id); e.dataTransfer.effectAllowed = 'move'; card.classList.add('dragging'); });
       card.addEventListener('dragend', () => card.classList.remove('dragging'));
@@ -390,19 +457,21 @@
       else if (t.status === 'queued') meta.append(`Chờ đến lượt · ${who ? who.name : ''}`, el('button', { class: 'btn mini', text: 'Hủy', onclick: () => window.vp.cancelTask(t.id) }));
       else {
         meta.append(t.status === 'error' ? 'Lỗi' : 'Đã dừng',
-          el('button', { class: 'btn mini', text: 'Làm lại', onclick: () => { removeTask(t.id); submitTask(t.title, t.text, t.targetId); } }),
+          el('button', { class: 'btn mini', text: 'Làm lại', onclick: () => { removeTask(t.id); submitTask(t.title, t.text, t.targetId, outOf(t)); } }),
           el('button', { class: 'btn mini', text: 'Bỏ', onclick: () => { removeTask(t.id); renderCards(); } }));
       }
       runBox.append(el('div', { class: 'card ' + t.status, title: t.note || '' },
         el('div', { class: 'ct', text: t.title }),
         t.status === 'running' ? stepper(t) : (t.note && t.status === 'error' ? el('div', { class: 'cx', text: t.note }) : el('div', { class: 'cx', text: t.text })),
+        fileBadge(t),
         meta));
     }
     if (!active.length) runBox.append(el('div', { class: 'empty small', text: 'Chưa có việc nào đang làm' }));
     const done = S.tasks.filter((t) => t.status === 'done').slice(-15).reverse();
     for (const t of done) {
-      doneBox.append(el('div', { class: 'card done', title: 'Bấm để xem kết quả', onclick: () => t.file && openResult(t.file, t.title) },
+      doneBox.append(el('div', { class: 'card done', title: t.file ? 'Bấm để xem kết quả\n' + t.file : 'Bấm để xem kết quả', onclick: () => t.file && openResult(t.file, t.title, t.preview) },
         el('div', { class: 'ct' }, icon('check', 'ok'), t.title),
+        t.file && !/\.md$/i.test(t.file) || t.outDir ? el('span', { class: 'cfile', text: `${fileEmoji(t.file)} ${baseName(t.file)}` }) : null,
         el('div', { class: 'cm', text: `${agentById(t.targetId)?.name || ''} · ${t.doneAt || ''}` })));
     }
     if (!done.length) doneBox.append(el('div', { class: 'empty small', text: 'Chưa có việc xong' }));
@@ -414,6 +483,13 @@
       run: S.tasks.filter((t) => t.status === 'running').length,
       done: S.tasks.filter((t) => t.status === 'done').length,
     });
+  }
+  const fileEmoji = (f) => { const e = (String(f).match(/\.(\w+)$/) || [])[1]; const k = Object.keys(FMT).find((x) => FMT[x][1] === String(e).toLowerCase()); return k ? FMT[k][2] : '📄'; };
+  // thẻ việc: định dạng / tên file / thư mục đã chọn (không chọn gì thì không hiện)
+  function fileBadge(t) {
+    if ((!t.format || t.format === 'auto') && !t.fileName && !t.outDir) return null;
+    const { f } = effectiveFormat(t);
+    return el('span', { class: 'cfile', title: t.outDir ? 'Lưu vào ' + t.outDir : '' }, `${FMT[f][2]} ${cleanName(t.fileName) || FMT[f][0]}${t.fileName ? '.' + FMT[f][1] : ''}${t.outDir ? ' · 📁 ' + baseName(t.outDir) : ''}`);
   }
   function removeTask(id) { S.tasks = S.tasks.filter((t) => t.id !== id); save(); }
 
@@ -439,7 +515,7 @@
         el('span', { class: 'mtx' },
           el('b', {}, a.name, a.isManager ? el('em', { class: 'star', text: '★' }) : null),
           el('small', { text: st.state === 'working' ? (st.note || 'Đang làm') : st.state === 'error' ? 'Gặp lỗi – bấm để xem' : 'Đang rảnh' }),
-          el('span', { class: 'mchip', style: `--b:${BRAND[brandOf(a.source)]}` }, el('i', { class: 'dot' + (ok === false ? ' off' : '') }), shortSource(a.source, a.model)),
+          el('span', { class: 'mchip', style: `--b:${BRAND[brandOf(a.source)]}`, title: a.model || '' }, el('i', { class: 'dot' + (ok === false ? ' off' : '') }), el('span', { class: 'mct', text: shortSource(a.source, a.model) })),
           el('span', { class: 'ebar' + (ss.energy < 30 ? ' low' : ''), title: `Năng lượng ${ss.energy}%` }, el('i', { style: `width:${ss.energy}%` }))));
     }), el('button', { class: 'member add', title: 'Thêm bàn mới', disabled: S.cfg.agents.length >= 6, onclick: async () => { const id = await addDesk(); if (id) openDesk(id); } }, icon('plus'), el('small', { text: 'Thêm bàn' })));
   }
@@ -513,24 +589,28 @@
     let items = [];
     try { items = await window.vp.listResults(); } catch (e) { box.replaceChildren(el('div', { class: 'empty', text: cleanErr(e) })); return; }
     box.replaceChildren();
-    if (!items.length) box.append(el('div', { class: 'empty', text: 'Chưa có kết quả nào. Kết quả được lưu thành file .md trong thư mục kết quả.' }));
+    if (!items.length) box.append(el('div', { class: 'empty', text: 'Chưa có kết quả nào. Chọn định dạng (Word, Excel, PDF…) ở ô "Xuất kết quả" khi giao việc, hoặc ghi "xuất file Excel" trong nội dung.' }));
     for (const it of items) {
-      box.append(el('button', { class: 'tray-item', onclick: () => openResult(it.file, it.name) },
-        el('span', { class: 'doc', text: '📄' }),
-        el('span', {}, el('b', { text: it.name.replace(/^\d{8}-\d{6}-/, '').replace(/\.md$/, '').replace(/-/g, ' ') }),
-          el('small', { text: new Date(it.mtime).toLocaleString('vi-VN') }))));
+      const md = /\.md$/i.test(it.file) && /^\d{8}-\d{6}-/.test(it.name);
+      box.append(el('button', { class: 'tray-item', title: it.file, onclick: () => openResult(it.file, it.title || it.name, it.preview) },
+        el('span', { class: 'doc', text: fileEmoji(it.file) }),
+        el('span', {}, el('b', { text: md ? it.name.replace(/^\d{8}-\d{6}-/, '').replace(/\.md$/, '').replace(/-/g, ' ') : it.name }),
+          el('small', { text: new Date(it.mtime).toLocaleString('vi-VN') + (md ? '' : ' · ' + baseName(it.file.slice(0, -it.name.length - 1))) }))));
     }
     $('#cTray').textContent = items.length;
     office && office.setTray(items.length);
   }
 
-  async function openResult(file, title) {
+  async function openResult(file, title, preview) {
     let content = '';
-    try { content = await window.vp.readFile(file); } catch (e) { toast(cleanErr(e), true); return; }
-    const body = el('div', { class: 'result-md' }); body.innerHTML = window.renderMd(content);
-    openModal(title || 'Kết quả', body, [
+    const src = preview || (/\.(md|txt)$/i.test(file) ? file : '');
+    if (src) { try { content = await window.vp.readFile(src); } catch (e) { if (!preview) { toast(cleanErr(e), true); return; } } }
+    const body = el('div', { class: 'result-md' });
+    if (content) body.innerHTML = window.renderMd(content);
+    else body.append(el('p', { class: 'dim', text: 'Không có bản xem trước – bấm "Mở file" để mở bằng ứng dụng trên máy.' }));
+    openModal(`${fileEmoji(file)} ${title || 'Kết quả'}`, body, [
       el('div', { class: 'left' }, el('small', { class: 'path', text: file })),
-      el('button', { class: 'btn', onclick: () => copyText(content) }, icon('copy'), 'Sao chép'),
+      content ? el('button', { class: 'btn', onclick: () => copyText(content) }, icon('copy'), 'Sao chép') : null,
       el('button', { class: 'btn', onclick: () => window.vp.showFile(file) }, icon('folder'), 'Hiện trong thư mục'),
       el('button', { class: 'btn primary', text: 'Mở file', onclick: () => window.vp.openFile(file) }),
     ], 'wide');
@@ -1040,6 +1120,7 @@
       t.status = e.status;
       if (e.note) t.note = e.note;
       if (e.file) t.file = e.file;
+      if (e.preview) t.preview = e.preview;
       if (e.status === 'running') { S.runningId = e.id; S.runStart = Date.now(); }
       if (e.status !== 'running' && S.runningId === e.id) S.runningId = null;
       if (e.status === 'done') { t.doneAt = nowHM(); delete S.stage[e.id]; }
@@ -1047,7 +1128,7 @@
       if (e.status !== 'running') { for (const k of Object.keys(S.agentNote)) S.agentNote[k] = { state: 'idle', note: '' }; renderRoster(); }
       save(); renderCards(); updateStatus();
     } else if (e.type === 'result') {
-      toast(`🎉 Xong: ${e.title}`);
+      toast(e.file && !/\.md$/i.test(e.file) ? `🎉 Xong: ${e.title} → ${fileEmoji(e.file)} ${baseName(e.file)}` : `🎉 Xong: ${e.title}`);
       chime();
       S.cfg.agents.forEach((a) => bump(a.id, 0, 3)); pushStats();
       const t = S.tasks.find((x) => x.id === e.taskId);
@@ -1145,6 +1226,10 @@
     refreshAccounts();
 
     $('#btnGo').addEventListener('click', goNow);
+    renderOut();
+    for (const id of ['#outFmt', '#outName', '#cardText', '#cardTitle']) $(id).addEventListener('input', renderOut);
+    $('#outFmt').addEventListener('change', renderOut);
+    $('#outDir').addEventListener('click', (e) => { e.stopPropagation(); outDirMenu(e.currentTarget); });
     $('#btnDraft').addEventListener('click', saveDraft);
     $('#cardText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); goNow(); } });
     $('#btnTplToggle').addEventListener('click', () => { $('#tpls').classList.toggle('open'); $('#btnTplToggle').textContent = $('#tpls').classList.contains('open') ? 'Mẫu việc ▴' : 'Mẫu việc ▾'; });

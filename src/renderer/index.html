@@ -40,6 +40,23 @@
         <div class="tpls" id="tpls"></div>
         <input id="cardTitle" placeholder="Tiêu đề (không bắt buộc)" maxlength="120">
         <textarea id="cardText" rows="5" placeholder="Mô tả việc cần làm…  VD: Soạn email mời phụ huynh họp ngày 5/11, kèm nội dung chính."></textarea>
+        <div class="outbox" id="outBox">
+          <div class="assign-label"><span>Xuất kết quả</span><b id="outHint"></b></div>
+          <div class="out-row">
+            <select id="outFmt" title="Định dạng file kết quả">
+              <option value="auto">✨ Tự động</option>
+              <option value="docx">📝 Word</option>
+              <option value="xlsx">📊 Excel</option>
+              <option value="pdf">📕 PDF</option>
+              <option value="md">📄 Markdown</option>
+              <option value="html">🌐 HTML</option>
+              <option value="csv">🧾 CSV</option>
+              <option value="txt">🗒️ Văn bản</option>
+            </select>
+            <input id="outName" placeholder="Tên file (tuỳ chọn)" maxlength="120" spellcheck="false">
+          </div>
+          <button class="out-dir" id="outDir" type="button"><span class="od-ic">📁</span><span class="od-name"></span><span class="od-caret">▾</span></button>
+        </div>
         <div class="assign-label"><span>Giao cho</span><b id="assignName"></b></div>
         <div class="assign-chips" id="assignChips"></div>
         <div class="composer-actions">

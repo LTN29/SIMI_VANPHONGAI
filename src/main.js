@@ -6,6 +6,7 @@ const fs = require('fs');
 const { Store } = require('./store');
 const { SOURCES, callAgent } = require('./providers');
 const { runTask } = require('./orchestrator');
+const exporter = require('./export');
 const accounts = require('./accounts');
 const simi = require('./simi');
 const skillsAdmin = require('./skills');
@@ -61,6 +62,37 @@ function inside(base, p) {
   return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 const insideOutput = (p) => inside(outputDir(), p);
+
+// sổ kết quả: file văn phòng đã xuất (có thể nằm trong thư mục dự án người dùng chọn) – để Khay kết quả liệt kê và được mở
+const resultIndexPath = () => path.join(outputDir(), 'nhat-ky', 'ket-qua.json');
+function readResultIndex() {
+  try { const a = JSON.parse(fs.readFileSync(resultIndexPath(), 'utf8')); return Array.isArray(a) ? a : []; } catch { return []; }
+}
+function addResultIndex(r) {
+  const list = [{ ...r, at: Date.now() }, ...readResultIndex().filter((x) => x.file !== r.file)].slice(0, 300);
+  ensureDir(path.dirname(resultIndexPath()));
+  fs.writeFileSync(resultIndexPath(), JSON.stringify(list));
+}
+const isResultFile = (p) => typeof p === 'string' && (insideOutput(p) || readResultIndex().some((x) => path.resolve(x.file) === path.resolve(p)));
+
+// PDF: in trang HTML bằng Chromium của app (cửa sổ ẩn, tắt JavaScript)
+async function printPdf(html) {
+  const tmp = path.join(workDir(), `in-pdf-${Date.now()}.html`);
+  fs.writeFileSync(tmp, html, 'utf8');
+  const w = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
+  try {
+    await w.loadFile(tmp);
+    return await w.webContents.printToPDF({ pageSize: 'A4', printBackground: true, margins: { marginType: 'default' } });
+  } finally { w.destroy(); fs.rm(tmp, { force: true }, () => {}); }
+}
+
+// thư mục dự án người dùng chọn cho file kết quả: phải là thư mục có thật
+function taskDir(d) {
+  if (!d) return '';
+  const p = path.resolve(String(d));
+  if (!path.isAbsolute(String(d)) || !fs.existsSync(p) || !fs.statSync(p).isDirectory()) throw new Error('Thư mục lưu kết quả không còn tồn tại – chọn lại thư mục');
+  return p;
+}
 const canOpenChatFile = (p) => typeof p === 'string' && (insideOutput(p) || chat.canAccess(p));
 
 // ---------------- sự kiện tới giao diện + thông báo ----------------
@@ -177,6 +209,7 @@ async function pump() {
     await runTask(task, {
       config: store.getConfig(), emit, signal: ac.signal,
       getSecret: (n) => store.getSecret(n), workDir: workDir(), outputDir: outputDir(),
+      printPdf, onResult: (r) => { try { addResultIndex(r); } catch { /* sổ kết quả chỉ để tiện xem lại */ } },
     });
   } catch (e) {
     const cancelled = ac.signal.aborted;
@@ -223,6 +256,9 @@ function registerIpc() {
       title: String(t.title || '').trim().slice(0, 120) || 'Việc mới',
       text: String(t.text || '').trim(),
       targetId: t.targetId,
+      format: exporter.FORMATS[t.format] ? t.format : 'auto',
+      fileName: exporter.safeName(t.fileName || '') ? String(t.fileName).trim().slice(0, 160) : '',
+      outDir: taskDir(t.outDir),
     };
     if (!task.text) throw new Error('Nội dung việc đang trống');
     queue.push(task);
@@ -472,9 +508,13 @@ function registerIpc() {
   // file kết quả của văn phòng
   handle('results:list', () => {
     const dir = outputDir();
-    return fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.md'))
-      .map((f) => ({ file: path.join(dir, f), name: f, mtime: fs.statSync(path.join(dir, f)).mtimeMs }))
-      .sort((a, b) => b.mtime - a.mtime).slice(0, 40);
+    const items = fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.md'))
+      .map((f) => ({ file: path.join(dir, f), name: f, mtime: fs.statSync(path.join(dir, f)).mtimeMs, preview: path.join(dir, f) }));
+    for (const r of readResultIndex()) {
+      if (items.some((x) => x.file === r.file) || !fs.existsSync(r.file)) continue;
+      items.push({ file: r.file, name: path.basename(r.file), title: r.title, format: r.format, mtime: fs.statSync(r.file).mtimeMs, preview: r.preview && fs.existsSync(r.preview) ? r.preview : null });
+    }
+    return items.sort((a, b) => b.mtime - a.mtime).slice(0, 40);
   });
   handle('file:read', (p) => {
     if (!insideOutput(p)) throw new Error('Không được phép đọc file ngoài thư mục kết quả');
@@ -483,8 +523,8 @@ function registerIpc() {
 
   // mở thư mục / file / liên kết
   handle('shell:openOutput', () => shell.openPath(outputDir()));
-  handle('shell:openFile', (p) => { if (!insideOutput(p)) throw new Error('Không được phép'); return shell.openPath(p); });
-  handle('shell:showFile', (p) => { if (insideOutput(p)) shell.showItemInFolder(p); });
+  handle('shell:openFile', (p) => { if (!isResultFile(p)) throw new Error('Không được phép'); return shell.openPath(p); });
+  handle('shell:showFile', (p) => { if (isResultFile(p)) shell.showItemInFolder(p); });
   handle('shell:openUrl', (url) => { if (/^https:\/\/[a-z0-9.-]+\//i.test(url)) shell.openExternal(url); });
   handle('dialog:chooseDir', async () => {
     const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });

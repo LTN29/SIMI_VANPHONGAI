@@ -510,9 +510,23 @@
       sim: 'Giả lập', 'claude-cli': 'Claude', 'codex-cli': 'ChatGPT', 'antigravity-cli': 'Gemini', 'gemini-cli': 'Gemini CLI', ollama: 'Ollama',
       'anthropic-api': 'Claude API', 'openai-api': 'GPT API', 'gemini-api': 'Gemini API', simi: 'SIMI',
     }[src || 'sim'] || src;
-    return model ? `${base} · ${model}` : base;
+    return model ? `${base} · ${prettyModel(model)}` : base;
+  }
+
+  // "cx/gpt-6-luna[1m]" → "GPT-6 Luna", "cc/claude-sonnet-5-5" → "Claude Sonnet 5.5" (tên đầy đủ để trong tooltip)
+  function prettyModel(m) {
+    const s = String(m || '').replace(/^[\w.-]+\//, '').replace(/\[\d+[mk]\]$/i, '');
+    const t = s.split(/[-_\s]+/).filter(Boolean); const out = [];
+    for (let i = 0; i < t.length; i++) {
+      const w = t[i]; const last = out[out.length - 1];
+      if (/^\d{1,2}$/.test(w) && last && /^\d{1,2}(\.\d{1,2})?$/.test(last)) { out[out.length - 1] = last + '.' + w; continue; }
+      if (/^gpt$/i.test(w) && t[i + 1]) { out.push('GPT-' + t[++i]); continue; }
+      out.push(/^(o\d|\d)/i.test(w) ? w : /^(ai|vl|oss|xl|tts|hd)$/i.test(w) ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1));
+    }
+    return out.join(' ') || String(m || '');
   }
 
   window.Office2D = Office;
   window.shortSource = shortSource;
+  window.prettyModel = prettyModel;
 })();
