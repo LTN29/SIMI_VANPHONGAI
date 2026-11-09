@@ -241,8 +241,8 @@
     const nArch = C.threads.filter((t) => t.archived).length;
     list.append(el('button', { class: 'ch-archived', onclick: openArchived, title: 'Đoạn chat đã lưu trữ (của app và ChatGPT Work)' }, icon('archive'), 'Đã lưu trữ', nArch ? el('em', { text: String(nArch) }) : null));
     const ext = $('#chExt');
-    ext.replaceChildren(el('span', { text: C.extErr ? '⚠️ ' + C.extErr : C.extLoading ? 'Đang đọc lịch sử ChatGPT Work…' : `🔗 Liên thông ChatGPT Work · ${C.external.length} đoạn chưa mở` }),
-      el('button', { class: 'linkbtn small', title: 'Đọc lại lịch sử từ ChatGPT Work / Codex', disabled: C.extLoading, onclick: () => loadExternal(true) }, '⟳'));
+    ext.replaceChildren(el('span', { text: C.extErr ? '⚠️ ' + C.extErr : C.extLoading || C.extWait ? 'Đang đọc lịch sử ChatGPT Work…' : `🔗 Liên thông ChatGPT Work · ${C.external.length} đoạn chưa mở` }),
+      el('button', { class: 'linkbtn small', title: 'Đọc lại lịch sử từ ChatGPT Work / Codex', disabled: C.extLoading, onclick: () => { C.extTries = 0; loadExternal(true); } }, '⟳'));
     ext.classList.toggle('bad', !!C.extErr);
     const dot = $('#chatRunDot'); if (dot) dot.classList.toggle('hidden', !C.running.size);
   }
@@ -386,7 +386,14 @@
     if (!force && Date.now() - C.extAt < 30000) return;
     C.extLoading = true; C.extAt = Date.now(); renderSide();
     const r = await window.vp.chat.external().catch((e) => ({ threads: [], error: U.cleanErr(e) }));
-    C.extLoading = false; C.external = r.threads || []; C.extErr = r.error || ''; C.codexProjects = r.projects || C.codexProjects;
+    C.extLoading = false; C.codexProjects = r.projects || C.codexProjects;
+    clearTimeout(C.extRetryT);
+    if (r.error) {
+      // Codex bận / đang khởi động: giữ danh sách đang có, tự đọc lại (tối đa 3 lần) thay vì báo lỗi đỏ ngay
+      C.extTries = (C.extTries || 0) + 1;
+      if (C.extTries <= 3) { C.extErr = ''; C.extWait = true; C.extRetryT = setTimeout(() => loadExternal(true), 15000 * C.extTries); }
+      else { C.extWait = false; C.extErr = /không phản hồi/i.test(r.error) ? 'Codex đang bận, chưa đọc được lịch sử – bấm ⟳ để thử lại' : r.error; }
+    } else { C.external = r.threads || []; C.extErr = ''; C.extWait = false; C.extTries = 0; }
     renderSide();
     if (C.extAgain) { C.extAgain = false; loadExternal(true); }
   }

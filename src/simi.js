@@ -305,7 +305,7 @@ function updateCommand(gateway, mode = 'update') {
   const o = gatewayOrigin(gateway || (readCodexConfig().baseUrl || ''));
   if (IS_WIN) {
     const script = [
-      "$ErrorActionPreference='Stop'",
+      "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'",
       `$f=Join-Path $env:TEMP ('simi-update-'+[guid]::NewGuid().ToString('N')+'.ps1')`,
       `Invoke-WebRequest -UseBasicParsing -Uri '${o}/install/codex-full.ps1' -OutFile $f -MaximumRedirection 0`,
       '$t=[IO.File]::ReadAllText($f,[Text.UTF8Encoding]::new($false,$true)); [IO.File]::WriteAllText($f,$t,[Text.UTF8Encoding]::new($true))',
@@ -379,6 +379,13 @@ function runUpdate(gateway, onLine, { mode = 'update', key = '' } = {}) {
   return prepareLinux(onLine).then((prep) => (prep.ok ? runInstaller(gateway, onLine, { mode, key }) : prep));
 }
 
+// PowerShell chạy ẩn ghi thanh tiến trình thành XML (CLIXML "Writing web request…") → bỏ, chỉ giữ chữ người đọc được
+function cleanInstallerLine(raw) {
+  let line = String(raw).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/#< CLIXML/g, '');
+  if (/#< CLIXML|<Objs?\b|<Obj S=|RefId="\d+"/.test(line)) line = line.slice(line.lastIndexOf('>') + 1).replace(/^<[A-Za-z]+\s*/, '');
+  return line.trim();
+}
+
 function runInstaller(gateway, onLine, { mode = 'update', key = '' } = {}) {
   const { spawn } = require('child_process');
   const { cmd, args, fakeNode } = updateCommand(gateway, mode);
@@ -392,7 +399,7 @@ function runInstaller(gateway, onLine, { mode = 'update', key = '' } = {}) {
       buf += d.toString('utf8');
       let i;
       while ((i = buf.search(/\r?\n/)) >= 0) {
-        const line = buf.slice(0, i).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim(); buf = buf.slice(i + 1).replace(/^\n/, '');
+        const line = cleanInstallerLine(buf.slice(0, i)); buf = buf.slice(i + 1).replace(/^\n/, '');
         if (line) { tail = (tail + line + '\n').slice(-4000); onLine && onLine(line); }
       }
     };
@@ -448,4 +455,4 @@ function gatewayAuth() {
   return { baseUrl: cfg.baseUrl || '', key: readKey(), clientId: readClientId() };
 }
 
-module.exports = { checkKey, linuxMissing, updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };
+module.exports = { cleanInstallerLine, checkKey, linuxMissing, updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };

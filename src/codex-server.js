@@ -5,6 +5,7 @@ const { EventEmitter } = require('events');
 const { spawnCli, killTree } = require('./sys');
 
 const IDLE_MS = 90 * 1000;
+const LIST_MS = Number(process.env.VP_CODEX_LIST_MS) || 60000;
 // mọi nguồn trừ agent con (subAgent*) – gồm cả Desktop (appServer), CLI, VS Code, exec
 const SOURCE_KINDS = ['cli', 'vscode', 'exec', 'appServer', 'unknown'];
 
@@ -112,13 +113,23 @@ class CodexAppServer extends EventEmitter {
   }
 
   // ---------- lịch sử ----------
+  // máy nhiều đoạn chat (Windows đọc từng file lịch sử) → mỗi trang chờ tới 60 giây; Codex treo lúc vừa khởi động
+  // (không có lượt nào đang chạy) thì khởi động lại Codex và đọc lại 1 lần
   async listThreads(max = 300, archived = false) {
+    try { return await this._listThreads(max, archived); } catch (e) {
+      if (!/không phản hồi/.test(e.message) || this.active > 0) throw e;
+      this.stop();
+      return this._listThreads(max, archived);
+    }
+  }
+
+  async _listThreads(max, archived) {
     const out = []; let cursor = null;
     do {
       const r = await this.request('thread/list', {
         cursor, limit: Math.min(100, max - out.length), sortKey: 'updated_at', sortDirection: 'desc',
         sourceKinds: SOURCE_KINDS, modelProviders: [], archived: !!archived,
-      });
+      }, LIST_MS);
       out.push(...(r.data || []));
       cursor = r.nextCursor;
     } while (cursor && out.length < max);

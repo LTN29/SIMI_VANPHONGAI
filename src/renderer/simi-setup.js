@@ -37,6 +37,7 @@
     if (/ENOTFOUND|EAI_AGAIN|timed? ?out|không kết nối|network|Unable to connect|could not resolve/i.test(t)) return 'Mạng chập chờn nên chưa tải được – kiểm tra Wi-Fi rồi bấm Thử lại.';
     if (/\b40[13]\b|key không đúng|invalid api key|unauthori[sz]ed|không tìm thấy API key/i.test(t)) return 'Key team không đúng hoặc đã bị khoá – hỏi lại IT nhé.';
     if (/access is denied|permission|quyền|UAC|elevat/i.test(t)) return 'Windows chặn quyền cài đặt – bấm Thử lại và chọn "Yes" nếu Windows hỏi.';
+    if (/ensurepip|pdf-runtime|venv|pip install/i.test(t)) return 'Python trên máy chưa cài được thư viện cho Word / Excel / PDF – bấm Thử lại (bản cài mới tự xử lý và không dừng ở bước này nữa).';
     if (/disk|space|dung lượng/i.test(t)) return 'Ổ đĩa sắp đầy – dọn bớt rồi thử lại.';
     return 'Có bước chưa chạy được. Bấm Thử lại; nếu vẫn lỗi, sao chép chi tiết gửi IT.';
   }

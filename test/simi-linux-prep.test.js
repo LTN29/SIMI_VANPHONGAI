@@ -15,3 +15,11 @@ test('có python3 nhưng thiếu venv / pip (Ubuntu mặc định)', () => {
 test('đủ hết → không hỏi mật khẩu', () => {
   assert.deepEqual(linuxMissing({ has: () => true, py: () => true }), []);
 });
+
+test('log bộ cài: bỏ XML thanh tiến trình của PowerShell (CLIXML), giữ chữ đọc được', () => {
+  const { cleanInstallerLine } = require('../src/simi');
+  assert.equal(cleanInstallerLine('#< CLIXML'), '');
+  assert.equal(cleanInstallerLine('<Objs Version="1.1.0.1"><Obj S="progress" RefId="0"><SD>Writing request stream...</SD></Obj>'), '');
+  assert.equal(cleanInstallerLine('s" RefId="28"><TNRef RefId="0" /><MS><SD>Writing request stream... (Number of bytes written: 33788)</SD></MS></Obj><Obj S="progress" RefId="44"><TNRef Repair: dùng API key đã lưu, không yêu cầu nhập lại.'), 'Repair: dùng API key đã lưu, không yêu cầu nhập lại.');
+  assert.equal(cleanInstallerLine('Node.js: v26.13.0'), 'Node.js: v26.13.0');
+});
