@@ -139,7 +139,8 @@ function readCatalog(cfg) {
 async function listModels() {
   refreshEnv();
   const cfg = readCodexConfig();
-  const local = readCatalog(cfg);
+  // đã gỡ SIMI (config không còn provider SIMI) → bỏ qua danh sách cũ còn sót trên máy, kẻo tab Chat hiện model không dùng được
+  const local = cfg.provider ? readCatalog(cfg) : [];
   const key = readKey();
   const cid = readClientId();
   let liveErr = '';

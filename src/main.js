@@ -586,7 +586,7 @@ app.whenReady().then(() => {
     idle: () => powerMonitor.getSystemIdleTime() >= 180,
   });
   updater.start();
-  chat = new ChatEngine({ userData: app.getPath('userData'), getConfig: () => store.getConfig(), emit, defaultDir: chatDir, hiddenDirs: () => [workDir()], codex: codexServer, extraConfig: () => ({ ...computerMcp(), ...browserMcp() }) });
+  chat = new ChatEngine({ userData: app.getPath('userData'), getConfig: () => store.getConfig(), emit, defaultDir: chatDir, hiddenDirs: () => [workDir()], codex: codexServer, extraConfig: () => ({ ...computerMcp(), ...browserMcp() }), getSecret: (n) => store.getSecret(n) });
   lobby = new LobbyClient({
     getAuth: () => simi.gatewayAuth(),
     appInfo: { version: appVersion(), os: `${process.platform}-${process.arch}` },

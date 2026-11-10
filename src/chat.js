@@ -243,6 +243,14 @@ function fastEligible(t, text, atts, ments) {
   return atts.filter((a) => a.image).every((a) => { try { return fs.statSync(a.path).size < 8e6; } catch { return false; } });
 }
 
+// model của tài khoản riêng lưu dạng "nguồn::model" (vd "claude-cli::opus", "codex-cli::gpt-5.6-sol"); model SIMI giữ nguyên tên
+const EXT_SOURCES = new Set(['codex-cli', 'claude-cli', 'antigravity-cli', 'gemini-cli', 'ollama', 'anthropic-api', 'openai-api', 'gemini-api']);
+function parseModel(v) {
+  const m = /^([a-z-]+)::(.*)$/.exec(String(v || ''));
+  return m && EXT_SOURCES.has(m[1]) ? { source: m[1], model: m[2] } : null;
+}
+const EXT_GUIDE = 'Bạn là trợ lý AI trong app Văn Phòng AI, đang trò chuyện với nhân viên văn phòng. Trả lời bằng tiếng Việt (trừ khi được hỏi bằng ngôn ngữ khác), rõ ràng, đúng trọng tâm; dùng Markdown (tiêu đề, danh sách, bảng) khi giúp dễ đọc. Đọc đoạn hội thoại trước đó để giữ mạch, chỉ trả lời tin nhắn mới.';
+
 const blockText = (m) => (m.role === 'user' ? m.text || '' : (m.blocks || []).filter((b) => b.kind === 'text').map((b) => b.text).join('\n')).trim();
 
 function fastRequest(t, model, text, atts, persona) {
@@ -549,8 +557,9 @@ function responseFor(method, p, choice, block) {
 }
 
 class ChatEngine {
-  constructor({ userData, getConfig, emit, defaultDir, hiddenDirs = () => [], codex, extraConfig = () => ({}) }) {
+  constructor({ userData, getConfig, emit, defaultDir, hiddenDirs = () => [], codex, extraConfig = () => ({}), getSecret = () => '' }) {
     this.extraConfig = extraConfig; // cấu hình Codex thêm cho mỗi phiên (MCP điều khiển máy tính)
+    this.getSecret = getSecret;     // API key người dùng nhập (Claude / OpenAI / Gemini API)
     this.store = new ChatStore(userData);
     this.getConfig = getConfig;
     this.emit = emit;
@@ -874,7 +883,10 @@ class ChatEngine {
 
     // ⚡ Trả lời nhanh: việc không cần công cụ gửi thẳng tới model qua Gateway (chữ hiện dần, 1 lần gọi),
     // không qua vòng lặp nhiều bước của Codex. Model báo cần công cụ → chuyển sang Codex ngay, người dùng không phải làm gì.
-    if (fastEligible(t, text, atts, ments)) {
+    // model của tài khoản riêng (Claude, Gemini, Ollama, API key…) → chạy bằng chính công cụ / API của tài khoản đó
+    const ext = parseModel(t.model);
+    if (ext && ext.source !== 'codex-cli') return this._sendExternal({ t, msg, text, atts, persona: needPersona ? persona : '', emit, t0, pre, ext });
+    if (!ext && fastEligible(t, text, atts, ments)) {
       const r = await this._sendFast({ t, msg, text, atts, persona: needPersona ? persona : '', emit, t0, pre }).catch(() => ESCALATE);
       if (r !== ESCALATE) return r;
       msg.blocks = []; msg.fast = false;
@@ -972,7 +984,9 @@ class ChatEngine {
       srv.on('exit', onExit);
 
       (async () => {
-        const set = simi.chatSettings({ model: t.model, effort: t.effort, sandbox: t.sandbox });
+        const extModel = parseModel(t.model); // "codex-cli::<model>" = tài khoản ChatGPT riêng (provider openai của Codex)
+        const set = simi.chatSettings({ model: extModel ? extModel.model : t.model, effort: t.effort, sandbox: t.sandbox });
+        if (extModel) set.modelProvider = 'openai';
         const gen = await srv.start();
         const cu = await this.computerUse();
         try { fs.mkdirSync(SCRATCH, { recursive: true }); } catch { /* bỏ qua */ }
@@ -1098,6 +1112,40 @@ class ChatEngine {
     return new Promise((resolve) => this._finish(t, msg, { error: failure || '', ms: Date.now() - t0 }, emit, resolve));
   }
 
+  // lượt chat bằng tài khoản riêng: gửi lịch sử gần đây + tin mới cho CLI / API của tài khoản đó, nhận câu trả lời đầy đủ
+  async _sendExternal({ t, msg, text, atts, persona, emit, t0, pre, ext }) {
+    const { callAgent, SOURCES } = require('./providers');
+    const ac = new AbortController();
+    const run = { threadId: t.id, t, msg, stopped: false, external: true, reason: '' };
+    run.abort = (reason) => { run.reason = reason || STOPPED; run.stopped = true; ac.abort(); };
+    this.running.set(t.id, run);
+    if (pre && pre.stopped) run.abort(STOPPED);
+    const past = t.messages.slice(0, -2).filter((m) => m.role === 'user' || m.status === 'done').slice(-16);
+    let budget = 40000; const lines = [];
+    for (const m of past.reverse()) {
+      const txt = blockText(m).slice(0, 6000);
+      if (!txt) continue;
+      if ((budget -= txt.length) < 0) break;
+      lines.unshift(`${m.role === 'user' ? 'Người dùng' : 'Bạn'}: ${txt}`);
+    }
+    const files = atts.map((a) => `- ${a.path}`).join('\n');
+    const system = [EXT_GUIDE, persona].filter(Boolean).join('\n\n');
+    const user = (lines.length ? `Đoạn hội thoại trước đó:\n${lines.join('\n\n')}\n\n---\n\n` : '') + `Tin nhắn mới của người dùng:\n${text}` + (files ? `\n\nTệp người dùng đính kèm (đường dẫn trên máy):\n${files}` : '');
+    const cfg = this.getConfig();
+    let out = ''; let error = '';
+    if (!run.stopped) {
+      try {
+        out = await callAgent({ source: ext.source, model: ext.model }, system, user,
+          { config: { ...cfg, timeoutSec: Math.max(Number(cfg.timeoutSec) || 0, 600) }, signal: ac.signal, getSecret: this.getSecret, workDir: this.dirOf(t) }, { kind: 'answer' });
+      } catch (e) { error = run.reason || e.message || String(e); }
+    } else error = run.reason;
+    this.running.delete(t.id);
+    if (out) msg.blocks = [{ kind: 'text', id: 'ext', text: out }];
+    msg.via = (SOURCES[ext.source] || {}).short || ext.source;
+    this.emit({ type: 'log', level: 'info', text: `💬 Chat bằng ${msg.via}${ext.model ? ' · ' + ext.model : ''}: ${((Date.now() - t0) / 1000).toFixed(1)}s` });
+    return new Promise((resolve) => this._finish(t, msg, { error, ms: Date.now() - t0 }, emit, resolve));
+  }
+
   // ảnh chụp màn hình (Computer Use, trình duyệt) trong kết quả công cụ → lưu file để xem lại trong đoạn chat
   _toolResult(threadId, it, block) {
     // một số bản Codex gói kết quả có ảnh thành 1 đoạn text JSON {"content":[…]} → mở ra
@@ -1209,4 +1257,4 @@ class ChatEngine {
   }
 }
 
-module.exports = { cmdProgram, askKey, docGuide, isScratch, collectFiles, stepFromItem, SCRATCH, ChatEngine };
+module.exports = { cmdProgram, askKey, docGuide, isScratch, collectFiles, stepFromItem, parseModel, SCRATCH, ChatEngine };

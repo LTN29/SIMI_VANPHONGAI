@@ -123,15 +123,52 @@
       window.vp.chat.skills().catch(() => window.vp.simi.skills().catch(() => [])),
       window.vp.listModels('simi', !!force).catch((e) => ({ models: [], error: U.cleanErr(e) })),
     ]);
-    C.status = st; C.skills = sk || []; C.models = md.models || []; C.modelsErr = md.error || ''; C.defaultModel = md.defaultModel || (st && st.defaultModel) || '';
+    // model của mọi tài khoản đã kết nối (SIMI + ChatGPT, Claude, Gemini, Ollama, API key) – xếp theo nhóm trong ô chọn model
+    const simiModels = (md.models || []).map((m) => ({ ...m, group: 'SIMI Gateway' }));
+    const extra = await accountModels(!!force);
+    C.engine = simiModels.length ? 'simi' : extra.length ? 'accounts' : 'none';
+    C.status = st; C.skills = sk || []; C.models = [...simiModels, ...extra]; C.modelsErr = simiModels.length ? md.error || '' : '';
+    C.defaultModel = simiModels.length ? (md.defaultModel || (st && st.defaultModel) || '') : '';
     renderStatus(); renderBar();
     if (!C.cur) renderMain();
   }
 
+  // tài khoản riêng đã đăng nhập (bảng Kết nối tài khoản AI) → model dùng được trong tab Chat, giá trị "nguồn::model"
+  const ACC_SOURCES = [
+    ['codex-cli', 'ChatGPT', (a) => a.codex && a.codex.loggedIn],
+    ['claude-cli', 'Claude', (a) => a.claude && a.claude.loggedIn],
+    ['antigravity-cli', 'Gemini (Antigravity)', (a) => a.antigravity && a.antigravity.loggedIn],
+    ['gemini-cli', 'Gemini CLI', (a) => a.gemini && a.gemini.loggedIn && !a.gemini.ineligible],
+    ['ollama', 'Ollama (trên máy)', (a) => a.ollama && a.ollama.loggedIn],
+    ['anthropic-api', 'Claude API', (a) => a.keys && a.keys.anthropic],
+    ['openai-api', 'OpenAI API', (a) => a.keys && a.keys.openai],
+    ['gemini-api', 'Gemini API', (a) => a.keys && a.keys.gemini],
+  ];
+  async function accountModels(force) {
+    const acc = U.S && U.S.acc;
+    if (!acc) return [];
+    const lists = await Promise.all(ACC_SOURCES.filter(([, , on]) => on(acc)).map(async ([src, name]) => {
+      const r = await window.vp.listModels(src, force).catch(() => null);
+      // ChatGPT: "mặc định" đã có ở dòng đầu khi máy không dùng SIMI → bỏ dòng trùng
+      return ((r && r.models) || []).filter((m) => m.id || src !== 'codex-cli')
+        .map((m) => ({ id: `${src}::${m.id}`, label: m.id ? m.label : `${name} – mặc định`, note: m.note || '', group: name, source: src }));
+    }));
+    return lists.flat();
+  }
+
   function renderStatus() {
     const st = C.status; const b = $('#chStatus'); if (!b) return;
+    if (C.engine === 'accounts') {
+      const groups = [...new Set(C.models.map((m) => m.group))];
+      b.className = 'ch-status ok';
+      b.title = `Tab Chat đang dùng tài khoản riêng: ${groups.join(', ')}. Bấm để cài SIMI (thêm skill tạo ảnh, video, PDF…)`;
+      b.replaceChildren(U.el('span', { class: 'ch-gpt', text: '✓' }), U.el('span', {},
+        U.el('b', { text: 'Tài khoản riêng' }), U.el('small', { text: `${C.models.length} model · ${groups.length} tài khoản` })), U.el('i', { class: 'dot' }));
+      return;
+    }
     const ok = st && st.loggedIn;
     b.className = 'ch-status ' + (ok ? 'ok' : 'bad');
+    b.title = '';
     b.replaceChildren(U.el('img', { src: 'brand/simi.png', alt: '' }), U.el('span', {},
       U.el('b', { text: ok ? 'SIMI Gateway' : 'Chưa kết nối SIMI' }),
       U.el('small', { text: ok ? `${C.models.length} model · ${C.skills.filter((s) => s.simi).length} skill SIMI` : 'Bấm để cài đặt' })), U.el('i', { class: 'dot' }));
@@ -502,9 +539,20 @@
     const sel = $('#chModel'); if (!sel) return;
     const who = curAgent();
     if (who) $('#chWho').replaceChildren(U.avatar(who, 22), el('span', { text: who.name }), el('i', { class: 'caret', text: '▾' }));
-    const cur = C.cur ? C.cur.model : (ls.get('vp.chatPrefs', {}).model || C.defaultModel || '');
-    sel.replaceChildren(el('option', { value: '', text: '✨ ' + (C.defaultModel ? `Mặc định (${modelLabel(C.defaultModel)})` : 'Mặc định của Codex') }),
-      ...C.models.map((m) => el('option', { value: m.id, text: '✨ ' + m.label + (m.speedTag ? '  ' + m.speedTag : ''), title: (m.note || m.id) + (m.speedTag ? ' · tốc độ đo thật trên Gateway 6 giờ qua (thời gian tới chữ đầu tiên)' : '') })));
+    let cur = C.cur ? C.cur.model : (ls.get('vp.chatPrefs', {}).model || C.defaultModel || '');
+    // model cũ không còn dùng được (đã gỡ SIMI, đăng xuất tài khoản…) → về "Mặc định" thay vì gửi model hỏng
+    if (cur && C.models.length && !C.models.some((m) => m.id === cur) && (C.engine !== 'simi' || cur.includes('::'))) {
+      cur = '';
+      if (C.cur) { C.cur.model = ''; window.vp.chat.update(C.cur.id, { model: '' }).catch(() => {}); }
+      else { const p = ls.get('vp.chatPrefs', {}); if (p.model) ls.set('vp.chatPrefs', { ...p, model: '' }); }
+    }
+    // không có SIMI lẫn ChatGPT thì "Mặc định của Codex" không chạy được → chọn sẵn model đầu tiên của tài khoản đang có
+    if (!cur && C.engine === 'accounts' && !C.models.some((m) => m.source === 'codex-cli')) cur = C.models[0].id;
+    const opt = (m) => el('option', { value: m.id, text: (m.source ? '' : '✨ ') + m.label + (m.speedTag ? '  ' + m.speedTag : ''), title: (m.note || m.id) + (m.speedTag ? ' · tốc độ đo thật trên Gateway 6 giờ qua (thời gian tới chữ đầu tiên)' : '') });
+    const groups = [...new Set(C.models.map((m) => m.group || ''))];
+    const hasGpt = C.models.some((m) => m.source === 'codex-cli');
+    sel.replaceChildren(el('option', { value: '', text: '✨ ' + (C.defaultModel ? `Mặc định (${modelLabel(C.defaultModel)})` : C.engine !== 'simi' && hasGpt ? 'Mặc định (tài khoản ChatGPT)' : 'Mặc định của Codex') }),
+      ...(groups.length > 1 ? groups.map((g) => el('optgroup', { label: g }, C.models.filter((m) => (m.group || '') === g).map(opt))) : C.models.map(opt)));
     if (cur && !C.models.some((m) => m.id === cur)) sel.append(el('option', { value: cur, text: '✨ ' + cur }));
     sel.value = cur;
     const m = C.models.find((x) => x.id === (cur || C.defaultModel));
@@ -535,7 +583,7 @@
   function emptyState() {
     const { el, icon } = U; const st = C.status;
     const a = curAgent();
-    if (st && !st.loggedIn) {
+    if (st && !st.loggedIn && C.engine !== 'accounts') {
       return el('div', { class: 'ch-hello setup' },
         el('img', { src: 'brand/simi.png', class: 'simi-big', alt: 'SIMI' }),
         el('h2', { text: 'Kết nối SIMI Gateway để bắt đầu' }),
@@ -1014,7 +1062,7 @@
     }
     const ta = $('#chInput'); const text = ta.value.trim();
     if (!text && !C.atts.length) return;
-    if (C.status && !C.status.loggedIn) { U.toast('Chưa kết nối SIMI Gateway – làm theo hướng dẫn trên màn hình', true); return; }
+    if (C.status && !C.status.loggedIn && C.engine !== 'accounts') { U.toast('Chưa kết nối SIMI Gateway – làm theo hướng dẫn trên màn hình', true); return; }
     if (!C.cur) await newThread();
     const t = C.cur; const atts = C.atts.slice();
     const mentions = usedMentions(text);

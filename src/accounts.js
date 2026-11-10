@@ -160,9 +160,12 @@ async function listModels(source, cfg, getSecret) {
   if (source === 'claude-cli') return { models: CLAUDE_MODELS, live: false, note: 'Tên tắt chính thức của Claude Code, luôn trỏ tới phiên bản mới nhất mà tài khoản bạn được dùng.' };
   if (source === 'codex-cli') {
     try {
-      const { out } = await runProcess(cfg.cli.codex.cmd || 'codex', ['debug', 'models'], '', { timeoutMs: 30000 });
+      // máy có SIMI: config Codex trỏ Gateway SIMI → hỏi riêng model của tài khoản ChatGPT (provider "openai")
+      const viaSimi = !!simi.readCodexConfig().provider;
+      const { out } = await runProcess(cfg.cli.codex.cmd || 'codex', ['debug', 'models', ...(viaSimi ? ['-c', 'model_provider="openai"'] : [])], '', { timeoutMs: 30000 });
       const starts = [out.indexOf('{'), out.indexOf('[')].filter((i) => i >= 0);
-      const models = pickModelsFromJson(JSON.parse(out.slice(Math.min(...starts))));
+      // model SIMI có tiền tố hãng (cx/, cc/, ag/…) – không phải model của tài khoản ChatGPT
+      const models = pickModelsFromJson(JSON.parse(out.slice(Math.min(...starts)))).filter((m) => !viaSimi || !m.id.includes('/'));
       if (models.length) return { models: [{ id: '', label: 'Mặc định của tài khoản', note: 'Codex tự chọn' }, ...models], live: true };
     } catch (e) { return { models: [{ id: '', label: 'Mặc định của tài khoản', note: '' }], live: false, error: 'Không lấy được danh sách từ Codex: ' + firstLine(e.message) }; }
     return { models: [{ id: '', label: 'Mặc định của tài khoản', note: '' }], live: false };

@@ -550,6 +550,11 @@
     catch (e) { console.warn(e); }
     finally { S.accLoading = false; }
     renderRoster(); updateBanner();
+    // đổi tài khoản (cài / gỡ SIMI, đăng nhập ChatGPT…) → tab Chat nạp lại danh sách model cho khớp
+    const A = S.acc;
+    const sig = A ? JSON.stringify([A.simi && A.simi.loggedIn, ...['codex', 'claude', 'antigravity', 'gemini', 'ollama'].map((k) => A[k] && A[k].loggedIn), A.codex && A.codex.account, A.keys]) : '';
+    if (sig && sig !== S.accSig && window.VPChat) window.VPChat.refresh();
+    S.accSig = sig;
     // vừa cài xong SIMI → vào Sảnh luôn
     if (S.acc && S.acc.simi && S.acc.simi.loggedIn && window.vp.lobby) window.vp.lobby.kick().catch(() => {});
     return S.acc;
