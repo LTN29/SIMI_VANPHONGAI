@@ -11,6 +11,16 @@ const DEFAULT_GATEWAY = 'https://ai.simi.vn';
 const codexHome = () => process.env.CODEX_HOME || path.join(HOME, '.codex');
 
 // ---------- đọc config.toml (chỉ phần cần dùng, không cần thư viện TOML) ----------
+// [mcp_servers.x] của config.toml → { command, args } để công cụ khác (Claude Code) chạy cùng MCP đó
+function mcpServer(sec) {
+  if (!sec || !sec.command) return null;
+  let args = [];
+  try { args = JSON.parse(String(sec.args || '[]')); } catch {
+    args = [...String(sec.args || '').matchAll(/"((?:[^"\\]|\\.)*)"|'([^']*)'/g)].map((m) => (m[1] !== undefined ? m[1].replace(/\\(.)/g, '$1') : m[2]));
+  }
+  return { command: sec.command, args: Array.isArray(args) ? args.map(String) : [] };
+}
+
 function readCodexConfig() {
   const file = path.join(codexHome(), 'config.toml');
   let text = '';
@@ -39,6 +49,7 @@ function readCodexConfig() {
     effort: root.model_reasoning_effort || '',
     catalogPath: root.model_catalog_json || path.join(codexHome(), 'ltn-model-catalog.json'),
     browserMcp: !!sections['mcp_servers.simi_browser'],
+    browserServer: mcpServer(sections['mcp_servers.simi_browser']),
   };
 }
 
@@ -83,8 +94,11 @@ function parseSkill(file) {
   } catch { return null; }
 }
 
+const skillRoots = () => [path.join(codexHome(), 'skills'), path.join(HOME, '.agents', 'skills')];
+
 function listSkills() {
-  const roots = [[path.join(codexHome(), 'skills'), 'codex'], [path.join(HOME, '.agents', 'skills'), 'agents']];
+  const [cr, ar] = skillRoots();
+  const roots = [[cr, 'codex'], [ar, 'agents']];
   const seen = new Set(); const out = [];
   for (const [root, origin] of roots) {
     let dirs = [];
@@ -97,7 +111,7 @@ function listSkills() {
         seen.add(s.name);
         const isSimi = /^(simi|muse|updatesimi)/i.test(s.name);
         // mine: skill người dùng tự thêm trong CODEX_HOME/skills – sửa / xoá được trong app
-        out.push({ ...s, simi: isSimi, system, origin, mine: origin === 'codex' && !system && !isSimi && path.basename(dir) === s.name });
+        out.push({ ...s, file: path.join(dir, 'SKILL.md'), simi: isSimi, system, origin, mine: origin === 'codex' && !system && !isSimi && path.basename(dir) === s.name });
       }
     }
   }
@@ -457,4 +471,4 @@ function gatewayAuth() {
   return { baseUrl: cfg.baseUrl || '', key: readKey(), clientId: readClientId() };
 }
 
-module.exports = { cleanInstallerLine, checkKey, linuxMissing, updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };
+module.exports = { cleanInstallerLine, checkKey, linuxMissing, updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, skillRoots, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };

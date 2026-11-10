@@ -894,7 +894,7 @@ class ChatEngine {
     // không qua vòng lặp nhiều bước của Codex. Model báo cần công cụ → chuyển sang Codex ngay, người dùng không phải làm gì.
     // model của tài khoản riêng (Claude, Gemini, Ollama, API key…) → chạy bằng chính công cụ / API của tài khoản đó
     const ext = parseModel(t.model);
-    if (ext && ext.source !== 'codex-cli') return this._sendExternal({ t, msg, text, atts, persona: needPersona ? persona : '', emit, t0, pre, ext });
+    if (ext && ext.source !== 'codex-cli') return this._sendExternal({ t, msg, text: hints.length ? `${text}\n\n(${hints.join(' ')})` : text, atts, persona: needPersona ? persona : '', emit, t0, pre, ext });
     if (!ext && fastEligible(t, text, atts, ments)) {
       const r = await this._sendFast({ t, msg, text, atts, persona: needPersona ? persona : '', emit, t0, pre }).catch(() => ESCALATE);
       if (r !== ESCALATE) return r;
@@ -1121,6 +1121,48 @@ class ChatEngine {
     return new Promise((resolve) => this._finish(t, msg, { error: failure || '', ms: Date.now() - t0 }, emit, resolve));
   }
 
+  // Claude Code (tài khoản Claude) dùng chung công cụ với model SIMI: MCP trình duyệt cạnh khung chat (vp_browser),
+  // điều khiển máy tính (vp_computer), Trình duyệt SIMI (simi_browser: web_search / image_generate…) và skill SIMI.
+  // `claude -p` không hỏi quyền được → cấp sẵn quyền theo mục "Quyền" của đoạn chat (thiếu quyền là công cụ bị chặn).
+  _claudeTools(t) {
+    const servers = {};
+    let flat = {};
+    try { flat = this.extraConfig() || {}; } catch { flat = {}; }
+    for (const [k, v] of Object.entries(flat)) {
+      const m = k.match(/^mcp_servers\.([^.]+)\.(command|args|env)$/);
+      if (m) (servers[m[1]] = servers[m[1]] || {})[m[2]] = v;
+    }
+    let sb = null;
+    try { sb = simi.readCodexConfig().browserServer; } catch { sb = null; }
+    if (sb && !servers[simi.BROWSER_MCP]) servers[simi.BROWSER_MCP] = sb;
+    const names = Object.keys(servers).filter((n) => servers[n].command);
+    const mcp = { mcpServers: Object.fromEntries(names.map((n) => [n, { type: 'stdio', command: servers[n].command, args: servers[n].args || [], ...(servers[n].env ? { env: servers[n].env } : {}) }])) };
+    const args = [];
+    if (names.length) {
+      const file = path.join(path.dirname(this.store.dir), 'claude-mcp.json'); // thư mục dữ liệu app (không để chung với file đoạn chat)
+      try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(mcp, null, 2), 'utf8'); args.push('--mcp-config', file); } catch { /* không ghi được → chạy không MCP */ }
+    }
+    const sandbox = t.sandbox || 'workspace-write';
+    const allow = ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'TodoWrite', ...(args.length ? names.map((n) => 'mcp__' + n) : [])]; // mcp__<server> = mọi công cụ của server đó
+    if (sandbox !== 'read-only') allow.push('Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'Bash');
+    const mode = sandbox === 'danger-full-access' ? 'bypassPermissions' : sandbox === 'read-only' ? 'default' : 'acceptEdits';
+    args.push('--permission-mode', mode, '--allowedTools', allow.join(' '));
+    for (const d of [...simi.skillRoots(), SCRATCH]) { if (fs.existsSync(d)) args.push('--add-dir', d); }
+    let skills = [];
+    try { skills = simi.listSkills().filter((x) => x.file); } catch { skills = []; }
+    const withMcp = args.includes('--mcp-config');
+    const has = (n) => withMcp && names.includes(n);
+    const guide = [
+      'Bạn đang chạy trong Claude Code, được dùng chung công cụ với model SIMI: ' + (withMcp ? names.map((n) => `MCP ${n} (công cụ mcp__${n}__*)`).join(', ') : 'chưa có MCP nào') + '. Tên công cụ trong hướng dẫn dưới đây (vp_browser design_render, simi_browser image_generate…) chính là các công cụ mcp__<server>__<tool> đó.',
+      sandbox === 'read-only' ? 'Đoạn chat đang ở quyền "Chỉ đọc": không sửa file, không chạy lệnh; cần thì nói người dùng đổi quyền ở ô Quyền dưới khung chat.' : '',
+      CHAT_GUIDE, CLAUDE_DESIGN, docGuide(vietFonts()),
+      has('vp_computer') ? computerGuide({ native: false, enabled: this.getConfig().computerControl !== false }) : '',
+      skills.length ? 'Skill SIMI có trên máy (khi việc khớp mô tả, hoặc người dùng ghi $tên-skill: dùng Read đọc file SKILL.md của skill đó rồi làm theo; skill có công cụ MCP tương ứng thì gọi thẳng công cụ, khối lệnh PowerShell trong skill thì chạy bằng powershell -NoProfile -Command khi cần):\n'
+        + skills.map((x) => `- ${x.name}: ${x.description || ''} — ${x.file}`).join('\n') : '',
+    ].filter(Boolean).join('\n');
+    return { args, guide, servers: withMcp ? names : [] };
+  }
+
   // lượt chat bằng tài khoản riêng: gửi lịch sử gần đây + tin mới cho CLI / API của tài khoản đó, nhận câu trả lời đầy đủ
   async _sendExternal({ t, msg, text, atts, persona, emit, t0, pre, ext }) {
     const { callAgent, SOURCES } = require('./providers');
@@ -1138,20 +1180,22 @@ class ChatEngine {
       lines.unshift(`${m.role === 'user' ? 'Người dùng' : 'Bạn'}: ${txt}`);
     }
     const files = atts.map((a) => `- ${a.path}`).join('\n');
-    const system = [EXT_GUIDE, persona].filter(Boolean).join('\n\n');
+    let tools = null;
+    if (ext.source === 'claude-cli') { simi.refreshEnv(); tools = this._claudeTools(t); }
+    const system = [EXT_GUIDE, tools && tools.guide, persona].filter(Boolean).join('\n\n');
     const user = (lines.length ? `Đoạn hội thoại trước đó:\n${lines.join('\n\n')}\n\n---\n\n` : '') + `Tin nhắn mới của người dùng:\n${text}` + (files ? `\n\nTệp người dùng đính kèm (đường dẫn trên máy):\n${files}` : '');
     const cfg = this.getConfig();
     let out = ''; let error = '';
     if (!run.stopped) {
       try {
         out = await callAgent({ source: ext.source, model: ext.model }, system, user,
-          { config: { ...cfg, timeoutSec: Math.max(Number(cfg.timeoutSec) || 0, 600) }, signal: ac.signal, getSecret: this.getSecret, workDir: this.dirOf(t) }, { kind: 'answer' });
+          { config: { ...cfg, timeoutSec: Math.max(Number(cfg.timeoutSec) || 0, tools ? 1800 : 600) }, signal: ac.signal, getSecret: this.getSecret, workDir: this.dirOf(t), cliArgs: tools ? tools.args : [] }, { kind: 'answer' });
       } catch (e) { error = run.reason || e.message || String(e); }
     } else error = run.reason;
     this.running.delete(t.id);
     if (out) msg.blocks = [{ kind: 'text', id: 'ext', text: out }];
     msg.via = (SOURCES[ext.source] || {}).short || ext.source;
-    this.emit({ type: 'log', level: 'info', text: `💬 Chat bằng ${msg.via}${ext.model ? ' · ' + ext.model : ''}: ${((Date.now() - t0) / 1000).toFixed(1)}s` });
+    this.emit({ type: 'log', level: 'info', text: `💬 Chat bằng ${msg.via}${ext.model ? ' · ' + ext.model : ''}${tools && tools.servers.length ? ' (công cụ: ' + tools.servers.join(', ') + ')' : ''}: ${((Date.now() - t0) / 1000).toFixed(1)}s` });
     return new Promise((resolve) => this._finish(t, msg, { error, ms: Date.now() - t0 }, emit, resolve));
   }
 

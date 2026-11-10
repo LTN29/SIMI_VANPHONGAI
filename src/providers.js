@@ -37,7 +37,7 @@ async function callCli(source, agent, prompt, ctx) {
 
   switch (source) {
     case 'claude-cli':
-      return (await runProcess(c.claude.cmd || 'claude', ['-p', '--output-format', 'text', ...withModel('--model'), ...splitArgs(c.claude.extraArgs)], prompt, opt)).out;
+      return (await runProcess(c.claude.cmd || 'claude', ['-p', '--output-format', 'text', ...withModel('--model'), ...(ctx.cliArgs || []), ...splitArgs(c.claude.extraArgs)], prompt, opt)).out;
     case 'codex-cli':
       return runCodex(c.codex.cmd || 'codex', [...withModel('-m'), ...splitArgs(c.codex.extraArgs)], prompt, opt);
     case 'simi':
