@@ -13,6 +13,14 @@ const OUT_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|mp4|mov|webm|mp3|wav|m4a|pdf|docx
 const MENTIONED_FILE = /(?:[A-Za-z]:\\|\/|\.{0,2}[\\/]?)?[^\s"'`<>|*?()[\]]+\.(?:png|jpe?g|gif|webp|svg|mp4|mov|webm|mp3|wav|pdf|docx?|xlsx?|pptx?|csv|md|html?|zip)\b/gi;
 // cảnh báo vô hại của Codex, không hiện cho người dùng
 const NOISE = /Model metadata for|was recorded with model|Consider switching back|could not create PATH aliases/i;
+// lỗi kỹ thuật của Codex → câu dễ hiểu (kèm cách xử lý)
+function friendlyTurnError(err, model) {
+  const t = String(err || '');
+  if (/stream (disconnected|closed) before|before response\.completed|error sending request|connection (reset|closed)|unexpected EOF/i.test(t)) {
+    return `Kết nối tới máy chủ AI bị ngắt giữa chừng${model ? ` (model ${model})` : ''} – thường do model xử lý quá lâu với nội dung lớn (trang web / bảng tính dài). Bấm gửi lại; vẫn lỗi thì chọn model nhanh hơn hoặc chia nhỏ yêu cầu (vd chỉ đánh giá 1 sheet).`;
+  }
+  return t;
+}
 // lệnh bị sandbox chặn (hay gặp với skill cần mạng / ghi ngoài thư mục dự án, nhất là trên Windows)
 const BLOCKED = /CreateRestrictedToken|sandbox (denied|error)|blocked by sandbox|Access is denied|Operation not permitted|EACCES|network (access )?(is )?(blocked|disabled|denied)|getaddrinfo|ENOTFOUND/i;
 const CHAT_GUIDE = [
@@ -21,6 +29,7 @@ const CHAT_GUIDE = [
   'Tìm web, đọc trang công khai, tạo / sửa ảnh, chép lời file ghi âm / video: gọi thẳng công cụ MCP simi_browser web_search / web_fetch / image_generate / audio_transcribe (mỗi việc 1 lần gọi, chạy ngoài sandbox) thay cho tự chạy khối lệnh trong skill hay tự viết code; chỉ dùng khối lệnh khi phiên không có các công cụ này.',
   'Tạo ảnh: image_generate tự chọn model ảnh theo model chat người dùng đang chọn (GPT → gpt-image, Gemini → Gemini). Muse (công cụ muse_image, skill muse-tao-anh) CHỈ dùng khi người dùng chọn skill Muse hoặc ghi đích danh chữ "Muse"; image_generate lỗi thì báo người dùng, không tự chuyển sang Muse.',
   'Tạo file Word / Excel / PDF / CSV / HTML từ nội dung bạn soạn (báo cáo, hợp đồng, công văn, bảng tính, danh sách…): gọi vp_browser document_create (viết nội dung Markdown: # tiêu đề, bảng | cột | cột |; đuôi path quyết định định dạng) – chạy trong app, không cần Python, tiếng Việt chuẩn. KHÔNG tự viết script python-docx / openpyxl / reportlab / zipfile / PowerShell để tạo file mới, không kiểm tra Python trước. Chỉ dùng script khi phải sửa file có sẵn giữ nguyên định dạng, hoặc cần công thức / mẫu Excel riêng.',
+  'Link Excel / Word / PowerPoint trên SharePoint, OneDrive, Google Sheets/Docs: đừng cuộn đọc từng ô trên trang (chậm, dễ đứt kết nối với bảng lớn). Ưu tiên tải bản sao về máy (Excel Online: Tệp → Tạo bản sao / Tải xuống bản sao; Google: Tệp → Tải xuống .xlsx/.docx; browser_act wait_download lấy đường dẫn) rồi đọc file bằng công cụ đọc tài liệu; chỉ đọc trên trang khi không tải được, và đọc theo từng sheet / vùng cần thiết.',
   'Chỉnh ảnh có sẵn mà phải giữ đúng chi tiết (làm nét, chỉnh sáng / màu, cắt, xoay, xoá / viết lại chữ, logo bị mờ, che vùng, chèn logo): dùng simi_browser image_retouch (vài giây, chạy trên máy), không dùng model tạo ảnh (vẽ lại cả ảnh, chậm, sai chi tiết) và không tự viết script Python.',
   'Ảnh có chữ / bố cục (poster, banner, bài đăng MXH, thumbnail, infographic, thiệp, menu, chứng nhận, logo chữ, ảnh quảng cáo): ưu tiên tự thiết kế bằng HTML / CSS / SVG rồi gọi vp_browser design_render (chữ tiếng Việt đúng 100%, nét, đúng màu, sửa được) – xem ảnh xem trước, chỉnh tới khi đẹp. Cần ảnh chụp / tranh vẽ chân thực thì image_generate tạo phần ảnh KHÔNG chữ rồi đặt làm nền trong HTML và phủ chữ bằng design_render.',
   'Tạo ảnh: viết prompt tiếng Anh chi tiết (chủ thể, bố cục, phong cách, ánh sáng, màu; chữ trong ảnh giữ tiếng Việt trong ngoặc kép, thật ngắn) – yêu cầu chung chung thì tự bổ sung chi tiết cho đẹp, không chuyển nguyên câu ngắn của người dùng.',
@@ -970,8 +979,8 @@ class ChatEngine {
           case 'turn/completed': {
             const tr = p.turn || {};
             for (const it of tr.items || []) upsert(it);
-            const err = tr.status === 'failed' ? ((tr.error && tr.error.message) || msg.error || 'Lượt trả lời thất bại') : tr.status === 'interrupted' ? STOPPED : '';
-            finish(err || (msg.blocks.some((b) => b.kind === 'text') ? '' : msg.error || ''));
+            const err = tr.status === 'failed' ? friendlyTurnError((tr.error && tr.error.message) || msg.error || 'Lượt trả lời thất bại', t.model) : tr.status === 'interrupted' ? STOPPED : '';
+            finish(err || (msg.blocks.some((b) => b.kind === 'text') ? '' : friendlyTurnError(msg.error || '', t.model)));
             break;
           }
           default:
