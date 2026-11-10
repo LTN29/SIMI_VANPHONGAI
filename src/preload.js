@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('vp', {
     react: (room, id, emoji) => ipcRenderer.invoke('lobby:react', room, id, emoji),
     admin: () => ipcRenderer.invoke('lobby:admin'),
     adminDo: (payload) => ipcRenderer.invoke('lobby:adminDo', payload),
+    npcModels: () => ipcRenderer.invoke('lobby:npcModels'),
     saveImage: (id) => ipcRenderer.invoke('lobby:saveImage', id),
     cat: (payload) => ipcRenderer.invoke('lobby:cat', payload),
     interact: (payload) => ipcRenderer.invoke('lobby:interact', payload),

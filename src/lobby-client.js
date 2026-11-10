@@ -134,6 +134,7 @@ class LobbyClient {
   npcAsk(payload) { const { base, h } = this.headers(true); return fetchJson(`${base}/npc/ask`, { method: 'POST', body: payload, headers: h, name: 'Trợ lý', timeoutMs: 100000 }); }
   admin() { return this.call('admin', undefined, 'GET'); }
   adminDo(payload) { return this.call('admin', payload); }
+  npcModels() { return this.call('admin/npc-models', undefined, 'GET'); }
 
   // gửi ảnh đã nén: body = ảnh thu nhỏ + ảnh đầy đủ (Gateway tách theo thumbBytes)
   async upload({ room, to, full, thumb, w, h }) {

@@ -127,6 +127,21 @@ run(async () => {
     await win.waitForSelector('.ad-test.ok', { timeout: 30000 });
     check((await win.textContent('.ad-test.ok')).includes('Trợ lý trả lời được'), 'admin bấm 🧪 Hỏi thử → biết ngay Trợ lý trả lời được');
     await shot('05b-admin-test');
+    // admin chọn model trả lời theo thứ tự ưu tiên (model lỗi thì Gateway tự chuyển model kế tiếp)
+    await win.waitForSelector('.npcm-list, .ad-card:has-text("Model trả lời") .ad-ok', { timeout: 15000 });
+    await win.waitForFunction(() => [...document.querySelectorAll('.ad-card select.ad-npcsel')].some((s) => [...s.options].some((o) => o.value === 'SIMI-FREE')), null, { timeout: 15000 });
+    const addSel = win.locator('.ad-card:has-text("Model trả lời") select.ad-npcsel');
+    await addSel.selectOption('SIMI-FREE');
+    await win.waitForSelector('.npcm-row:has-text("SIMI-FREE")');
+    await win.click('.ad-card:has-text("Model trả lời") .btn.primary:has-text("Lưu model")');
+    await win.waitForSelector('.ad-card:has-text("Model trả lời") .btn.primary:has-text("Đã lưu")', { timeout: 10000 });
+    calls.length = 0;
+    await win.click('#adNpcTest');
+    await win.waitForSelector('.ad-test.ok', { timeout: 30000 });
+    check((await win.textContent('.ad-test.ok')).includes('SIMI-FREE'), 'Trợ lý hỏi theo model admin chọn, Hỏi thử ghi model đã trả lời');
+    // tài khoản đang "Combo tự chọn model" (Gateway bỏ qua tên model) → báo rõ cách sửa thay vì để admin chọn vô ích
+    check(/Combo tự chọn model/.test(await win.textContent('.ad-card:has-text("Model trả lời")')), 'báo tài khoản đang ở chế độ Combo tự chọn model + cách đổi');
+    await shot('05c-admin-models');
     await win.click('.viewtabs button[data-v="lobby"]');
 
     // admin sửa hướng dẫn → máy mình nhận ngay

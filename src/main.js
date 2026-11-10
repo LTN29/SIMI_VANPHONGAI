@@ -320,6 +320,7 @@ function registerIpc() {
   handle('lobby:react', (room, id, emoji) => lobby.react(String(room || ''), String(id || ''), String(emoji || '')));
   handle('lobby:admin', () => lobby.admin());
   handle('lobby:adminDo', (payload) => lobby.adminDo(payload || {}));
+  handle('lobby:npcModels', () => lobby.npcModels());
   handle('lobby:cat', (payload) => lobby.call('cat', payload || {}));
   handle('lobby:interact', (payload) => lobby.call('interact', payload || {}));
   handle('lobby:npc', () => lobby.call('npc', undefined, 'GET'));

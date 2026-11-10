@@ -241,12 +241,66 @@
         el('div', { class: 'ad-row' }, sel, el('button', { class: 'btn primary', onclick: () => act({ action: 'npc', id: sel.value || null }, sel.value ? '🤖 Đã đổi tài khoản Trợ lý' : 'Đã tắt hỏi tự do') }, 'Lưu'),
           d.npc ? el('button', { class: 'btn', id: 'adNpcTest', disabled: !!(A.npcTest && A.npcTest.state === 'run'), title: 'Gửi 1 câu hỏi thử để chắc Trợ lý trả lời được (tính 1 lượt hỏi của bạn)', onclick: testNpc }, '🧪 Hỏi thử') : ''),
         status, el('div', { id: 'adNpcTestOut' }, testView())),
+      d.npc && cur && cur.ready ? npcModelCard(d) : '',
       npcLogCard(d),
       el('div', { class: 'ad-card' }, el('h3', { text: 'Ghi chú riêng của công ty cho Trợ lý' }),
         el('p', { class: 'dim small', text: 'AI đọc phần này mỗi khi trả lời (quy trình nội bộ, hỏi ai việc gì…). Không ghi mật khẩu / thông tin mật.' }),
         notes, el('div', { class: 'ad-row' }, el('span', { class: 'grow' }), el('button', { class: 'btn primary', onclick: () => act({ action: 'npc-guides', notes: notes.value }, '💾 Đã lưu ghi chú') }, 'Lưu ghi chú'))),
       guideEditor(d),
     ];
+  }
+
+  // ---- model Trợ lý dùng: chọn theo thứ tự ưu tiên; model lỗi (vd Gemini hết lượt) Gateway tự chuyển model kế tiếp ----
+  function loadNpcModels(force) {
+    if (A.npcModels && !force && Date.now() - A.npcModels.at < 30_000) return;
+    if (A.npcModelsLoading) return;
+    A.npcModelsLoading = true;
+    window.vp.lobby.npcModels().then((r) => { A.npcModels = { ...r, at: Date.now() }; if (!A.npcPick) A.npcPick = [...(r.selected || [])]; })
+      .catch((e) => { A.npcModels = { models: [], selected: [], health: {}, error: U.cleanErr(e), at: Date.now() }; })
+      .finally(() => { A.npcModelsLoading = false; if (A.sec === 'npc') render(); });
+  }
+  const NPC_FAST = /mini|flash|haiku|nano|lite|fast/i;
+  function modelState(h, id) {
+    const x = h && h[id];
+    if (!x) return { icon: '⚪', text: 'chưa dùng' };
+    if (x.cooling) return { icon: '⏸️', text: `đang lỗi – nghỉ tới ${new Date(x.cooling).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`, err: x.err };
+    return x.ok ? { icon: '✅', text: 'trả lời được' } : { icon: '❌', text: 'lỗi gần đây', err: x.err };
+  }
+  function npcModelCard(d) {
+    const { el } = U;
+    loadNpcModels(false);
+    const M = A.npcModels;
+    const saved = (d.npc && d.npc.models) || [];
+    const pick = A.npcPick || saved;
+    const dirty = JSON.stringify(pick) !== JSON.stringify(saved);
+    const all = M ? [...new Set([...(M.models || []), ...pick])] : pick;
+    const rest = all.filter((m) => !pick.includes(m)).sort((a, b) => Number(NPC_FAST.test(b)) - Number(NPC_FAST.test(a)) || a.localeCompare(b));
+    const set = (list) => { A.npcPick = list; render(); };
+    const row = (id, i) => {
+      const st = modelState(M && M.health, id);
+      return el('li', { class: 'npcm-row' },
+        el('span', { class: 'npcm-n', text: String(i + 1) }),
+        el('span', { class: 'npcm-id' }, el('b', { text: id }), el('small', { title: st.err || '', text: `${st.icon} ${st.text}${i === 0 ? ' · hỏi trước' : ' · dự phòng'}` })),
+        el('button', { class: 'btn mini', title: 'Ưu tiên hơn', disabled: i === 0, onclick: () => { const l = [...pick]; [l[i - 1], l[i]] = [l[i], l[i - 1]]; set(l); } }, '↑'),
+        el('button', { class: 'btn mini', title: 'Bỏ model này', onclick: () => set(pick.filter((m) => m !== id)) }, '✕'));
+    };
+    const add = el('select', { class: 'ad-npcsel', onchange: (e) => { if (e.target.value) set([...pick, e.target.value]); } },
+      el('option', { value: '', text: M ? (rest.length ? '+ Thêm model…' : 'Đã chọn hết model của tài khoản này') : 'Đang tải danh sách model…' }),
+      ...rest.map((id) => { const st = modelState(M && M.health, id); return el('option', { value: id, text: `${st.icon} ${id}${NPC_FAST.test(id) ? '  ⚡ nhanh' : ''}` }); }));
+    return el('div', { class: 'ad-card' },
+      el('div', { class: 'ad-row' }, el('h3', { text: 'Model trả lời', style: 'margin:0' }), el('span', { class: 'grow' }),
+        el('button', { class: 'btn mini', title: 'Tải lại danh sách và tình trạng model', onclick: () => loadNpcModels(true) }, '⟳ Làm mới')),
+      el('p', { class: 'dim small', text: 'Chọn model Trợ lý dùng theo thứ tự ưu tiên. Model đầu lỗi (hết lượt, bị chặn, "reset after…") thì Gateway tự hỏi model kế tiếp và cho model lỗi nghỉ vài phút. Để trống = tự động (ưu tiên model nhanh: mini / flash / haiku). Nên đặt 1 model nhanh làm dự phòng.' }),
+      M && M.error ? el('p', { class: 'ad-warn', text: '⚠️ ' + M.error }) : '',
+      // tài khoản đang "Combo tự chọn model": Gateway bỏ qua tên model → chỉ admin Gateway đổi được
+      M && M.mode === 'combo' ? el('div', { class: 'ad-warn' },
+        el('b', { text: `⚠️ Tài khoản này đang ở chế độ "Combo tự chọn model"${M.combos && M.combos.list && M.combos.list.length ? ' (' + M.combos.list.join(' → ') + ')' : ''}` }),
+        el('p', { text: 'Gateway tự chọn model trong Combo nên danh sách bên dưới chưa có tác dụng – lỗi Gemini là do model trong Combo đang bị máy chủ AI chặn / hết lượt.' }),
+        el('p', { text: 'Cách sửa (chọn 1): ① Admin Console → Người dùng → sửa tài khoản này → "Quyền chọn model" = "User chọn model trong Combo" → Lưu, rồi quay lại đây chọn model. ② Hoặc sửa Combo trên 9Router: đưa model ổn định (GPT / Claude) lên đầu, bỏ model Gemini đang lỗi.' })) : '',
+      pick.length ? el('ol', { class: 'npcm-list' }, pick.map(row)) : el('p', { class: 'ad-ok', text: '✨ Tự động – Gateway chọn model nhanh trong Combo của tài khoản, lỗi thì thử model khác.' }),
+      el('div', { class: 'ad-row' }, add,
+        pick.length ? el('button', { class: 'btn', onclick: () => set([]) }, 'Tự động') : '',
+        el('button', { class: 'btn primary', disabled: !dirty, onclick: async () => { await act({ action: 'npc-models', models: pick }, pick.length ? '🤖 Đã lưu model Trợ lý' : '🤖 Trợ lý chọn model tự động'); A.npcPick = null; loadNpcModels(true); } }, dirty ? 'Lưu model' : 'Đã lưu')));
   }
 
   // gửi thử 1 câu → báo trả lời được không, mất bao lâu, lỗi gì (để admin kiểm tra ngay sau khi cấu hình / cập nhật Gateway)
@@ -256,22 +310,24 @@
     const t0 = Date.now();
     try {
       const r = await window.vp.lobby.npcAsk({ question: 'Giới thiệu ngắn (2 câu) Văn Phòng AI giúp nhân viên làm gì?', guide: window.VPNpcGuides.guideText(), test: true });
-      A.npcTest = { state: 'ok', secs: (Date.now() - t0) / 1000, text: String(r.answer || '').slice(0, 280) };
+      A.npcTest = { state: 'ok', secs: (Date.now() - t0) / 1000, text: String(r.answer || '').slice(0, 280), model: r.model || '' };
     } catch (e) {
       const msg = U.cleanErr(e);
-      const hint = /hạn mức|Premium|Combo/i.test(msg) ? 'Tài khoản Trợ lý hết lượt hoặc model không thuộc Combo được cấp – kiểm tra hạn mức của tài khoản này trong Admin Console.'
+      const hint = /reset after|\b403\b|\b429\b|đã thử \d+ model/i.test(msg) ? 'Model này đang bị máy chủ AI chặn / hết lượt. Ở mục "Model trả lời" thêm model khác (nên có 1 model nhanh như mini / flash) làm dự phòng rồi Hỏi thử lại.'
+        : /hạn mức|Premium|Combo/i.test(msg) ? 'Tài khoản Trợ lý hết lượt hoặc model không thuộc Combo được cấp – kiểm tra hạn mức của tài khoản này trong Admin Console.'
         : /LOBBY_NPC_KEYS|chưa thêm key/i.test(msg) ? 'Thêm API key của tài khoản này vào LOBBY_NPC_KEYS trong .env của Gateway rồi khởi động lại Gateway.'
           : /Cloudflare|502|504|không phản hồi/i.test(msg) ? 'Gateway chưa cập nhật bản mới hoặc đang khởi động lại – trên máy chủ chạy git pull rồi Restart-Service LTNGateway.'
             : 'Xem log Gateway (sự kiện lobby_npc_error) để biết chi tiết.';
       A.npcTest = { state: 'bad', msg, hint };
     }
+    A.npcModels = null; // tình trạng model vừa đổi
     await load(true);
   }
   function testView() {
     const { el } = U; const r = A.npcTest;
     if (!r) return '';
     if (r.state === 'run') return el('p', { class: 'ad-test run' }, el('span', { class: 'spin' }), ' Đang hỏi thử Trợ lý…');
-    if (r.state === 'ok') return el('div', { class: 'ad-test ok' }, el('b', { text: `✅ Trợ lý trả lời được (${r.secs.toFixed(1)} giây)` }), el('p', { text: r.text }));
+    if (r.state === 'ok') return el('div', { class: 'ad-test ok' }, el('b', { text: `✅ Trợ lý trả lời được (${r.secs.toFixed(1)} giây${r.model ? ' · ' + r.model : ''})` }), el('p', { text: r.text }));
     return el('div', { class: 'ad-test bad' }, el('b', { text: '❌ Trợ lý chưa trả lời được' }), el('p', { text: r.msg }), el('small', { text: '👉 ' + r.hint }));
   }
 
@@ -289,7 +345,7 @@
           el('td', { text: dt(x.ts) }), el('td', { text: x.by + (x.test ? ' (hỏi thử)' : '') }),
           el('td', { class: 'wrap' }, el('b', { text: x.q }), x.a ? el('small', { class: 'ans', text: x.a }) : ''),
           el('td', { class: 'res' }, !x.ok ? el('span', { class: 'ad-pill warn', title: x.err, text: '❌ ' + String(x.err || 'Lỗi').slice(0, 70) })
-            : el('span', {}, el('span', { class: 'ad-pill' + (x.fb === -1 ? ' warn' : x.fb === 1 ? ' admin' : ''), text: x.fb === -1 ? '👎 Chưa đúng ý' : x.fb === 1 ? '👍 Hữu ích' : '✅ Đã trả lời' }), el('small', { class: 'ms', text: ` ${(x.ms / 1000).toFixed(1)}s` })))))))));
+            : el('span', {}, el('span', { class: 'ad-pill' + (x.fb === -1 ? ' warn' : x.fb === 1 ? ' admin' : ''), text: x.fb === -1 ? '👎 Chưa đúng ý' : x.fb === 1 ? '👍 Hữu ích' : '✅ Đã trả lời' }), el('small', { class: 'ms', title: x.model || '', text: ` ${(x.ms / 1000).toFixed(1)}s${x.model ? ' · ' + x.model.split('/').pop() : ''}` })))))))));
   }
 
   // sửa hướng dẫn từng bước (bắt đầu từ bản có sẵn trong app); lưu = thay cả bộ hướng dẫn trên mọi máy
