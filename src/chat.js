@@ -7,6 +7,7 @@ const path = require('path');
 const simi = require('./simi');
 const { computerUseStatus, computerGuide } = require('./computer-use');
 const { vietFonts } = require('./sys');
+const xt = require('./ext-tools');
 
 const IMG_EXT = /\.(png|jpe?g|gif|webp|bmp)$/i;
 const OUT_EXT = /\.(png|jpe?g|gif|webp|bmp|svg|mp4|mov|webm|mp3|wav|m4a|pdf|docx?|xlsx?|pptx?|csv|md|txt|html?|json|zip)$/i;
@@ -32,6 +33,7 @@ const CHAT_GUIDE = [
   'Link Excel / Word / PowerPoint trên SharePoint, OneDrive, Google Sheets/Docs: đừng cuộn đọc từng ô trên trang (chậm, dễ đứt kết nối với bảng lớn). Ưu tiên tải bản sao về máy (Excel Online: Tệp → Tạo bản sao / Tải xuống bản sao; Google: Tệp → Tải xuống .xlsx/.docx; browser_act wait_download lấy đường dẫn) rồi đọc file bằng công cụ đọc tài liệu; chỉ đọc trên trang khi không tải được, và đọc theo từng sheet / vùng cần thiết.',
   'Chỉnh ảnh có sẵn mà phải giữ đúng chi tiết (làm nét, chỉnh sáng / màu, cắt, xoay, xoá / viết lại chữ, logo bị mờ, che vùng, chèn logo): dùng simi_browser image_retouch (vài giây, chạy trên máy), không dùng model tạo ảnh (vẽ lại cả ảnh, chậm, sai chi tiết) và không tự viết script Python.',
   'Ảnh có chữ / bố cục (poster, banner, bài đăng MXH, thumbnail, infographic, thiệp, menu, chứng nhận, logo chữ, ảnh quảng cáo): ưu tiên tự thiết kế bằng HTML / CSS / SVG rồi gọi vp_browser design_render (chữ tiếng Việt đúng 100%, nét, đúng màu, sửa được) – xem ảnh xem trước, chỉnh tới khi đẹp. Cần ảnh chụp / tranh vẽ chân thực thì image_generate tạo phần ảnh KHÔNG chữ rồi đặt làm nền trong HTML và phủ chữ bằng design_render.',
+  'Sau khi tạo / sửa ảnh hoặc tạo file: trả lời thật ngắn – 1–2 câu (đã làm gì, điều cần lưu ý nếu có) kèm ảnh / file; không kể lại từng bước, không nêu prompt, tham số, tên model hay đường dẫn dài dòng, không hỏi lại nhiều câu.',
   'Tạo ảnh: viết prompt tiếng Anh chi tiết (chủ thể, bố cục, phong cách, ánh sáng, màu; chữ trong ảnh giữ tiếng Việt trong ngoặc kép, thật ngắn) – yêu cầu chung chung thì tự bổ sung chi tiết cho đẹp, không chuyển nguyên câu ngắn của người dùng.',
   'Thao tác trên trang web (mở trang cho người dùng xem, điền form, đăng / sửa nội dung, bấm nút, trang cần đăng nhập): ưu tiên MCP vp_browser khi có – trình duyệt hiện ngay cạnh khung chat, người dùng nhìn thấy và đã đăng nhập sẵn. Quy trình: browser_open → đọc danh sách [eN] → browser_act gộp nhiều bước (gõ, chọn, bấm) trong 1 lần gọi → xem trang trả về; chỉ browser_screenshot khi cần nhìn hình; phần tử không có mã thì browser_act click theo x, y trên ảnh đó. Trang đang mở trong khung này TUYỆT ĐỐI không dùng vp_computer / Computer Use, và không chạy lệnh PowerShell / hệ thống điều khiển chuột, bàn phím, clipboard (SendKeys, System.Windows.Forms, Set-Clipboard, mouse_event…) – người dùng đang làm việc khác trên máy, giành chuột / clipboard sẽ làm hỏng việc của họ và của bạn. Thay vào đó: nội dung dài / HTML → browser_act fill hoặc paste (không đụng clipboard); ảnh / tệp → upload {ref, files}; vùng có thanh cuộn riêng → scroll với ref; đọc dữ liệu khó (trình soạn thảo, bảng) → browser_js. Trang đòi đăng nhập / mã OTP / captcha: dừng lại nhờ người dùng tự làm trong khung trình duyệt rồi làm tiếp, không tự nhập mật khẩu. Trước khi bấm nút gửi / đăng / thanh toán / xoá thật: hỏi người dùng xác nhận trừ khi họ đã yêu cầu rõ.',
   'Canva (thiết kế, poster, banner, slide, bài đăng MXH theo mẫu Canva): làm bằng vp_browser trên https://www.canva.com – người dùng đăng nhập Canva sẵn trong khung trình duyệt. Chưa đăng nhập → nhờ họ bấm 🎨 Canva trên khung trình duyệt và đăng nhập (nếu Google chặn đăng nhập trong app thì dùng email + mã Canva gửi về). Cách làm nhanh: tìm mẫu bằng ô tìm kiếm của Canva → mở mẫu → sửa chữ (double_click khối chữ, Ctrl+A rồi gõ) → đổi ảnh / màu khi được yêu cầu → Chia sẻ → Tải xuống (chọn PNG / PDF / MP4) → browser_act wait_download lấy đường dẫn tệp và báo cho người dùng. Gửi kèm link thiết kế (URL đang mở) để họ tự chỉnh tiếp.',
@@ -1121,46 +1123,36 @@ class ChatEngine {
     return new Promise((resolve) => this._finish(t, msg, { error: failure || '', ms: Date.now() - t0 }, emit, resolve));
   }
 
-  // Claude Code (tài khoản Claude) dùng chung công cụ với model SIMI: MCP trình duyệt cạnh khung chat (vp_browser),
-  // điều khiển máy tính (vp_computer), Trình duyệt SIMI (simi_browser: web_search / image_generate…) và skill SIMI.
-  // `claude -p` không hỏi quyền được → cấp sẵn quyền theo mục "Quyền" của đoạn chat (thiếu quyền là công cụ bị chặn).
-  _claudeTools(t) {
-    const servers = {};
-    let flat = {};
+  // Model của tài khoản riêng dùng chung công cụ + skill với model SIMI (MCP vp_browser, vp_computer, simi_browser):
+  //  - Claude Code / Gemini CLI: đưa cấu hình MCP + cấp sẵn quyền theo mục "Quyền" của đoạn chat (chạy 1 lượt không hỏi quyền được)
+  //  - Claude API / OpenAI API / Gemini API / Ollama: app tự chạy vòng lặp gọi công cụ (ext-tools.runApiTools)
+  // Nguồn chưa hỗ trợ (Antigravity) → null: trò chuyện thường.
+  _extTools(t, ext) {
+    const source = ext.source;
+    const api = xt.API_TOOL_SOURCES.has(source);
+    if (!api && source !== 'claude-cli' && source !== 'gemini-cli') return null;
+    let flat = {}; let sb = null;
     try { flat = this.extraConfig() || {}; } catch { flat = {}; }
-    for (const [k, v] of Object.entries(flat)) {
-      const m = k.match(/^mcp_servers\.([^.]+)\.(command|args|env)$/);
-      if (m) (servers[m[1]] = servers[m[1]] || {})[m[2]] = v;
-    }
-    let sb = null;
     try { sb = simi.readCodexConfig().browserServer; } catch { sb = null; }
-    if (sb && !servers[simi.BROWSER_MCP]) servers[simi.BROWSER_MCP] = sb;
-    const names = Object.keys(servers).filter((n) => servers[n].command);
-    const mcp = { mcpServers: Object.fromEntries(names.map((n) => [n, { type: 'stdio', command: servers[n].command, args: servers[n].args || [], ...(servers[n].env ? { env: servers[n].env } : {}) }])) };
-    const args = [];
-    if (names.length) {
-      const file = path.join(path.dirname(this.store.dir), 'claude-mcp.json'); // thư mục dữ liệu app (không để chung với file đoạn chat)
-      try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(mcp, null, 2), 'utf8'); args.push('--mcp-config', file); } catch { /* không ghi được → chạy không MCP */ }
-    }
+    const servers = xt.mcpServers(flat, sb, simi.BROWSER_MCP);
     const sandbox = t.sandbox || 'workspace-write';
-    const allow = ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'TodoWrite', ...(args.length ? names.map((n) => 'mcp__' + n) : [])]; // mcp__<server> = mọi công cụ của server đó
-    if (sandbox !== 'read-only') allow.push('Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'Bash');
-    const mode = sandbox === 'danger-full-access' ? 'bypassPermissions' : sandbox === 'read-only' ? 'default' : 'acceptEdits';
-    args.push('--permission-mode', mode, '--allowedTools', allow.join(' '));
-    for (const d of [...simi.skillRoots(), SCRATCH]) { if (fs.existsSync(d)) args.push('--add-dir', d); }
+    const opt = { servers, sandbox, dataDir: path.dirname(this.store.dir), addDirs: [...simi.skillRoots(), SCRATCH] }; // dataDir: thư mục dữ liệu app, không lẫn với file đoạn chat
+    const cli = source === 'claude-cli' ? xt.claudeArgs(opt) : source === 'gemini-cli' ? xt.geminiSetup(opt) : null;
+    const names = cli ? cli.servers : Object.keys(servers);
     let skills = [];
     try { skills = simi.listSkills().filter((x) => x.file); } catch { skills = []; }
-    const withMcp = args.includes('--mcp-config');
-    const has = (n) => withMcp && names.includes(n);
+    const runner = source === 'claude-cli' ? 'Claude Code' : source === 'gemini-cli' ? 'Gemini CLI' : 'app Văn Phòng AI';
+    const naming = source === 'claude-cli' ? 'mcp__<server>__<tool>' : api ? '<server>__<tool>' : '<tool> của server đó';
     const guide = [
-      'Bạn đang chạy trong Claude Code, được dùng chung công cụ với model SIMI: ' + (withMcp ? names.map((n) => `MCP ${n} (công cụ mcp__${n}__*)`).join(', ') : 'chưa có MCP nào') + '. Tên công cụ trong hướng dẫn dưới đây (vp_browser design_render, simi_browser image_generate…) chính là các công cụ mcp__<server>__<tool> đó.',
+      `Bạn đang chạy trong ${runner}, được dùng chung công cụ với model SIMI: ${names.length ? names.map((n) => 'MCP ' + n).join(', ') : 'chưa có MCP nào'}${api ? '; đọc / ghi file chữ bằng read_file, list_dir' + (sandbox === 'read-only' ? '' : ', write_file') : ''}. Tên công cụ trong hướng dẫn dưới đây (vp_browser design_render, simi_browser image_generate…) chính là công cụ ${naming}.`,
       sandbox === 'read-only' ? 'Đoạn chat đang ở quyền "Chỉ đọc": không sửa file, không chạy lệnh; cần thì nói người dùng đổi quyền ở ô Quyền dưới khung chat.' : '',
-      CHAT_GUIDE, CLAUDE_DESIGN, docGuide(vietFonts()),
-      has('vp_computer') ? computerGuide({ native: false, enabled: this.getConfig().computerControl !== false }) : '',
-      skills.length ? 'Skill SIMI có trên máy (khi việc khớp mô tả, hoặc người dùng ghi $tên-skill: dùng Read đọc file SKILL.md của skill đó rồi làm theo; skill có công cụ MCP tương ứng thì gọi thẳng công cụ, khối lệnh PowerShell trong skill thì chạy bằng powershell -NoProfile -Command khi cần):\n'
+      api ? 'Bạn không chạy được lệnh (shell) trên máy: việc cần lệnh thì dùng công cụ MCP tương ứng; không có công cụ phù hợp thì nói rõ và gợi ý người dùng chọn model SIMI.' : '',
+      CHAT_GUIDE, /claude|opus|sonnet|haiku/i.test(ext.model || source) ? CLAUDE_DESIGN : '', docGuide(vietFonts()),
+      names.includes('vp_computer') ? computerGuide({ native: false, enabled: this.getConfig().computerControl !== false }) : '',
+      skills.length ? `Skill SIMI có trên máy (khi việc khớp mô tả, hoặc người dùng ghi $tên-skill: đọc file SKILL.md của skill đó${api ? ' bằng read_file' : ''} rồi làm theo; việc đã có công cụ MCP tương ứng thì gọi thẳng công cụ, bỏ qua khối lệnh trong skill):\n`
         + skills.map((x) => `- ${x.name}: ${x.description || ''} — ${x.file}`).join('\n') : '',
     ].filter(Boolean).join('\n');
-    return { args, guide, servers: withMcp ? names : [] };
+    return { api, servers, names, sandbox, guide, args: cli ? cli.args : [], env: (cli && cli.env) || {} };
   }
 
   // lượt chat bằng tài khoản riêng: gửi lịch sử gần đây + tin mới cho CLI / API của tài khoản đó, nhận câu trả lời đầy đủ
@@ -1180,22 +1172,47 @@ class ChatEngine {
       lines.unshift(`${m.role === 'user' ? 'Người dùng' : 'Bạn'}: ${txt}`);
     }
     const files = atts.map((a) => `- ${a.path}`).join('\n');
-    let tools = null;
-    if (ext.source === 'claude-cli') { simi.refreshEnv(); tools = this._claudeTools(t); }
+    simi.refreshEnv();
+    noteChatModel(ext.model || ext.source); // image_generate chọn model ảnh theo hãng của model đang chat
+    const tools = this._extTools(t, ext);
+    const dir = this.dirOf(t);
+    const before = snapshot(dir);
     const system = [EXT_GUIDE, tools && tools.guide, persona].filter(Boolean).join('\n\n');
     const user = (lines.length ? `Đoạn hội thoại trước đó:\n${lines.join('\n\n')}\n\n---\n\n` : '') + `Tin nhắn mới của người dùng:\n${text}` + (files ? `\n\nTệp người dùng đính kèm (đường dẫn trên máy):\n${files}` : '');
     const cfg = this.getConfig();
     let out = ''; let error = '';
+    const timeoutSec = Math.max(Number(cfg.timeoutSec) || 0, tools ? 1800 : 600);
     if (!run.stopped) {
       try {
-        out = await callAgent({ source: ext.source, model: ext.model }, system, user,
-          { config: { ...cfg, timeoutSec: Math.max(Number(cfg.timeoutSec) || 0, tools ? 1800 : 600) }, signal: ac.signal, getSecret: this.getSecret, workDir: this.dirOf(t), cliArgs: tools ? tools.args : [] }, { kind: 'answer' });
+        if (tools && tools.api) {
+          // model gọi qua API: app chạy vòng lặp công cụ, từng bước hiện trong đoạn chat như model SIMI
+          const steps = new Map();
+          const r = await xt.runApiTools({
+            source: ext.source, model: ext.model, system, user, servers: tools.servers, sandbox: tools.sandbox, workDir: dir, writeDirs: [SCRATCH],
+            config: { ...cfg, timeoutSec }, getSecret: this.getSecret, signal: ac.signal,
+            onStep: (it) => {
+              const st = stepFromItem({ ...it, type: 'mcpToolCall' }); if (!st) return;
+              const block = { ...st, id: it.id, kind: 'step' };
+              if (it.status !== 'inProgress') this._toolResult(t.id, it, block);
+              const old = steps.get(it.id);
+              if (old) msg.blocks[msg.blocks.indexOf(old)] = block; else msg.blocks.push(block);
+              steps.set(it.id, block);
+              emit({ ev: 'blocks', blocks: msg.blocks });
+            },
+          });
+          out = r.text; tools.names = r.servers;
+          if (!out) throw new Error('Model trả về nội dung rỗng');
+        } else {
+          out = await callAgent({ source: ext.source, model: ext.model }, system, user,
+            { config: { ...cfg, timeoutSec }, signal: ac.signal, getSecret: this.getSecret, workDir: dir, cliArgs: tools ? tools.args : [], cliEnv: tools ? tools.env : {} }, { kind: 'answer' });
+        }
       } catch (e) { error = run.reason || e.message || String(e); }
     } else error = run.reason;
     this.running.delete(t.id);
-    if (out) msg.blocks = [{ kind: 'text', id: 'ext', text: out }];
+    if (out) msg.blocks.push({ kind: 'text', id: 'ext', text: out });
+    try { msg.files = collectFiles(dir, before, t0, msg.blocks); } catch { /* không quét được thư mục */ }
     msg.via = (SOURCES[ext.source] || {}).short || ext.source;
-    this.emit({ type: 'log', level: 'info', text: `💬 Chat bằng ${msg.via}${ext.model ? ' · ' + ext.model : ''}${tools && tools.servers.length ? ' (công cụ: ' + tools.servers.join(', ') + ')' : ''}: ${((Date.now() - t0) / 1000).toFixed(1)}s` });
+    this.emit({ type: 'log', level: 'info', text: `💬 Chat bằng ${msg.via}${ext.model ? ' · ' + ext.model : ''}${tools && tools.names.length ? ' (công cụ: ' + tools.names.join(', ') + ')' : ''}: ${((Date.now() - t0) / 1000).toFixed(1)}s` });
     return new Promise((resolve) => this._finish(t, msg, { error, ms: Date.now() - t0 }, emit, resolve));
   }
 

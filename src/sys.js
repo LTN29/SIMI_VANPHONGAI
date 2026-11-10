@@ -69,13 +69,13 @@ function vietFonts(exists = fs.existsSync, platform = process.platform, env = pr
 }
 
 // ---------- tiến trình ----------
-function spawnCli(cmd, args, { cwd, shell } = {}) {
+function spawnCli(cmd, args, { cwd, shell, env } = {}) {
   // Windows: lệnh trong PATH (codex.cmd, npm…) cần cmd.exe; file .exe có đường dẫn đầy đủ thì chạy thẳng
   const useShell = shell === undefined ? IS_WIN && !(path.isAbsolute(cmd) && /\.exe$/i.test(cmd)) : shell;
   return spawn(cmd, useShell ? args.map(quoteArg) : args, {
     cwd, shell: useShell, windowsHide: true,
     // Python mặc định UTF-8 (Windows hay dùng cp1252 → lỗi font / UnicodeEncodeError khi AI ghi file tiếng Việt)
-    env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0', PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
+    env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0', PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8', ...(env || {}) },
   });
 }
 
@@ -88,10 +88,10 @@ function killTree(child) {
 }
 
 // Chạy 1 lệnh, đưa input vào stdin, trả { out, err, code }. Hủy được qua AbortSignal.
-function runProcess(cmd, args, input, { cwd, timeoutMs = 60000, signal, shell, allowFail } = {}) {
+function runProcess(cmd, args, input, { cwd, timeoutMs = 60000, signal, shell, allowFail, env } = {}) {
   return new Promise((resolve, reject) => {
     let child;
-    try { child = spawnCli(cmd, args, { cwd, shell }); } catch (e) { return reject(e); }
+    try { child = spawnCli(cmd, args, { cwd, shell, env }); } catch (e) { return reject(e); }
     let out = ''; let err = ''; let done = false;
     const finish = (fn, v) => {
       if (done) return;

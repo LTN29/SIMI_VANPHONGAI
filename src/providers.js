@@ -31,7 +31,7 @@ async function runCodex(cmd, args, prompt, opt) {
 
 async function callCli(source, agent, prompt, ctx) {
   const c = ctx.config.cli;
-  const opt = { cwd: ctx.workDir, timeoutMs: ctx.config.timeoutSec * 1000, signal: ctx.signal };
+  const opt = { cwd: ctx.workDir, timeoutMs: ctx.config.timeoutSec * 1000, signal: ctx.signal, env: ctx.cliEnv };
   const model = (agent.model || '').trim();
   const withModel = (flag) => (model ? [flag, model] : []);
 
@@ -51,7 +51,7 @@ async function callCli(source, agent, prompt, ctx) {
       return (await runProcess(ag.cmd || 'agy', ['-p', p, ...withModel('--model'), ...splitArgs(ag.extraArgs)], '', { ...opt, shell: false })).out;
     }
     case 'gemini-cli':
-      return (await runProcess(c.gemini.cmd || 'gemini', [...withModel('-m'), ...splitArgs(c.gemini.extraArgs)], prompt, opt)).out;
+      return (await runProcess(c.gemini.cmd || 'gemini', [...withModel('-m'), ...(ctx.cliArgs || []), ...splitArgs(c.gemini.extraArgs)], prompt, opt)).out;
     default:
       throw new Error('Nguồn CLI không hợp lệ: ' + source);
   }
