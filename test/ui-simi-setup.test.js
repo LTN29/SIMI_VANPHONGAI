@@ -21,7 +21,7 @@ run(async () => {
   const { app, win, errors, shot } = await launch({
     prefix: 'simi-setup',
     config: { simiGateway: `http://127.0.0.1:${gw.address().port}` },
-    env: { PATH: '/usr/bin:/bin', VP_SIMI_FAKE_INSTALLER: path.join(__dirname, 'fixtures', 'fake-simi-installer.js'), FAKE_KEY_OUT: keyOut, CODEX_HOME: codexHome, FAKE_FAIL: 'update' },
+    env: { PATH: '/usr/bin:/bin', VP_SIMI_FAKE_INSTALLER: path.join(__dirname, 'fixtures', 'fake-simi-installer.js'), FAKE_KEY_OUT: keyOut, CODEX_HOME: codexHome, FAKE_FAIL: 'update', FAKE_SLOW_MS: '2500' },
   });
   await win.waitForSelector('.welcome', { timeout: 20000 });
   check(/tự cài Codex/.test(await win.locator('.welcome').innerText()), 'màn chào mừng nói rõ app tự cài Codex');
@@ -49,6 +49,12 @@ run(async () => {
   await win.fill('.ss-key', GOOD);
   await win.click('.ss-go');
   await win.waitForSelector('.ss-step.now', { timeout: 15000 });
+  // bước đúng theo mốc của bộ cài: đang cài thư viện Word thì bước "Lưu cấu hình" chưa chạy (trước đây nhảy tới cuối ngay khi xác minh Combo)
+  await win.waitForSelector('.ss-step.now:has-text("Word")', { timeout: 15000 });
+  check(/thư viện Word/.test(await win.locator('.ss-step.now .ss-act').innerText()), 'dưới bước đang làm hiện việc cụ thể đang chạy');
+  check(await win.locator('.ss-step.todo:has-text("Lưu cấu hình")').count() === 1, 'bước Lưu cấu hình chưa bắt đầu khi đang cài công cụ');
+  await win.waitForFunction(() => /^\d+s$/.test((document.querySelector('.ss-step.now .ss-time') || {}).textContent || ''), null, { timeout: 5000 });
+  check(true, 'bước đang làm có đồng hồ đếm giây');
   await shot('02-running');
   check(!(await win.locator('#modal').innerText()).includes('Repair: dùng API key'), 'không hiện dòng chạy của bộ cài');
   await win.waitForSelector('.ss-done', { timeout: 30000 });
@@ -56,7 +62,25 @@ run(async () => {
   check(nStep >= 6 && await win.locator('.ss-step.done').count() === nStep, `đủ ${nStep} bước có dấu ✓ (Linux có thêm bước chuẩn bị máy)`);
   check(fs.readFileSync(keyOut, 'utf8') === GOOD, 'bộ cài nhận đúng key qua biến môi trường (không qua dòng lệnh)');
   check(await win.locator('.ss-key').count() === 0, 'không còn hiện key sau khi cài');
+  check(await win.locator('.ss-step.done:has-text("Word") .ss-time').count() === 1, 'bước lâu hiện thời gian đã mất cạnh dấu ✓');
   await shot('03-done');
+
+  // bộ cài cũ (chưa có mốc [SIMI-STEP]): đoán bước theo chữ, không nhảy tới bước cuối khi thấy chữ "Combo"
+  const seq = await win.evaluate(() => {
+    const S = window.VPSimiSetup; const st = S.state;
+    const prev = { step: st.step, result: st.result, mode: st.mode };
+    st.step = -1; st.result = null; st.mode = 'install';
+    S.onEvent({ type: 'simi-update', ev: 'start', mode: 'install' });
+    const ids = ['key', ...(/linux/i.test(navigator.platform) ? ['prep'] : []), 'get', 'codex', 'tools', 'skills', 'config'];
+    const out = [];
+    for (const l of ['Repair: dùng API key đã lưu, không yêu cầu nhập lại.', 'Đang xác minh Combo SIMI AI qua Gateway...', 'Đang cài Codex CLI standalone chính thức từ OpenAI...', 'Đang cài runtime Windows: OpenJS.NodeJS.LTS...', 'Python PDF runtime: C:\\x', 'Đã cài/cập nhật 15 skill Simi. Khởi động lại Codex Desktop', 'Đã cài lệnh PDF: ltn-pdf (runtime: OK)', '  Codex runtime config: provider ltn_gateway + MCP simi_browser OK']) {
+      S.onEvent({ type: 'simi-update', ev: 'line', line: l }); out.push(ids[st.step]);
+    }
+    S.onEvent({ type: 'simi-update', ev: 'done', ok: true });
+    Object.assign(st, prev);
+    return out.join(',');
+  });
+  check(seq === 'get,get,codex,tools,tools,skills,skills,config', 'bộ cài cũ: các bước đi đúng thứ tự (' + seq + ')');
   await win.click('#modalClose');
 
   // cập nhật lỗi → câu dễ hiểu + sao chép chi tiết cho IT, không hiện log

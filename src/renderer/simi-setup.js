@@ -5,26 +5,60 @@
   const STEPS = [
     { id: 'key', label: 'Kiểm tra key team', only: 'install' },
     { id: 'prep', label: 'Chuẩn bị máy: curl, Python, Node.js', linux: true, re: /Chuẩn bị máy/i },
-    { id: 'get', label: 'Tải bộ cài chính thức từ ai.simi.vn', re: /dùng API key|dung API key|Kiem tra|Kiểm tra|\[[1-5]\/7\]/i },
-    { id: 'codex', label: 'Cài Codex & tạo file cấu hình', re: /codex cli|cài codex|installing codex|codex standalone/i },
-    { id: 'tools', label: 'Cài công cụ Word · Excel · PDF', re: /runtime|node\.js|python|thư viện|word\/excel|ltn-pdf|ltn-9router|pdf/i },
-    { id: 'skills', label: 'Cài skill SIMI & trình duyệt', re: /skill|chrome|browser|plugin|mcp/i },
-    { id: 'config', label: 'Lưu cấu hình & danh sách model', re: /combo|config|model mặc định|provider|catalog|hoàn tất|complete/i },
+    // bộ cài mới in dòng "[SIMI-STEP] <id>" ở đầu mỗi chặng → bước đúng tuyệt đối; bộ cài cũ: đoán theo chữ (re)
+    { id: 'get', label: 'Tải bộ cài chính thức từ ai.simi.vn', re: /dùng API key|dung API key|xác minh Combo|Kiem tra|Kiểm tra|\[[1-5]\/7\]/i },
+    { id: 'codex', label: 'Cài Codex & tạo file cấu hình', re: /cài codex cli|installing codex|codex standalone/i },
+    { id: 'tools', label: 'Cài công cụ Word · Excel · PDF', re: /đang cài runtime|^node\.js:|thư viện word|python pdf runtime/i },
+    { id: 'skills', label: 'Cài skill SIMI & trình duyệt', re: /skill simi|\[7\/7\]|chrome cdp|browser mcp tự động/i },
+    { id: 'config', label: 'Lưu cấu hình & danh sách model', re: /sao lưu config|giữ model người dùng|codex runtime config|plugin installed|hoàn tất/i },
   ];
+  const MARK = /^\[SIMI-STEP\]\s*(\w+)/;
   // một lần cài / cập nhật đang chạy (đóng bảng vẫn chạy tiếp, mở lại thấy đúng tiến độ)
-  const R = { mode: null, running: false, at: 0, log: '', result: null, step: -1, body: null, paint: null };
+  const R = { mode: null, running: false, at: 0, log: '', result: null, step: -1, body: null, paint: null, marked: false, act: '', since: {}, took: {}, t0: 0 };
+
+  // chuyển sang bước i: ghi thời gian bước trước (hiện "48s" cạnh dấu ✓, gửi IT khi cần)
+  function goStep(i) {
+    if (i <= R.step) return;
+    const now = Date.now();
+    if (R.step >= 0 && R.since[R.step]) R.took[R.step] = now - R.since[R.step];
+    for (let k = Math.max(0, R.step + 1); k < i; k++) R.took[k] = 0; // bước được bỏ qua (máy đã có sẵn)
+    R.step = i; R.since[i] = now; R.act = '';
+  }
+  // dòng log → câu ngắn "đang làm gì" dưới bước hiện tại
+  function activity(line) {
+    const t = String(line).replace(/^\s*(WARNING|CẢNH BÁO|Canh bao):\s*/i, '').trim();
+    if (!t || /^[-=*#]+$|^\[\d\/7\]|^(Found|This application|Microsoft is not|Successfully verified)/i.test(t) || t.length < 4) return '';
+    return t.length > 90 ? t.slice(0, 88) + '…' : t;
+  }
+  const fmtDur = (ms) => { const s = Math.round(ms / 1000); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+  function timingText() {
+    return steps().map((s, i) => `${s.label}: ${R.took[i] != null ? fmtDur(R.took[i]) : R.since[i] ? fmtDur(Date.now() - R.since[i]) + '…' : '-'}`).join('\n') + (R.t0 ? `\nTổng: ${fmtDur(Date.now() - R.t0)}` : '');
+  }
 
   const IS_LINUX = /linux/i.test(navigator.platform || navigator.userAgent);
   const steps = () => STEPS.filter((s) => (!s.only || s.only === R.mode) && (!s.linux || IS_LINUX));
 
   function onEvent(e) {
     if (e.type !== 'simi-update') return;
-    if (e.ev === 'start') { R.running = true; R.result = null; R.log = ''; if (e.mode) R.mode = e.mode; R.step = Math.max(R.step, steps().findIndex((s) => s.id !== 'key')); }
-    else if (e.ev === 'line') {
-      R.log = (R.log + e.line + '\n').slice(-12000);
+    if (e.ev === 'start') {
+      R.running = true; R.result = null; R.log = ''; R.marked = false; R.act = ''; R.t0 = Date.now();
+      if (e.mode) R.mode = e.mode;
+      if (R.step < 0) { R.since = {}; R.took = {}; }
+      goStep(steps().findIndex((s) => s.id !== 'key'));
+    } else if (e.ev === 'line') {
       const list = steps();
-      for (let i = list.length - 1; i > R.step; i--) if (list[i].re && list[i].re.test(e.line)) { R.step = i; break; }
-    } else if (e.ev === 'done') { R.running = false; R.result = { ok: e.ok, error: e.error || '' }; if (e.ok) R.step = steps().length; }
+      const m = MARK.exec(e.line);
+      if (m) { R.marked = true; const i = list.findIndex((s) => s.id === m[1]); if (i >= 0) goStep(i); }
+      else {
+        R.log = (R.log + `[${fmtDur(Date.now() - (R.t0 || Date.now()))}] ` + e.line + '\n').slice(-12000);
+        if (!R.marked) for (let i = list.length - 1; i > R.step; i--) if (list[i].re && list[i].re.test(e.line)) { goStep(i); break; }
+        const a = activity(e.line); if (a) R.act = a;
+      }
+    } else if (e.ev === 'done') {
+      R.running = false; R.result = { ok: e.ok, error: e.error || '' };
+      if (R.step >= 0 && R.since[R.step] && R.took[R.step] == null) R.took[R.step] = Date.now() - R.since[R.step];
+      if (e.ok) R.step = steps().length;
+    }
     if (R.paint) R.paint();
   }
 
@@ -96,7 +130,12 @@
         el('div', { class: 'ss-bar' + (R.result ? (R.result.ok ? ' ok' : ' bad') : '') }, el('i', { style: `width:${pct}%` })),
         el('ol', { class: 'ss-steps' }, ...list.map((s, i) => {
           const state = done || i < R.step ? 'done' : i === R.step ? (R.result && !R.result.ok ? 'fail' : 'now') : 'todo';
-          return el('li', { class: 'ss-step ' + state }, el('span', { class: 'ss-dot' }, state === 'done' ? '✓' : state === 'fail' ? '!' : state === 'now' ? el('span', { class: 'spin' }) : String(i + 1)), el('span', { text: s.label }));
+          const took = R.took[i];
+          const time = state === 'done' && took > 1500 ? fmtDur(took) : state === 'now' && R.running && R.since[i] ? fmtDur(Date.now() - R.since[i]) : '';
+          return el('li', { class: 'ss-step ' + state },
+            el('span', { class: 'ss-dot' }, state === 'done' ? '✓' : state === 'fail' ? '!' : state === 'now' ? el('span', { class: 'spin' }) : String(i + 1)),
+            el('span', { class: 'ss-lbl' }, el('span', { text: s.label }), state === 'now' && R.running && R.act ? el('small', { class: 'ss-act', text: R.act }) : null),
+            time ? el('span', { class: 'ss-time', text: time }) : null);
         })),
         R.running ? el('p', { class: 'ss-hint', text: IS_LINUX ? '⏳ Thường mất 2–5 phút. Nếu Ubuntu hỏi mật khẩu, nhập mật khẩu đăng nhập máy (chỉ hỏi 1 lần để cài phần còn thiếu).' : '⏳ Thường mất 2–5 phút. Bạn cứ làm việc khác – đóng bảng này app vẫn cài tiếp. Nếu Windows hỏi quyền, chọn "Yes".' }) : null,
         R.running ? el('p', { class: 'ss-safe', text: '🛡️ Bộ cài chính thức của SIMI, tải trực tiếp từ ai.simi.vn.' }) : null].filter(Boolean));
@@ -106,13 +145,13 @@
       if (!R.result) return null;
       if (R.result.ok) {
         return el('div', { class: 'ss-done' }, el('div', { class: 'ss-big', text: '🎉' }), el('b', { text: R.mode === 'update' ? 'Đã cập nhật SIMI AI xong!' : 'Xong! SIMI AI đã sẵn sàng' }),
-          el('small', { text: 'Skill, công cụ và model mới đã được nạp vào app.' }),
+          el('small', { text: 'Skill, công cụ và model mới đã được nạp vào app.' + (R.t0 ? ` (mất ${fmtDur(Object.values(R.took).reduce((a, b) => a + (b || 0), 0) || Date.now() - R.t0)})` : '') }),
           el('div', { class: 'ss-row' }, el('button', { class: 'btn primary', onclick: () => { U.closeModal(); window.VPChat && window.VPChat.setView('chat'); } }, '💬 Bắt đầu chat'), el('button', { class: 'btn', onclick: U.closeModal }, 'Đóng')));
       }
       return el('div', { class: 'ss-fail' }, el('b', { text: '⚠️ Chưa cài xong' }), el('span', { text: friendly(R.result.error + '\n' + R.log) }),
         el('div', { class: 'ss-row' },
           el('button', { class: 'btn primary', onclick: () => { R.result = null; R.step = -1; if (R.mode === 'update') { window.vp.simi.update(); } paint(); } }, '🔄 Thử lại'),
-          el('button', { class: 'btn', onclick: async () => { try { await navigator.clipboard.writeText(`SIMI ${R.mode}: ${R.result.error}\n\n${R.log.slice(-6000)}`); U.toast('Đã sao chép – dán gửi IT nhé'); } catch { U.toast('Không sao chép được', true); } } }, '📋 Sao chép chi tiết gửi IT')));
+          el('button', { class: 'btn', onclick: async () => { try { await navigator.clipboard.writeText(`SIMI ${R.mode}: ${R.result.error}\n\nThời gian từng bước:\n${timingText()}\n\n${R.log.slice(-6000)}`); U.toast('Đã sao chép – dán gửi IT nhé'); } catch { U.toast('Không sao chép được', true); } } }, '📋 Sao chép chi tiết gửi IT')));
     };
 
     const paint = () => {
@@ -127,6 +166,8 @@
       const ss = body.querySelector('.ss-key'); if (ss && !st.checking && !started) setTimeout(() => ss.focus(), 0);
     };
     R.paint = paint;
+    // đồng hồ chạy từng giây cho bước đang làm (để thấy app vẫn đang cài, không bị treo)
+    const tick = setInterval(() => { if (!body.isConnected) { clearInterval(tick); return; } if (R.running) paint(); }, 1000);
     U.openModal(R.mode === 'update' ? '🔄 Cập nhật SIMI AI' : '🚀 Cài đặt SIMI AI', body, [], 'ss-sheet');
     paint();
     if (!st.status) window.vp.simi.status().then((s) => { st.status = s; if (!R.running && !R.result) paint(); }).catch(() => {});
@@ -134,5 +175,5 @@
     if (R.mode === 'update' && !R.running && !R.result) { R.step = 0; paint(); window.vp.simi.update().then((r) => { if (!R.result) onEvent({ type: 'simi-update', ev: 'done', ok: !!r.ok, error: r.error || '' }); }).catch((e) => onEvent({ type: 'simi-update', ev: 'done', ok: false, error: U.cleanErr(e) })); }
   }
 
-  window.VPSimiSetup = { open, onEvent, state: R };
+  window.VPSimiSetup = { open, onEvent, state: R, timingText };
 })();

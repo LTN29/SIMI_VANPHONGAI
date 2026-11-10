@@ -389,7 +389,8 @@ function cleanInstallerLine(raw) {
 function runInstaller(gateway, onLine, { mode = 'update', key = '' } = {}) {
   const { spawn } = require('child_process');
   const { cmd, args, fakeNode } = updateCommand(gateway, mode);
-  const env = { ...process.env, NO_COLOR: '1', TERM: 'dumb', CODEX_NON_INTERACTIVE: '1', ...(fakeNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}) };
+  // LTN_FROM_APP: bộ cài in mốc từng bước cho app, cài plugin Codex Desktop chạy nền (không bắt người dùng chờ)
+  const env = { ...process.env, NO_COLOR: '1', TERM: 'dumb', CODEX_NON_INTERACTIVE: '1', LTN_FROM_APP: '1', ...(fakeNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}) };
   if (key) { env.LTN_TEAM_API_KEY = String(key).trim(); delete env.NINEROUTER_KEY; }
   return new Promise((resolve) => {
     let child;
