@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('vp', {
   testAgent: (agent) => ipcRenderer.invoke('agent:test', agent),
   checkAccounts: () => ipcRenderer.invoke('accounts:check'),
   listModels: (source, refresh) => ipcRenderer.invoke('models:list', source, refresh),
+  modelCatalog: (source) => ipcRenderer.invoke('models:catalog', source),
+  setModelPrefs: (source, prefs) => ipcRenderer.invoke('models:prefs', source, prefs),
   openTerminal: (key) => ipcRenderer.invoke('terminal:open', key),
   listResults: () => ipcRenderer.invoke('results:list'),
   readFile: (p) => ipcRenderer.invoke('file:read', p),

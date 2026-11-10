@@ -448,6 +448,17 @@ code, .cmd { font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace
 .acc-info { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; font-weight: 700; }
 .acc-models { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
 .acc-models small { color: var(--dim); font-size: 11.5px; margin-right: 2px; font-weight: 700; }
+.mpf { display: flex; flex-direction: column; gap: 8px; }
+.mpf-h { font-size: 11.5px; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-top: 8px; }
+.mpf-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; }
+.mpf-row { display: grid; grid-template-columns: auto 1fr; column-gap: 9px; align-items: center; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--input); cursor: pointer; min-width: 0; }
+.mpf-row.on { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accentSoft) 70%, var(--input)); }
+.mpf-row small { grid-column: 2; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mpf-name { display: flex; flex-direction: column; min-width: 0; }
+.mpf-name b { font-size: 13px; }
+.mpf-name code { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mpf-addrow { display: flex; gap: 8px; margin-top: 8px; }
+.mpf-add { flex: 1; min-width: 0; background: var(--input); border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 11px; font: inherit; color: var(--text); }
 .mtag { font-size: 11px; padding: 1px 8px; border-radius: 7px; background: var(--panel3); border: 1px solid var(--line); font-weight: 800; }
 .acc-btns { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: auto; }
 .acc-msg { display: none; font-size: 12px; gap: 7px; align-items: flex-start; padding: 7px 10px; border-radius: 12px; background: var(--input); border: 1.5px solid var(--line); color: var(--muted); font-weight: 600; }

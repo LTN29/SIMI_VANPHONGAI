@@ -135,24 +135,78 @@ async function checkAll(cfg, secrets) {
 }
 
 // ---------- danh sách model ----------
+// Claude Code nhận cả tên đầy đủ (đúng 1 phiên bản) lẫn tên tắt (luôn trỏ bản mới nhất của dòng đó).
+// Cần bản khác (bản cũ, bản mới ra) → chọn "✏️ Nhập tên model khác…" trong ô chọn model và gõ tên đầy đủ.
 const CLAUDE_MODELS = [
   { id: '', label: 'Mặc định của tài khoản', note: 'Claude Code tự chọn' },
-  { id: 'opus', label: 'Opus', note: 'mạnh nhất cho việc khó, suy luận sâu' },
-  { id: 'sonnet', label: 'Sonnet', note: 'cân bằng – hợp hầu hết công việc' },
-  { id: 'haiku', label: 'Haiku', note: 'nhanh, tiết kiệm lượt dùng' },
-  { id: 'fable', label: 'Fable', note: 'mạnh nhất (nếu gói của bạn có)' },
-  { id: 'best', label: 'Best', note: 'tự chọn model mạnh nhất bạn được dùng' },
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', note: 'mạnh cho việc khó, suy luận sâu, viết code' },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', note: 'cân bằng – hợp hầu hết công việc' },
+  { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', note: 'nhanh, tiết kiệm lượt dùng' },
+  { id: 'claude-fable-5-1', label: 'Claude Fable 5.1', note: 'mạnh nhất (nếu gói của bạn có)' },
+  { id: 'opus', label: 'Opus · luôn bản mới nhất', note: 'tên tắt: tự lên đời khi có bản Opus mới' },
+  { id: 'sonnet', label: 'Sonnet · luôn bản mới nhất', note: 'tên tắt: tự lên đời khi có bản Sonnet mới' },
+  { id: 'haiku', label: 'Haiku · luôn bản mới nhất', note: 'tên tắt: tự lên đời khi có bản Haiku mới' },
+  { id: 'fable', label: 'Fable · luôn bản mới nhất', note: 'tên tắt (nếu gói của bạn có)' },
+  { id: 'opusplan', label: 'Opus lập kế hoạch + Sonnet thực hiện', note: 'tiết kiệm lượt dùng cho việc nhiều bước' },
+  { id: 'best', label: 'Best · mạnh nhất bạn được dùng', note: 'Claude Code tự chọn model mạnh nhất của gói' },
 ];
 
-function pickModelsFromJson(j) {
+// bản cũ hơn (tài khoản có thể vẫn dùng được, cũng có thể nhà cung cấp đã ngừng) – chỉ hiện trong bảng "Chọn model hiển thị"
+const OLDER_MODELS = {
+  'claude-cli': [
+    { id: 'claude-opus-4-1', label: 'Claude Opus 4.1' },
+    { id: 'claude-opus-4-0', label: 'Claude Opus 4' },
+    { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+    { id: 'claude-sonnet-4-0', label: 'Claude Sonnet 4' },
+    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+    { id: 'claude-3-7-sonnet-latest', label: 'Claude Sonnet 3.7' },
+    { id: 'claude-3-5-haiku-latest', label: 'Claude Haiku 3.5' },
+  ],
+  'gemini-cli': [
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+  ],
+};
+
+function pickModelsFromJson(j, { all = false } = {}) {
   const arr = Array.isArray(j) ? j : (j.models || j.data || j.items || []);
   return arr
-    .filter((m) => m && (m.slug || m.id || m.model) && m.visibility !== 'hide' && m.hidden !== true)
+    .filter((m) => m && (m.slug || m.id || m.model) && (all || (m.visibility !== 'hide' && m.hidden !== true)))
     .sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999))
-    .map((m) => ({ id: m.slug || m.id || m.model, label: m.display_name || m.displayName || m.name || m.slug || m.id, note: m.description ? String(m.description).slice(0, 70) : '' }));
+    .map((m) => ({ id: m.slug || m.id || m.model, label: m.display_name || m.displayName || m.name || m.slug || m.id, note: m.description ? String(m.description).slice(0, 70) : '', ...(m.visibility === 'hide' || m.hidden === true ? { hidden: true } : {}) }));
 }
 
 const httpGet = (url, headers, name) => fetchJson(url, { headers, name });
+
+// mọi model chọn được cho 1 tài khoản (bảng "Chọn model hiển thị"): danh sách đang hiện + model ẩn của tài khoản
+// (Codex) + các bản cũ đã biết. Model có trong danh sách mặc định đánh dấu standard.
+async function catalogModels(source, cfg, getSecret) {
+  const base = await listModels(source, cfg, getSecret).catch((e) => ({ models: [], error: e.message }));
+  const out = (base.models || []).filter((m) => m.id).map((m) => ({ ...m, standard: true }));
+  if (source === 'codex-cli') {
+    try {
+      const viaSimi = !!simi.readCodexConfig().provider;
+      const { out: raw } = await runProcess(cfg.cli.codex.cmd || 'codex', ['debug', 'models', ...(viaSimi ? ['-c', 'model_provider="openai"'] : [])], '', { timeoutMs: 30000 });
+      const starts = [raw.indexOf('{'), raw.indexOf('[')].filter((i) => i >= 0);
+      for (const m of pickModelsFromJson(JSON.parse(raw.slice(Math.min(...starts))), { all: true })) {
+        if (!(viaSimi && m.id.includes('/')) && !out.some((x) => x.id === m.id)) out.push({ ...m, older: true, note: m.note || 'model ẩn của tài khoản (thường là bản cũ)' });
+      }
+    } catch { /* chỉ có danh sách đang hiện */ }
+  }
+  for (const m of OLDER_MODELS[source] || []) if (!out.some((x) => x.id === m.id)) out.push({ ...m, older: true, note: 'bản cũ – nhà cung cấp có thể đã ngừng cho tài khoản của bạn' });
+  return { models: out, live: !!base.live, error: base.error || '' };
+}
+
+// cài đặt "model hiển thị" của người dùng cho 1 tài khoản: { show: [id theo thứ tự], labels: { id: tên } }
+// → danh sách trong ô chọn model (tab Chat, gán model cho nhân viên) chỉ gồm các model đó, giữ dòng "Mặc định"
+function applyModelPrefs(source, v, cfg) {
+  const p = cfg.modelPrefs && cfg.modelPrefs[source];
+  if (!p || !Array.isArray(p.show)) return v;
+  const known = new Map((v.models || []).map((m) => [m.id, m]));
+  const def = (v.models || []).filter((m) => !m.id);
+  const picked = p.show.filter((id) => typeof id === 'string' && id).map((id) => known.get(id) || { id, label: (p.labels && p.labels[id]) || id, note: 'model bạn chọn thêm' });
+  return { ...v, models: [...def, ...picked], prefs: true };
+}
 
 async function listModels(source, cfg, getSecret) {
   refreshPath();
@@ -206,4 +260,4 @@ async function listModels(source, cfg, getSecret) {
   return { models: [], live: false };
 }
 
-module.exports = { checkAll, listModels, openTerminal };
+module.exports = { checkAll, listModels, catalogModels, applyModelPrefs, openTerminal };

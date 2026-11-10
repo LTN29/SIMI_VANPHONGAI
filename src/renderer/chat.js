@@ -70,7 +70,12 @@
           el('button', { class: 'cb skill', title: 'Gọi skill', onclick: () => { const ta = $('#chInput'); if (!/(^|\s)\/\S*$/.test(ta.value)) ta.value += (ta.value && !/\s$/.test(ta.value) ? ' ' : '') + '/'; ta.focus(); onInput(); } }, '/ Skill'),
           el('button', { class: 'cb web', id: 'chBrowserBtn', title: 'Mở / đóng trình duyệt cạnh khung chat (AI thao tác ngay tại đây)', onclick: () => window.VPBrowser && window.VPBrowser.toggle() }, '🌐', el('span', { class: 'cbl', text: ' Trình duyệt' })),
           el('button', { class: 'cb tools', id: 'chTools', title: 'Computer Use, trình duyệt SIMI, plugin', onclick: (e) => openTools(e.currentTarget) }, '🧰', el('span', { class: 'cbl', text: ' Công cụ' })),
-          el('select', { class: 'cs', id: 'chModel', title: 'Model (theo Combo của bạn)', onchange: (e) => setThreadOpt('model', e.target.value) }),
+          el('select', { class: 'cs', id: 'chModel', title: 'Model (theo Combo của bạn)', onchange: (e) => {
+            const v = e.target.value;
+            if (v.startsWith(CUSTOM)) return askCustomModel(v.slice(CUSTOM.length));
+            if (v.startsWith(PREFS)) { renderBar(); return U.openModelPrefs(v.slice(PREFS.length), groupName(v.slice(PREFS.length))); }
+            return setThreadOpt('model', v);
+          } }),
           el('select', { class: 'cs small', id: 'chEffort', title: 'Mức suy nghĩ', onchange: (e) => setThreadOpt('effort', e.target.value) }, EFFORTS.map(([v, l]) => el('option', { value: v, text: '🧠 ' + l }))),
           el('select', { class: 'cs small', id: 'chSandbox', title: 'Quyền trên máy', onchange: (e) => setThreadOpt('sandbox', e.target.value) }, SANDBOX.map(([v, l, d]) => el('option', { value: v, text: l, title: d }))),
           el('span', { class: 'grow' }),
@@ -150,10 +155,43 @@
     const lists = await Promise.all(ACC_SOURCES.filter(([, , on]) => on(acc)).map(async ([src, name]) => {
       const r = await window.vp.listModels(src, force).catch(() => null);
       // ChatGPT: "mặc định" đã có ở dòng đầu khi máy không dùng SIMI → bỏ dòng trùng
-      return ((r && r.models) || []).filter((m) => m.id || src !== 'codex-cli')
+      const list = ((r && r.models) || []).filter((m) => m.id || src !== 'codex-cli')
         .map((m) => ({ id: `${src}::${m.id}`, label: m.id ? m.label : `${name} – mặc định`, note: m.note || '', group: name, source: src }));
+      list.push({ id: `${CUSTOM}${src}`, label: '✏️ Nhập tên model khác…', note: 'gõ đúng tên model (vd claude-opus-4-1)', group: name, source: src, pick: true });
+      list.push({ id: `${PREFS}${src}`, label: '⚙️ Chọn model hiển thị (kể cả bản cũ)…', note: 'tick model muốn hiện trong danh sách này', group: name, source: src, pick: true });
+      return list;
     }));
     return lists.flat();
+  }
+  const CUSTOM = '__custom__::';
+  const PREFS = '__prefs__::';
+  const groupName = (src) => (ACC_SOURCES.find((x) => x[0] === src) || [])[1] || src;
+  const CUSTOM_HINT = { 'claude-cli': 'claude-opus-4-1, claude-sonnet-4-5…', 'codex-cli': 'gpt-5.6-sol…', 'antigravity-cli': 'gemini-3.8-flash-high…', 'gemini-cli': 'gemini-2.5-pro…', ollama: 'llama3.3:70b…', 'anthropic-api': 'claude-opus-5-5…', 'openai-api': 'gpt-5.6-sol…', 'gemini-api': 'gemini-3-pro…' };
+  // chọn "✏️ Nhập tên model khác…" → hộp nhập tên model, lưu lại để lần sau chọn thẳng
+  function askCustomModel(src) {
+    const { el } = U;
+    const group = (C.models.find((m) => m.source === src) || {}).group || src;
+    const inp = el('input', { class: 'ss-key', placeholder: 'Tên model, vd ' + (CUSTOM_HINT[src] || ''), spellcheck: 'false', autocomplete: 'off' });
+    const err = el('p', { class: 'ss-err', hidden: true });
+    const save = async () => {
+      const id = inp.value.trim();
+      if (!/^[\w.:/@[\]+-]{2,120}$/.test(id)) { err.textContent = '⚠️ Tên model chỉ gồm chữ, số và - . : / [ ] (vd claude-opus-4-1)'; err.hidden = false; return; }
+      // thêm vào "model hiển thị" của tài khoản (lưu trong cấu hình app → hiện ở cả tab Chat lẫn gán model cho nhân viên)
+      const shown = C.models.filter((m) => m.source === src && !m.pick && m.id !== `${src}::`).map((m) => m.id.slice(src.length + 2));
+      const prev = (U.S.cfg.modelPrefs || {})[src];
+      try {
+        const saved = await window.vp.setModelPrefs(src, { show: [...new Set([...shown, id])], labels: (prev && prev.labels) || {} });
+        U.S.cfg.modelPrefs = { ...(U.S.cfg.modelPrefs || {}), [src]: saved };
+      } catch (e) { err.textContent = '⚠️ ' + U.cleanErr(e); err.hidden = false; return; }
+      U.closeModal();
+      await loadMeta(true); // nạp danh sách mới trước, kẻo model vừa thêm bị coi là "không còn dùng được"
+      await setThreadOpt('model', `${src}::${id}`);
+    };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+    U.openModal(`✏️ Model khác của ${group}`, el('div', { class: 'ss-form' },
+      el('p', { class: 'dim', text: 'Gõ đúng tên model mà tài khoản của bạn dùng được (bản cũ hoặc bản mới ra chưa có trong danh sách). Gõ sai tên thì lúc gửi tin AI sẽ báo lỗi – chọn lại model khác là được.' }),
+      inp, err), [el('button', { class: 'btn', text: 'Huỷ', onclick: () => { U.closeModal(); renderBar(); } }), el('button', { class: 'btn primary', text: 'Dùng model này', onclick: save })]);
+    setTimeout(() => inp.focus(), 50);
   }
 
   function renderStatus() {

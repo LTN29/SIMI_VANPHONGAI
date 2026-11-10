@@ -224,6 +224,7 @@ function registerIpc() {
     if (!cfg || !Array.isArray(cfg.agents) || cfg.agents.length === 0) throw new Error('Cấu hình không hợp lệ');
     if (cfg.agents.filter((a) => a.isManager).length !== 1) throw new Error('Phải có đúng 1 Trưởng phòng');
     const prev = store.getConfig().verified; if (prev) cfg.verified = prev; else delete cfg.verified; // kết quả Thử kết nối do app (main) giữ
+    const mp = store.getConfig().modelPrefs; if (mp) cfg.modelPrefs = mp; else delete cfg.modelPrefs; // model hiển thị: lưu riêng qua models:prefs
     store.saveConfig(cfg);
     return { ok: true, outputDir: outputDir() };
   });
@@ -275,12 +276,28 @@ function registerIpc() {
   });
   handle('models:list', async (source, refresh) => {
     const hit = modelCache.get(source);
-    if (hit && !refresh && Date.now() - hit.t < MODEL_CACHE_MS) return hit.v;
+    // model hiển thị người dùng tự chọn (Kết nối tài khoản AI → ⚙️ Chọn model) áp sau cache → đổi là thấy ngay
+    if (hit && !refresh && Date.now() - hit.t < MODEL_CACHE_MS) return accounts.applyModelPrefs(source, hit.v, store.getConfig());
     let v;
     try { v = await accounts.listModels(source, store.getConfig(), (n) => store.getSecret(n)); }
     catch (e) { v = { models: [], live: false, error: e.message.split('\n')[0] }; }
     if (v.models.length) modelCache.set(source, { t: Date.now(), v });
-    return v;
+    return accounts.applyModelPrefs(source, v, store.getConfig());
+  });
+  handle('models:catalog', (source) => accounts.catalogModels(source, store.getConfig(), (n) => store.getSecret(n)));
+  handle('models:prefs', (source, prefs) => {
+    if (source === 'simi' || !/^[a-z-]{2,30}$/.test(String(source))) throw new Error('Tài khoản không hợp lệ');
+    const cfg = store.getConfig();
+    const all = { ...(cfg.modelPrefs || {}) };
+    if (!prefs) delete all[source];
+    else {
+      const ok = (id) => typeof id === 'string' && /^[\w.:/@[\]+-]{1,120}$/.test(id);
+      const show = [...new Set((prefs.show || []).filter(ok))].slice(0, 40);
+      const labels = Object.fromEntries(Object.entries(prefs.labels || {}).filter(([k, v]) => ok(k) && show.includes(k) && typeof v === 'string').map(([k, v]) => [k, v.slice(0, 80)]));
+      all[source] = { show, labels };
+    }
+    cfg.modelPrefs = all; store.saveConfig(cfg);
+    return all[source] || null;
   });
   handle('terminal:open', (key) => accounts.openTerminal(key));
   handle('agent:test', async (agent) => {

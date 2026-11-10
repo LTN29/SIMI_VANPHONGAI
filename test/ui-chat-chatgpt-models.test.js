@@ -44,10 +44,31 @@ esac
   const groups = await win.evaluate(() => [...document.querySelectorAll('#chModel optgroup')].map((g) => g.label));
   check(['codex-cli::gpt-5.6-sol', 'codex-cli::gpt-5.6-terra', 'codex-cli::gpt-5.6-luna'].every((v) => opts.includes(v)), 'có model của tài khoản ChatGPT');
   check(['claude-cli::opus', 'claude-cli::sonnet', 'claude-cli::haiku'].every((v) => opts.includes(v)), 'có model của tài khoản Claude');
+  check(['claude-cli::claude-opus-5-5', 'claude-cli::claude-sonnet-5-5', 'claude-cli::claude-haiku-5-5', 'claude-cli::claude-fable-5-1'].every((v) => opts.includes(v)), 'Claude có đúng từng phiên bản (Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1)');
   check(groups.join() === 'ChatGPT,Claude', 'model xếp theo nhóm tài khoản (' + groups.join(', ') + ')');
   check(!opts.some((v) => /cx\/gpt-6\.1-sol/.test(v)), 'không còn model SIMI cũ sót trên máy');
   check((await win.inputValue('#chModel')) === '', 'model SIMI đang chọn → tự về Mặc định');
   check(/Tài khoản riêng/.test(await win.textContent('#chStatus')), 'ô trạng thái ghi đang dùng tài khoản riêng');
+  // tự nhập model khác (bản cũ / bản mới ra) → lưu lại, lần sau chọn thẳng
+  await win.selectOption('#chModel', '__custom__::claude-cli');
+  await win.waitForSelector('#modal .ss-key');
+  await win.fill('#modal .ss-key', 'claude-opus-4-1');
+  await win.press('#modal .ss-key', 'Enter');
+  await win.waitForFunction(() => document.querySelector('#chModel').value === 'claude-cli::claude-opus-4-1', null, { timeout: 5000 });
+  check(true, 'tự nhập tên model khác (claude-opus-4-1) → chọn được ngay');
+  // ⚙️ Chọn model hiển thị: tick bản cũ, bỏ model không dùng → danh sách chỉ còn model đã chọn (lưu trong cấu hình app)
+  await win.selectOption('#chModel', '__prefs__::claude-cli');
+  await win.waitForSelector('.mpf-row');
+  const prefsText = await win.textContent('.mpf');
+  check(/Bản cũ/.test(prefsText) && /claude-sonnet-4-5/.test(prefsText) && /claude-opus-4-1/.test(prefsText), 'bảng chọn model có cả bản cũ (Sonnet 4.5…) và model tự thêm');
+  await shot('02-prefs');
+  await win.click('.mpf-row:has(code:text-is("claude-sonnet-4-5")) input');
+  await win.click('.mpf-row:has(code:text-is("best")) input');
+  await win.click('#modalFoot .btn.primary:has-text("Lưu")');
+  await win.waitForFunction(() => [...document.querySelectorAll('#chModel option')].some((o) => o.value === 'claude-cli::claude-sonnet-4-5'), null, { timeout: 15000 });
+  const after = await win.evaluate(() => [...document.querySelectorAll('#chModel option')].map((o) => o.value));
+  check(!after.includes('claude-cli::best') && after.includes('claude-cli::claude-opus-4-1') && after.includes('claude-cli::claude-opus-5-5'), 'lưu xong: có bản cũ vừa tick, bỏ model đã bỏ tick, giữ model tự thêm');
+  await win.selectOption('#chModel', 'claude-cli::opus');
   // chat bằng Claude: chạy Claude Code của tài khoản, nhận đúng câu trả lời
   await win.selectOption('#chModel', 'claude-cli::sonnet');
   await win.fill('#chInput', 'Xin chào, bạn là ai?');

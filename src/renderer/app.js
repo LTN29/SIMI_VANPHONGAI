@@ -782,6 +782,61 @@
     } catch (e) { toast(cleanErr(e), true); return false; }
   }
 
+  // ---------------- CHỌN MODEL HIỂN THỊ CHO 1 TÀI KHOẢN ----------------
+  // tick model muốn thấy trong ô chọn model (tab Chat, gán model cho nhân viên) – gồm bản mới, bản cũ, model ẩn,
+  // và tự gõ tên model khác; "Về mặc định" = danh sách app tự lấy. Lưu trong cấu hình của app trên máy.
+  const MODEL_ID = /^[\w.:/@[\]+-]{2,120}$/;
+  async function openModelPrefs(src, name, { back } = {}) {
+    const done = () => { closeModal(); if (back) back(); };
+    const body = el('div', { class: 'mpf' }, el('p', { class: 'dim', text: 'Đang lấy danh sách model của tài khoản…' }));
+    const save = el('button', { class: 'btn primary', text: 'Lưu', disabled: true });
+    const reset = el('button', { class: 'btn', text: 'Về mặc định', disabled: true });
+    openModal(`⚙️ Model hiển thị – ${name}`, body, [reset, el('span', { class: 'grow' }), el('button', { class: 'btn', text: 'Huỷ', onclick: done }), save], 'wide');
+    const [cat, cur] = await Promise.all([window.vp.modelCatalog(src).catch((e) => ({ models: [], error: cleanErr(e) })), window.vp.listModels(src).catch(() => ({ models: [] }))]);
+    const prefs = (S.cfg.modelPrefs || {})[src];
+    const rows = (cat.models || []).map((m) => ({ ...m }));
+    for (const m of cur.models || []) if (m.id && !rows.some((r) => r.id === m.id)) rows.push({ ...m, custom: true }); // model đã tự thêm trước đây
+    const on = new Set(prefs ? prefs.show : (cur.models || []).filter((m) => m.id).map((m) => m.id));
+    const order = prefs ? prefs.show : [];
+    const draw = () => {
+      const item = (m) => el('label', { class: 'mpf-row' + (on.has(m.id) ? ' on' : '') },
+        el('input', { type: 'checkbox', checked: on.has(m.id), onchange: (e) => { if (e.target.checked) on.add(m.id); else on.delete(m.id); draw(); } }),
+        el('span', { class: 'mpf-name' }, el('b', { text: m.label || m.id }), el('code', { text: m.id })),
+        m.note ? el('small', { class: 'dim', text: m.note }) : null);
+      const sect = (title, list) => (list.length ? [el('div', { class: 'mpf-h', text: title }), el('div', { class: 'mpf-list' }, list.map(item))] : []);
+      const add = el('input', { class: 'mpf-add', placeholder: 'Gõ tên model khác (vd claude-opus-4-1) rồi bấm Thêm', spellcheck: 'false' });
+      const addErr = el('small', { class: 'bad', hidden: true });
+      const doAdd = () => {
+        const id = add.value.trim();
+        if (!MODEL_ID.test(id)) { addErr.textContent = 'Tên model chỉ gồm chữ, số và - . : / [ ]'; addErr.hidden = false; return; }
+        if (!rows.some((r) => r.id === id)) rows.push({ id, label: id, note: 'model bạn tự thêm', custom: true });
+        on.add(id); draw();
+      };
+      add.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
+      body.replaceChildren(...[
+        el('p', { class: 'dim', text: `Tick model muốn hiện trong ô chọn model (tab Chat và gán model cho nhân viên). Đang chọn ${on.size} model. Bản cũ có thể đã bị ${name} ngừng – chọn rồi bấm "Thử" ở tab Chat để biết còn dùng được không.` }),
+        cat.error ? el('p', { class: 'bad', text: '⚠ ' + cat.error }) : null,
+        ...sect('Bản đang có', rows.filter((m) => m.standard)),
+        ...sect('Bản cũ / model ẩn', rows.filter((m) => m.older)),
+        ...sect('Bạn tự thêm', rows.filter((m) => m.custom)),
+        el('div', { class: 'mpf-addrow' }, add, el('button', { class: 'btn small', text: '➕ Thêm', onclick: doAdd })), addErr].filter(Boolean));
+      save.disabled = false; reset.disabled = !prefs;
+    };
+    draw();
+    reset.onclick = async () => { await window.vp.setModelPrefs(src, null); if (S.cfg.modelPrefs) delete S.cfg.modelPrefs[src]; toast('Đã về danh sách model mặc định'); afterPrefs(); done(); };
+    save.onclick = async () => {
+      // giữ thứ tự cũ cho model đã chọn trước, model mới chọn xếp theo thứ tự trong bảng
+      const show = [...order.filter((id) => on.has(id)), ...rows.map((r) => r.id).filter((id) => on.has(id) && !order.includes(id))];
+      const labels = Object.fromEntries(rows.filter((r) => on.has(r.id) && r.label && r.label !== r.id).map((r) => [r.id, r.label]));
+      try {
+        const saved = await window.vp.setModelPrefs(src, { show, labels });
+        S.cfg.modelPrefs = { ...(S.cfg.modelPrefs || {}), [src]: saved };
+        toast(`💾 Đã lưu ${show.length} model cho ${name}`); afterPrefs(); done();
+      } catch (e) { toast(cleanErr(e), true); }
+    };
+  }
+  function afterPrefs() { if (window.VPChat) window.VPChat.refresh(); }
+
   // ---------------- KẾT NỐI TÀI KHOẢN ----------------
   const PROVIDERS = [
     { key: 'claude', src: 'claude-cli', name: 'Claude', sub: 'Tài khoản Claude Pro / Max · qua Claude Code', brand: 'claude', login: 'claude-login', install: 'claude-install' },
@@ -867,12 +922,13 @@
         if (!r.ok && p.key === 'gemini' && /Antigravity từ 18\/6\/2026/.test(r.text)) { pill.className = 'pill off'; pill.textContent = 'Google ngừng hỗ trợ tài khoản cá nhân'; if (S.acc?.gemini) { S.acc.gemini.loggedIn = false; S.acc.gemini.ineligible = true; } updateBanner(); renderRoster(); }
       });
       btns.append(test);
+      if (st.loggedIn === true || connected(p.src)) btns.append(el('button', { class: 'btn small', title: 'Chọn model hiện trong danh sách (kể cả bản cũ, tự thêm tên model)', onclick: () => openModelPrefs(p.src, p.name, { back: openAccounts }) }, '⚙️ Chọn model'));
       if (connected(p.src)) btns.append(el('button', { class: 'linkbtn small', text: 'Dùng cho cả phòng', onclick: () => applyPreset(p.src) }));
     }
     const models = el('div', { class: 'acc-models' });
     if (st && (st.loggedIn === true || (st.installed && p.key === 'antigravity'))) {
       window.vp.listModels(p.src).then((r) => {
-        const list = (r.models || []).filter((m) => m.id).slice(0, 8);
+        const list = (r.models || []).filter((m) => m.id && !/ · /.test(m.label)).slice(0, 8); // bỏ tên tắt "· luôn bản mới nhất" cho gọn
         if (list.length) models.replaceChildren(el('small', { text: r.live ? 'Model của tài khoản:' : 'Model dùng được:' }), ...list.map((m) => el('span', { class: 'mtag', title: m.note || '', text: m.label })));
         else if (r.error) models.replaceChildren(el('small', { class: 'bad', text: r.error }));
       });
@@ -1259,7 +1315,7 @@
     window.addEventListener('focus', () => { if (!S.accLoading && Date.now() - (S.accAt || 0) > 20000) { S.accAt = Date.now(); refreshAccounts(); } });
     if (!store.get('vp.welcomed', 0)) setTimeout(openWelcome, 400);
     // tiện ích dùng chung cho tab Chat (chat.js)
-    window.VP = { el, $, icon, toast, avatar, store, S, sfx, cleanErr, agentById, connected, openAccounts, refreshAccounts, openModal, closeModal };
+    window.VP = { el, $, icon, toast, avatar, store, S, sfx, cleanErr, agentById, connected, openAccounts, refreshAccounts, openModal, closeModal, openModelPrefs };
     if (window.VPUpdate) window.VPUpdate.init(window.VP).catch((e) => console.warn('cập nhật', e));
     if (window.VPChat) window.VPChat.init(window.VP).then(() => { if (window.VPBrowser) window.VPBrowser.init(window.VP); }).then(() => { if (window.VPAdmin) window.VPAdmin.init(window.VP); }).then(() => window.VPLobby && window.VPLobby.init(window.VP)).catch((e) => console.warn('chat/sảnh', e));
   }
