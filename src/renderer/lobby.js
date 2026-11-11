@@ -31,7 +31,7 @@
     accent: ['#e1262d', '#0a78f0', '#f5c518', '#2fc1a5', '#4a3592', '#ffffff', '#1a1a1a', '#ff8a3d'],
   };
   const EMOTES = ['👋', '❤️', '😂', '🎉', '☕', '👍', '🙌'];
-  const DANCES = [['groove', '🕺', 'Lắc lư'], ['disco', '🪩', 'Disco'], ['robot', '🤖', 'Robot'], ['shuffle', '👟', 'Shuffle'], ['spin', '🌀', 'Xoay vòng'], ['hands', '🙌', 'Giơ tay']];
+  const DANCES = [['groove', '🕺', 'Lắc lư'], ['disco', '🪩', 'Disco'], ['robot', '🤖', 'Robot'], ['shuffle', '👟', 'Shuffle'], ['spin', '🌀', 'Xoay vòng'], ['hands', '🙌', 'Giơ tay'], ['twerk', '🍑', 'Lắc mông']];
   // trạng thái tự đặt: [mã, biểu tượng, tên, không làm phiền?]
   const MY_STATUS = [['focus', '🎯', 'Đang tập trung', true], ['meeting', '📞', 'Đang họp', true], ['busy', '⛔', 'Bận, nhắn sau', true],
     ['lunch', '🍜', 'Đi ăn', false], ['break', '☕', 'Nghỉ giải lao', false], ['remote', '🏠', 'Làm việc từ xa', false], ['out', '🚗', 'Ra ngoài', false]];
@@ -66,6 +66,8 @@
           el('span', { class: 'grow' }),
           el('button', { class: 'btn small lb-npcbtn', id: 'lbNpcBtn', title: 'Đi tới quầy lễ tân hỏi Trợ lý SIMI: hướng dẫn từng bước, mẹo dùng AI (phím F1)', onclick: () => goNpc() }, el('span', { class: 'q', 'aria-hidden': 'true', text: '?' }), 'Trợ lý SIMI'),
           el('div', { class: 'lb-bar' },
+            el('button', { class: 'btn small lb-ic', id: 'lbMusicBtn', 'aria-label': 'Nhạc nền', onclick: () => toggleMusic() }, '🎵'),
+            el('button', { class: 'btn small lb-ic', id: 'lbMuteAllBtn', 'aria-label': 'Tắt mọi tiếng', onclick: () => toggleMuteAll() }, '🔊'),
             el('button', { class: 'btn small lb-ic lb-phone', id: 'lbPhone', title: 'Dùng Sảnh trên điện thoại: quét mã QR để đăng nhập', 'aria-label': 'Điện thoại', onclick: openPhone }, '📱'),
             el('button', { class: 'btn small lb-ic', id: 'lbOverview', title: 'Nhìn toàn bộ quán', 'aria-label': 'Toàn cảnh', onclick: () => L.scene && L.scene.overview() }, '🗺'),
             el('button', { class: 'btn small lb-ic', id: 'lbFocus', title: 'Về chỗ mình – camera đi theo nhân vật của bạn', 'aria-label': 'Về chỗ mình', onclick: () => L.scene && L.scene.focusSelf() }, '🎯')),
@@ -251,7 +253,7 @@
     const loadDevs = async () => {
       let r; try { r = await window.vp.lobby.mobileSessions(); } catch { return; } // Gateway cũ: bỏ qua
       const list = r.data || [];
-      if (known && list.some((d) => !known.has(d.id))) { U.toast('📱 Điện thoại đã đăng nhập Sảnh'); U.sfx && U.sfx('pop'); }
+      if (known && list.some((d) => !known.has(d.id))) { U.toast('📱 Điện thoại đã đăng nhập Sảnh'); sfx('pop'); }
       known = new Set(list.map((d) => d.id));
       const sig = JSON.stringify(list); if (sig === devs.dataset.sig) return; devs.dataset.sig = sig; // không đổi thì không vẽ lại
       devs.replaceChildren(...(list.length ? [el('b', { text: `Điện thoại đã đăng nhập (${list.length})` }),
@@ -322,7 +324,7 @@
     const random = () => {
       const P = (a) => a[Math.floor(Math.random() * a.length)];
       draft = { hairStyle: P(HAIR), hair: P(PALETTE.hair), skin: P(PALETTE.skin), shirt: P(PALETTE.shirt), pants: P(PALETTE.pants), shoes: P(PALETTE.shoes), accessory: P(ACC)[0], accent: P(PALETTE.accent), outfit: Math.random() < 0.15 ? 'kasaya' : 'none' };
-      refresh(); preview && preview.wave(); U.sfx && U.sfx('sparkle');
+      refresh(); preview && preview.wave(); sfx('sparkle');
     };
     const body = el('div', { class: 'wardrobe' },
       el('div', { class: 'wd-left' }, previewBox, name, el('button', { class: 'btn small', onclick: random }, '🎲 Ngẫu nhiên')),
@@ -333,7 +335,7 @@
       if (L.me) {
         try { const r = await window.vp.lobby.profile({ avatar: draft }); L.me = { ...L.me, ...r.me }; } catch (e) { U.toast(U.cleanErr(e), true); return; }
       }
-      U.closeModal(); renderMe(); syncScene(); U.toast('✨ Đã thay đồ!'); U.sfx && U.sfx('sparkle');
+      U.closeModal(); renderMe(); syncScene(); U.toast('✨ Đã thay đồ!'); sfx('sparkle');
       if (L.me) sendEmote('🎉');
     });
     U.openModal('👕 Tủ đồ của bạn', body, [el('div', { class: 'left' }, el('small', { class: 'dim', text: 'Mọi người trong Sảnh sẽ thấy nhân vật này.' })), save], 'wide');
@@ -943,7 +945,7 @@
     const n = el('div', { class: 'lb-announce', role: 'alert' }, el('span', { class: 'ic', text: '📢' }), el('div', { class: 'grow' }, el('b', { text: 'Thông báo từ admin' }), el('div', { text: d.text }), el('small', { text: d.by })),
       el('button', { class: 'lc-ic', 'aria-label': 'Đóng', onclick: () => n.remove() }, '✕'));
     document.body.append(n);
-    U.sfx && U.sfx('pop');
+    sfx('pop');
     setTimeout(() => n.classList.add('out'), 12000); setTimeout(() => n.remove(), 12600);
   }
 
@@ -952,7 +954,7 @@
   function sendEmote(e) {
     if (!L.me) return;
     if (L.scene) L.scene.emote(L.me.id, e);
-    U.sfx && U.sfx(e === '🕺' ? 'dance' : 'pop');
+    sfx(e === '🕺' ? 'dance' : 'pop');
     if (L.status.state === 'online') window.vp.lobby.presence({ emote: e });
   }
 
@@ -963,7 +965,7 @@
       const r = await window.vp.lobby.interact({ to, kind, style: kind === 'dance' ? L.myDance || L.lastDance || 'groove' : undefined });
       const m = L.members.get(to);
       if (r.asked) toast(`💌 Đã mời ${m ? m.name : ''} ${KIND_TEXT[kind]} – chờ trả lời…`);
-      U.sfx && U.sfx('pop');
+      sfx('pop');
     } catch (e) { U.toast(U.cleanErr(e), true); }
   }
 
@@ -974,7 +976,7 @@
     const go = (action) => {
       pop.remove();
       if (!shared) { if (L.scene) { L.scene.cat.pet(); L.scene.fx(null, '💕'); } return; }
-      window.vp.lobby.cat({ action }).then(() => U.sfx && U.sfx('pop')).catch((e) => U.toast(U.cleanErr(e), true));
+      window.vp.lobby.cat({ action }).then(() => sfx('pop')).catch((e) => U.toast(U.cleanErr(e), true));
     };
     const c = L.catState;
     const cat = L.scene && L.scene.cat;
@@ -1004,7 +1006,7 @@
     if (!show) return;
     box.replaceChildren(
       el('small', { text: L.onFloor && !L.danceOpen ? '🪩 Bạn đang ở sàn nhảy – chọn một điệu:' : 'Chọn điệu nhảy – cả quán nhảy cùng nhịp' }),
-      ...DANCES.map(([k, ic, t]) => el('button', { class: 'dz' + (L.myDance === k ? ' on' : ''), onclick: () => { L.lastDance = k; L.danceOpen = false; if (L.scene) L.scene.danceSelf(k); U.sfx && U.sfx('dance'); } }, el('span', { text: ic }), t)),
+      ...DANCES.map(([k, ic, t]) => el('button', { class: 'dz' + (L.myDance === k ? ' on' : ''), onclick: () => { L.lastDance = k; L.danceOpen = false; if (L.scene) L.scene.danceSelf(k); sfx('dance'); } }, el('span', { text: ic }), t)),
       L.myDance ? el('button', { class: 'dz stop', onclick: () => { L.danceOpen = false; if (L.scene) L.scene.danceSelf(null); } }, '⏹ Dừng') : '',
       el('button', { class: 'lc-ic', title: 'Đóng', 'aria-label': 'Đóng', onclick: () => { L.danceOpen = false; if (L.onFloor) L.floorDismissed = true; renderDancePick(); } }, '✕'));
   }
@@ -1022,7 +1024,7 @@
       el('button', { class: 'btn mini primary', onclick: () => answer(true) }, d.kind === 'dance' ? '💃 Nhảy!' : '🤗 Đồng ý'),
       el('i', { class: 'bar', style: `animation-duration:${Math.max(3, (d.exp - Date.now()) / 1000)}s` }));
     box.classList.remove('hidden');
-    U.sfx && U.sfx('pop');
+    sfx('pop');
     L.inviteT = setTimeout(() => box.classList.add('hidden'), Math.max(3000, d.exp - Date.now()));
   }
 
@@ -1045,13 +1047,22 @@
   // ================= màn chiếu YouTube =================
   const C = L.cin;
   const serverNow = () => Date.now() + C.skew;
-  const muted = () => ls.get('vp.cinemaMute', false) === true;
+  // tắt tiếng: tự tắt riêng màn chiếu · tự tắt mọi tiếng của Sảnh (máy mình) · admin tắt tiếng cả Sảnh (không ai nghe)
+  const cinemaMuteSelf = () => ls.get('vp.cinemaMute', false) === true;
+  const soundOff = () => !!(C.state && C.state.soundOff);
+  const allOff = () => ls.get('vp.lbMuteAll', false) === true || soundOff();
+  const muted = () => cinemaMuteSelf() || allOff();
   const fmt = (s) => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
   const thumb = (id) => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
 
   function onCinema(st) {
     const prev = C.state && C.state.current;
+    const wasOff = soundOff();
     C.state = st; C.skew = (st.now || Date.now()) - Date.now();
+    if (wasOff !== soundOff()) {
+      applyCinemaMute(); renderSound();
+      if (L.shown) toast(soundOff() ? '🔇 Admin đã tắt tiếng cả Sảnh' : '🔊 Admin đã bật lại tiếng trong Sảnh');
+    }
     const cur = st.current;
     if (cur && (!prev || prev.id !== cur.id)) {
       C.reported = '';
@@ -1098,11 +1109,115 @@
     }
   });
 
+  function applyCinemaMute() {
+    if (C.api && C.frame) { cmd(muted() ? 'mute' : 'unMute'); C.key = (C.state && C.state.current ? C.state.current.id : '') + '|' + muted(); } else syncCinemaFrame();
+  }
   function toggleMute() {
-    ls.set('vp.cinemaMute', !muted());
-    if (C.api) { cmd(muted() ? 'mute' : 'unMute'); C.key = (C.state && C.state.current ? C.state.current.id : '') + '|' + muted(); } else syncCinemaFrame();
+    if (allOff()) { U.toast(soundOff() ? '🔇 Admin đang tắt tiếng cả Sảnh' : '🔇 Bạn đang tắt mọi tiếng – bấm 🔇 trên thanh trên để bật lại'); return; }
+    ls.set('vp.cinemaMute', !cinemaMuteSelf());
+    applyCinemaMute();
     renderCinema();
   }
+
+  // ================= nhạc nền SIMI Radio + tắt tiếng =================
+  // Nhạc tự tạo bằng Web Audio (không tải file, không bản quyền), 120 BPM khớp đúng nhịp đồng hồ chung của Sảnh
+  // → mọi máy nghe cùng một đoạn nhạc, cùng lúc, và nhân vật nhảy đúng nhịp nhạc.
+  const RADIO = { ctx: null, master: null, noise: null, next: 0, timer: null, on: false };
+  const musicOn = () => ls.get('vp.lbMusic', true) !== false;
+  const musicVol = () => Math.min(1, Math.max(0.05, Number(ls.get('vp.lbMusicVol', 0.45)) || 0.45));
+  const beatNow = () => (L.scene ? L.scene.beat() : (Date.now() + (L.skew || 0)) / 500);
+  const PROG = [[57, 60, 64, 67], [53, 57, 60, 64], [48, 52, 55, 59], [55, 59, 62, 65]]; // Am7 · Fmaj7 · Cmaj7 · G7
+  const SCALE = [69, 72, 74, 76, 79, 81, 84];
+  const hz = (n) => 440 * 2 ** ((n - 69) / 12);
+  const rand = (n) => { let x = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b); x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35); x ^= x >>> 16; return (x >>> 0) / 4294967296; };
+  function radioWanted() {
+    const cur = C.state && C.state.current;
+    // màn chiếu đang phát có tiếng → nhường cho video
+    return L.shown && musicOn() && !allOff() && !document.hidden && !(cur && !muted() && serverNow() >= cur.startedAt);
+  }
+  function radioInit() {
+    if (RADIO.ctx) return true;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const master = ctx.createGain(); master.gain.value = 0; master.connect(ctx.destination);
+      const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate); const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      Object.assign(RADIO, { ctx, master, noise: buf });
+      return true;
+    } catch { return false; }
+  }
+  function voice(t, { f, f1, type = 'sine', vol, dur, attack = 0.005, filter, q }) {
+    const { ctx, master } = RADIO;
+    const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, t);
+    if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + dur * 0.6);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+    let node = o;
+    if (filter) { const bq = ctx.createBiquadFilter(); bq.type = 'lowpass'; bq.frequency.value = filter; bq.Q.value = q || 0.7; o.connect(bq); node = bq; }
+    node.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
+  }
+  function hit(t, { type, f, vol, dur }) {
+    const { ctx, master } = RADIO;
+    const src = ctx.createBufferSource(); src.buffer = RADIO.noise;
+    const bq = ctx.createBiquadFilter(); bq.type = type; bq.frequency.value = f;
+    const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+    src.connect(bq); bq.connect(g); g.connect(master); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.02);
+  }
+  // 1 bước = nửa nhịp; 8 bước = 1 ô nhịp; mỗi hợp âm 2 ô nhịp
+  function step(n, t) {
+    const pos = ((n % 8) + 8) % 8; const bar = Math.floor(n / 8);
+    const chord = PROG[((Math.floor(bar / 2) % 4) + 4) % 4];
+    if (pos % 2 === 0) voice(t, { f: 130, f1: 42, vol: 0.55, dur: 0.28 });                          // trống đá 4 phách
+    if (pos === 2 || pos === 6) hit(t, { type: 'bandpass', f: 1700, vol: 0.16, dur: 0.14 });        // vỗ tay phách 2, 4
+    if (pos % 2 === 1) hit(t, { type: 'highpass', f: 7500, vol: 0.07, dur: 0.05 });                // hi-hat nghịch phách
+    if (pos === 0 || pos === 3 || pos === 5) voice(t, { f: hz(chord[0] - 12), type: 'triangle', vol: 0.22, dur: 0.32, filter: 500 });
+    if (pos === 0 && bar % 2 === 0) for (const nt of chord) voice(t, { f: hz(nt), type: 'sawtooth', vol: 0.028, dur: 3.9, attack: 0.35, filter: 900 });
+    const r = rand(n);
+    if (pos % 2 === 0 && r < 0.4) voice(t, { f: hz(SCALE[Math.floor(rand(n * 7 + 3) * SCALE.length)]), type: 'triangle', vol: 0.07, dur: 0.3, filter: 2400 });
+  }
+  function radioTick() {
+    const want = radioWanted();
+    if (want && !radioInit()) return;
+    if (!RADIO.ctx) return;
+    const { ctx, master } = RADIO;
+    if (want !== RADIO.on) {
+      RADIO.on = want;
+      master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.setTargetAtTime(want ? 0.5 * musicVol() : 0, ctx.currentTime, 0.4);
+      if (want) { ctx.resume().catch(() => {}); RADIO.next = Math.ceil(beatNow() * 2); }
+    }
+    if (!want) { if (ctx.state === 'running' && master.gain.value < 0.001) ctx.suspend().catch(() => {}); return; }
+    if (ctx.state !== 'running') { ctx.resume().catch(() => {}); return; }
+    const b = beatNow(); const t0 = ctx.currentTime;
+    if (RADIO.next < b * 2 - 1 || RADIO.next > b * 2 + 4) RADIO.next = Math.ceil(b * 2); // ngủ máy / lệch giờ → bắt nhịp lại
+    while (RADIO.next / 2 < b + 0.75) {
+      const at = t0 + (RADIO.next / 2 - b) * 0.5;
+      if (at >= t0 - 0.01) step(RADIO.next, Math.max(t0, at));
+      RADIO.next += 1;
+    }
+  }
+  RADIO.timer = setInterval(radioTick, 120);
+  window.__lobbyRadio = RADIO; // cho test xem nhạc đang phát hay không
+  document.addEventListener('pointerdown', () => { if (RADIO.on && RADIO.ctx && RADIO.ctx.state !== 'running') RADIO.ctx.resume().catch(() => {}); }, true);
+
+  function toggleMusic() {
+    if (allOff()) { U.toast(soundOff() ? '🔇 Admin đang tắt tiếng cả Sảnh' : '🔇 Bạn đang tắt mọi tiếng – bấm 🔇 để bật lại'); return; }
+    ls.set('vp.lbMusic', !musicOn()); renderSound(); radioTick();
+    toast(musicOn() ? '🎵 Đã bật nhạc nền SIMI Radio' : '🎵 Đã tắt nhạc nền');
+  }
+  function toggleMuteAll() {
+    if (soundOff()) { U.toast('🔇 Admin đang tắt tiếng cả Sảnh – chỉ admin bật lại được'); return; }
+    ls.set('vp.lbMuteAll', !(ls.get('vp.lbMuteAll', false) === true));
+    applyCinemaMute(); renderSound(); renderCinema(); radioTick();
+  }
+  function setSoundAll(off) {
+    window.vp.lobby.adminDo({ action: 'cinema', op: off ? 'mute' : 'unmute' }).catch((e) => U.toast(U.cleanErr(e), true));
+  }
+  function renderSound() {
+    const m = $('#lbMusicBtn'); const a = $('#lbMuteAllBtn');
+    if (m) { m.textContent = '🎵'; m.classList.toggle('off', !musicOn() || allOff()); m.title = soundOff() ? 'Admin đang tắt tiếng cả Sảnh' : musicOn() ? 'Nhạc nền SIMI Radio: đang bật – bấm để tắt' : 'Nhạc nền SIMI Radio: đang tắt – bấm để bật'; m.setAttribute('aria-pressed', String(musicOn() && !allOff())); }
+    if (a) { a.textContent = allOff() ? '🔇' : '🔊'; a.classList.toggle('off', allOff()); a.title = soundOff() ? 'Admin đang tắt tiếng cả Sảnh' : allOff() ? 'Đang tắt mọi tiếng (nhạc, màn chiếu, hiệu ứng) – bấm để bật lại' : 'Tắt mọi tiếng trong Sảnh (nhạc, màn chiếu, hiệu ứng)'; a.setAttribute('aria-pressed', String(allOff())); }
+  }
+  const sfx = (n) => { if (!allOff() && U.sfx) U.sfx(n); };
 
   function toggleCinema(force) {
     C.open = typeof force === 'boolean' ? force : !C.open;
@@ -1138,6 +1253,7 @@
     const box = $('#lbCine'); if (!box || !C.open) return;
     const head = el('div', { class: 'lc-h' }, el('b', { text: '🎬 Màn chiếu SIMI' }), el('span', { class: 'grow' }),
       el('button', { class: 'lc-ic', title: muted() ? 'Bật tiếng' : 'Tắt tiếng', 'aria-label': muted() ? 'Bật tiếng' : 'Tắt tiếng', onclick: toggleMute }, muted() ? '🔇' : '🔊'),
+      L.admin ? el('button', { class: 'btn mini' + (soundOff() ? ' primary' : ''), title: soundOff() ? 'Bật lại tiếng cho mọi người' : 'Tắt tiếng cả Sảnh: không ai nghe nhạc nền / màn chiếu', onclick: () => setSoundAll(!soundOff()) }, soundOff() ? '🔊 Bật tiếng cả Sảnh' : '🔇 Tắt tiếng cả Sảnh') : '',
       el('button', { class: 'lc-ic', title: 'Đưa camera ra trước màn chiếu', 'aria-label': 'Xem màn chiếu', onclick: () => L.scene && L.scene.viewScreen(C.open ? 190 : 0) }, '🎯'),
       el('button', { class: 'lc-ic', title: 'Đóng', 'aria-label': 'Đóng', onclick: () => toggleCinema(false) }, '✕'));
     let now;
@@ -1327,8 +1443,8 @@
       const tagged = !mine && L.me && (d.mentions || []).some((id) => id === L.me.id || id === 'all');
       if (list.length > 300) list.splice(0, list.length - 300);
       const quiet = isDnd();
-      if (L.shown && d.room === L.room) { if (L.loaded.has(d.room)) appendMsg(d); else renderMsgs(); if (tagged && !quiet) U.sfx && U.sfx('pop'); }
-      else if (!mine) { L.unread.set(d.room, (L.unread.get(d.room) || 0) + 1); if (tagged) L.tagged.add(d.room); if ((d.room.startsWith('dm:') || L.shown || tagged) && !quiet) U.sfx && U.sfx('pop'); }
+      if (L.shown && d.room === L.room) { if (L.loaded.has(d.room)) appendMsg(d); else renderMsgs(); if (tagged && !quiet) sfx('pop'); }
+      else if (!mine) { L.unread.set(d.room, (L.unread.get(d.room) || 0) + 1); if (tagged) L.tagged.add(d.room); if ((d.room.startsWith('dm:') || L.shown || tagged) && !quiet) sfx('pop'); }
       if (!mine && L.sideOff) { L.foldNew = (L.foldNew || 0) + 1; if (tagged || d.room.startsWith('dm:')) L.foldTag = true; paintFold(); }
       renderRooms(); renderPeople();
     }
@@ -1353,6 +1469,7 @@
     const poolOpen = window.VPPoolUI && window.VPPoolUI._state.view && !window.VPPoolUI._state.minimized;
     if (L.scene) L.scene.paused = !on || !!poolOpen;
     syncCinemaFrame(); // rời tab Sảnh → tắt video (không phát tiếng khi đang làm việc khác)
+    renderSound(); radioTick(); // rời tab Sảnh → nhạc nền tắt dần
     if (on) {
       ensureScene();
       if (L.status.state !== 'online') window.vp.lobby.kick().then(setStatus);

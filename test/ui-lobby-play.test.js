@@ -98,6 +98,18 @@ run(async () => {
     await win.waitForSelector('#lbDancePick:not(.hidden) .dz >> text=Robot');
     await win.click('#lbDancePick .dz >> text=Robot');
     check((await bao.waitFor('dance', (d) => d.id === 'u:sales-ngoc' && d.style === 'robot')).style === 'robot', 'chọn điệu Robot → mọi người thấy mình đổi điệu');
+    // điệu "Lắc mông": quay lưng, cúi người, hông lắc → mọi người thấy
+    await win.click('#lbDanceBtn');
+    await win.waitForSelector('#lbDancePick:not(.hidden) .dz >> text=Lắc mông');
+    await win.click('#lbDancePick .dz >> text=Lắc mông');
+    check((await bao.waitFor('dance', (d) => d.id === 'u:sales-ngoc' && d.style === 'twerk')).style === 'twerk', 'chọn điệu Lắc mông → mọi người thấy (Gateway nhận điệu mới)');
+    let tw = { turn: 0, lean: 0 };
+    for (let i = 0; i < 8 && !(Math.abs(tw.turn) > 2.4 && tw.lean > 0.25); i++) { // cứ 8 nhịp quay mặt lại "nháy" 1 nhịp → đo vài lần
+      await win.waitForTimeout(450);
+      tw = await win.evaluate(() => { const b = window.__lobby.self().person.body.rotation; return { turn: b.y, lean: b.x }; });
+    }
+    check(Math.abs(tw.turn) > 2.4 && tw.lean > 0.25, `nhân vật quay lưng + cúi người lắc mông (xoay ${tw.turn.toFixed(2)}, cúi ${tw.lean.toFixed(2)})`);
+    await shot('05b-twerk');
     await win.evaluate(() => window.__lobby.walkSelf(6, -2, true));
     await bao.waitFor('dance', (d) => d.id === 'u:sales-ngoc' && d.style === null);
     check(await win.evaluate(() => !window.__lobby.self().dance), 'đi chỗ khác là tự thôi nhảy');

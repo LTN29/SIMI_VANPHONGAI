@@ -33,7 +33,7 @@ async function startGatewayServer() {
   const port = 20300 + Math.floor(Math.random() * 500);
   const child = spawn(process.execPath, ['src/server.mjs'], {
     cwd: GW, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', TEAMS_FILE: path.join(dir, 'teams.json'), LTN_USERS_CONFIG_FILE: path.join(dir, 'users.json'), MEMORY_DIR: path.join(dir, 'memory'), LOBBY_DATA_DIR: path.join(dir, 'lobby'), UPSTREAM_BASE_URL: 'http://127.0.0.1:9', VANPHONG_RELEASE_DIR: path.join(dir, 'releases'), LOBBY_RELEASE_CHECK_MS: '300', LOBBY_CINEMA_LOOKUP: 'false', LOBBY_ROSTER_MS: '400' },
+    env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', TEAMS_FILE: path.join(dir, 'teams.json'), LTN_USERS_CONFIG_FILE: path.join(dir, 'users.json'), MEMORY_DIR: path.join(dir, 'memory'), LOBBY_DATA_DIR: path.join(dir, 'lobby'), UPSTREAM_BASE_URL: 'http://127.0.0.1:9', VANPHONG_RELEASE_DIR: path.join(dir, 'releases'), LOBBY_RELEASE_CHECK_MS: '300', LOBBY_CINEMA_LOOKUP: 'false', LOBBY_ROSTER_MS: '400', LOBBY_ADMINS: 'it-bao' },
   });
   await new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('Gateway không khởi động')), 15000);
@@ -195,7 +195,7 @@ run(async () => {
     const stools = await win.evaluate(() => [...window.__lobby.seats.keys()].filter((id) => /^b\d+$/.test(id)).length);
     check(stools === 4, 'quầy bar thu gọn còn 4 ghế cao');
     await win.evaluate(() => window.__lobby.sitSelf('k22'));
-    await win.waitForFunction(() => { const p = window.__lobby.self(); return p.sitting && p.seatKind === 'kneel' && p.seatTheme === 'thantai'; }, null, { timeout: 60000 });
+    await win.waitForFunction(() => { const p = window.__lobby.self(); return p.sitting && p.seatKind === 'kneel' && p.seatTheme === 'thantai'; }, null, { timeout: 150000 }); // quầy bar ở góc trái → đi bộ ~22 m sang bàn thờ
     await win.keyboard.press('Escape'); await win.evaluate(() => window.__lobby.lookAt('altar'));
     await win.waitForTimeout(1800); await shot('03c-altar');
     check(true, 'bấm bồ đoàn → đi tới quỳ khấn trước bàn thờ Thần Tài');
@@ -331,6 +331,37 @@ run(async () => {
     await win.click('.viewtabs button[data-v="lobby"]');
     await win.waitForSelector('.office3d-css iframe[src*="bbbbbbbbbbb"]', { state: 'attached', timeout: 10000 });
     check(true, 'quay lại tab Sảnh → chiếu tiếp đúng video');
+    // 🔊 âm thanh: video đang phát có tiếng → nhạc nền nhường; tắt mọi tiếng → video tắt tiếng + nhạc tắt; admin tắt tiếng cả Sảnh
+    const radio = () => win.evaluate(() => window.__lobbyRadio.on);
+    check(await radio() === false, 'màn chiếu đang phát có tiếng → nhạc nền SIMI Radio tự nhường');
+    // khung YouTube khác nguồn → đọc lệnh nó nhận qua frame của Playwright; hoặc khung được gắn lại với mute=1
+    const videoMuted = async () => {
+      const src = await win.locator('.office3d-css iframe').getAttribute('src').catch(() => '');
+      if (/[?&]mute=1/.test(src || '')) return true;
+      const fr = win.frames().find((f) => /youtube\.com\/embed\//.test(f.url()));
+      return !!fr && (await fr.evaluate(() => window.__cmds || []).catch(() => [])).includes('mute');
+    };
+    await win.click('#lbMuteAllBtn');
+    let vm = false;
+    for (let i = 0; i < 20 && !vm; i++) { await win.waitForTimeout(250); vm = await videoMuted(); }
+    check(vm && (await win.textContent('#lbMuteAllBtn')) === '🔇' && await radio() === false, 'bấm 🔊 → tắt mọi tiếng: video tắt tiếng, nhạc nền tắt');
+    await win.click('#lbMuteAllBtn');
+    await bao.post('admin', { action: 'cinema', op: 'clear' });
+    await bao.post('admin', { action: 'cinema', op: 'skip' });
+    await win.waitForFunction(() => !document.querySelector('.office3d-css iframe'), null, { timeout: 10000 });
+    await win.waitForFunction(() => window.__lobbyRadio.on === true, null, { timeout: 5000 }).catch(() => {});
+    const rs = await win.evaluate(() => ({ on: window.__lobbyRadio.on, gain: window.__lobbyRadio.master && window.__lobbyRadio.master.gain.value, state: window.__lobbyRadio.ctx && window.__lobbyRadio.ctx.state }));
+    check(rs.on === true, `màn chiếu trống → nhạc nền SIMI Radio phát (${rs.state})`);
+    await bao.post('admin', { action: 'cinema', op: 'mute' });
+    await win.waitForFunction(() => window.__lobbyRadio.on === false, null, { timeout: 5000 }).catch(() => {});
+    check(await radio() === false && (await win.textContent('#lbMuteAllBtn')) === '🔇', 'admin tắt tiếng cả Sảnh → máy mình tắt nhạc, nút hiện 🔇');
+    await win.click('#lbMusicBtn');
+    check(await radio() === false, 'admin đang tắt tiếng thì không tự bật nhạc lại được');
+    await bao.post('admin', { action: 'cinema', op: 'unmute' });
+    await win.waitForFunction(() => window.__lobbyRadio.on === true, null, { timeout: 5000 }).catch(() => {});
+    check(await radio() === true, 'admin bật lại → nhạc nền phát tiếp');
+    await win.click('#lbMusicBtn');
+    check(await radio() === false, 'bấm 🎵 → tắt nhạc nền của riêng mình');
     await win.locator('.lb-cine .lc-h .lc-ic[aria-label="Đóng"]').click();
 
     // admin đăng bản app mới lên Gateway → Sảnh báo ngay → app tự tải sẵn, hiện thẻ "Cập nhật ngay" (không đợi 1 giờ)

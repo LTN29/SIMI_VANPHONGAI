@@ -11,6 +11,9 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 
 export const BAR = { minX: -14, maxX: 26, minZ: -10, maxZ: 18, wallH: 3.6, inZ: 10 };
 // bàn bida (trục dài theo z): toạ độ tâm; người chơi đứng ở 2 đầu bàn
+// vị trí theo chiều ngang của quầy bar / màn chiếu trên tường sau (lobby3d dùng để đưa camera tới)
+export const BAR_X = -9.6;
+export const CINEMA_X = 3.0;
 export const POOL_TABLES = [{ x: 18.6, z: -4.4 }, { x: 23.0, z: -4.4 }];
 export const POOL_FELT = { w: 1.25, l: 2.5 };
 
@@ -189,8 +192,8 @@ export function buildBar(scene) {
   for (let x = BAR.minX + 0.6; x < BAR.maxX; x += 0.6) add(box(0.02, 0.83, 0.02), trimM, x, 0.545, BAR.minZ + 0.06, scene, flat); // bắt đầu trên gờ chân tường (0.12) – không chạm mặt gờ
   for (let z = BAR.minZ + 0.6; z < BAR.inZ - 0.2; z += 0.6) add(box(0.02, 0.83, 0.02), trimM, BAR.minX + 0.06, 0.545, z, scene, flat);
 
-  // ---------- quầy bar (dọc tường sau) – thu gọn còn 4,8 m ở giữa, nhường chỗ cho góc Thần Tài ----------
-  const cx1 = 0.6, cx2 = 5.4, cz = -8.1;
+  // ---------- quầy bar (dọc tường sau, bên trái – màn chiếu ở giữa tường) ----------
+  const cx1 = BAR_X - 2.4, cx2 = BAR_X + 2.4, cz = -8.1;
   const cmid = (cx1 + cx2) / 2;
   // mảng tường xanh đậm: mặt trước nhô hơn tấm ốp chân tường 5 mm (trùng mặt phẳng → 2 lớp tranh nhau hiện, chớp sọc khi xoay camera)
   add(box(cx2 - cx1 + 1.6, BAR.wallH - 0.02, 0.07), std('#1d2b4f', 0.9), cmid, BAR.wallH / 2, BAR.minZ + 0.02, scene, flat);
@@ -230,8 +233,8 @@ export function buildBar(scene) {
   add(new THREE.IcosahedronGeometry(0.13, 1), std('#5fb36f', 0.8, { flatShading: true }), cx1 + 0.5, 1.36, cz - 0.15, scene, flat);
   // bảng menu bên cạnh quầy
   const menu = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.38), new THREE.MeshStandardMaterial({ map: menuTex(), roughness: 0.9 }));
-  menu.position.set(cx1 - 1.6, 2.0, BAR.minZ + 0.05); scene.add(menu); // bên trái quầy (bên phải là góc Thần Tài)
-  add(box(1.24, 1.52, 0.05, 0.02), std('#8a5a3b', 0.5), cx1 - 1.6, 2.0, BAR.minZ + 0.02, scene, flat);
+  menu.position.set(cx2 + 2.2, 2.0, BAR.minZ + 0.05); scene.add(menu); // bên phải quầy, giữa quầy và màn chiếu
+  add(box(1.24, 1.52, 0.05, 0.02), std('#8a5a3b', 0.5), cx2 + 2.2, 2.0, BAR.minZ + 0.02, scene, flat);
 
   // ghế cao trước quầy (đệm xanh SIMI / san hô xen kẽ)
   const stoolLeg = std('#c2cad6', 0.25, { metalness: 0.7 });
@@ -256,7 +259,8 @@ export function buildBar(scene) {
   const sofaMs = [std('#8fc9b0', 0.85), std('#a99be0', 0.85), std('#8cc3f5', 0.85)];
   const cushMs = [std('#ffd34d', 0.8), std('#ff9a6b', 0.8), std('#ffffff', 0.8)];
   const rugTexs = [rugTex('#f3ead9', '#8fc9b0', 'rgba(143,201,176,.5)'), rugTex('#efe9f8', '#a99be0', 'rgba(169,155,224,.5)'), rugTex('#eaf3fc', '#8cc3f5', 'rgba(140,195,245,.5)')];
-  [[-10.2, -6], [-10.2, -1], [-10.2, 4]].forEach(([sx, sz], si) => {
+  // còn 2 bộ (bộ sát tường sau đã bỏ – chỗ đó giờ là quầy bar)
+  [[-10.2, -0.6], [-10.2, 4]].forEach(([sx, sz], si) => {
     const m = sofaMs[si];
     // sofa dài dựa tường trái, nhìn về +x
     const g = new THREE.Group(); g.position.set(sx - 2.6, 0, sz); scene.add(g);
@@ -408,9 +412,9 @@ export function buildBar(scene) {
   sign('brand/crenot.png', 1.8, 0.44, '#ffffff', BAR.minX + 0.05, 2.4, 6.0, Math.PI / 2);
   sign('brand/simi.png', 1.3, 0.39, '#0a78f0', BAR.minX + 0.05, 2.4, -0.8, Math.PI / 2);
 
-  // ---------- màn chiếu YouTube (tường sau, bên trái) ----------
+  // ---------- màn chiếu YouTube (giữa tường sau, ngay trên sàn nhảy) ----------
   // Khi đang chiếu: mặt "lỗ" trong suốt để khung YouTube (nằm sau canvas) lộ ra đúng chỗ – người đi ngang vẫn che được màn hình.
-  const CW = 4.8, CH = 2.7, cx = -9.6, cy = 1.95, cz0 = BAR.minZ + 0.17;
+  const CW = 4.8, CH = 2.7, cx = CINEMA_X, cy = 1.95, cz0 = BAR.minZ + 0.17;
   add(box(CW + 0.3, CH + 0.3, 0.08, 0.04), std('#16161c', 0.35), cx, cy, BAR.minZ + 0.12, scene, flat); // viền màn hình
   add(box(CW + 0.6, 0.08, 0.3, 0.03), std('#2b2b33', 0.4), cx, cy - CH / 2 - 0.22, BAR.minZ + 0.2, scene, flat); // gờ loa
   for (const dx of [-1, 1]) add(box(0.42, 1.0, 0.36, 0.05), std('#22222a', 0.5), cx + dx * (CW / 2 + 0.55), 0.5, BAR.minZ + 0.3); // 2 loa đứng

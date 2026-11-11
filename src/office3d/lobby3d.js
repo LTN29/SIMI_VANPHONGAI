@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { NavGrid } from './nav.js';
 import { Cat } from './cat.js';
 import { Person } from './person.js';
-import { BAR, buildBar, POOL_FELT, FORTUNE, IDEAS } from './bar.js';
+import { BAR, buildBar, POOL_FELT, FORTUNE, IDEAS, BAR_X, CINEMA_X } from './bar.js';
 import { mergeStatic } from './merge.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 
@@ -28,8 +28,8 @@ const NPC_LOOK = { id: 'npc', name: 'Trợ lý SIMI', shirt: '#0a5cc2', pants: '
 const OVERVIEW = { x: 6, z: 4, zoom: 0.31 };
 // các khu trong Sảnh (Trợ lý dẫn đi tham quan: camera bay tới, vòng sáng chỉ vào đúng chỗ)
 const PLACES = {
-  npc: { x: NPC.x, z: NPC.z, y: 1.1, zoom: 1.45 }, altar: { x: 11.8, z: -8.4, y: 1.2, zoom: 1.0 }, fortune: { x: 8.75, z: -9.2, y: 1.0, zoom: 1.15 }, bar: { x: 3, z: -7.6, y: 1.0, zoom: 0.95 }, dance: { x: -2, z: 4.5, y: 0.2, zoom: 1.05 },
-  cinema: { x: -9.6, z: -9.0, y: 1.9, zoom: 0.95 }, game: { x: 20.8, z: -4.4, y: 0.9, zoom: 0.95 }, zen: { x: 8.4, z: 2.2, y: 0.4, zoom: 0.92 }, garden: { x: 8, z: 14.2, y: 0.4, zoom: 0.62 },
+  npc: { x: NPC.x, z: NPC.z, y: 1.1, zoom: 1.45 }, altar: { x: 11.8, z: -8.4, y: 1.2, zoom: 1.0 }, fortune: { x: 8.75, z: -9.2, y: 1.0, zoom: 1.15 }, bar: { x: BAR_X, z: -7.6, y: 1.0, zoom: 0.95 }, dance: { x: -2, z: 4.5, y: 0.2, zoom: 1.05 },
+  cinema: { x: CINEMA_X, z: -9.0, y: 1.9, zoom: 0.95 }, game: { x: 20.8, z: -4.4, y: 0.9, zoom: 0.95 }, zen: { x: 8.4, z: 2.2, y: 0.4, zoom: 0.92 }, garden: { x: 8, z: 14.2, y: 0.4, zoom: 0.62 },
 };
 
 // hồ sơ nhân vật (từ Sảnh) → dữ liệu cho Person

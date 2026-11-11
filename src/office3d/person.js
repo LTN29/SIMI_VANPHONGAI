@@ -37,12 +37,12 @@ export class Person {
     this.body = new THREE.Group();
     this.root.add(this.body);
     this.joint = {};
-    this.pose = { hip: 0, foot: 0, legL: 0, legR: 0, legLz: 0, legRz: 0, armLx: 0, armRx: 0, armLz: 0.08, armRz: -0.08, headY: 0, headX: 0, lean: 0, lift: 0 };
+    this.pose = { hip: 0, foot: 0, legL: 0, legR: 0, legLz: 0, legRz: 0, armLx: 0, armRx: 0, armLz: 0.08, armRz: -0.08, headY: 0, headX: 0, lean: 0, lift: 0, turn: 0, wig: 0 };
     this.phase = Math.random() * 10;
     this.blinkAt = performance.now() / 1000 + 1 + Math.random() * 3;
     this.talkUntil = 0;
     this.action = null;      // 'stretch' | 'drink' | 'look' | 'place' | 'highfive' | 'hug' | 'cheers' | 'give' | …
-    this.dance = null;       // điệu nhảy liên tục: groove | disco | robot | shuffle | spin | hands
+    this.dance = null;       // điệu nhảy liên tục: groove | disco | robot | shuffle | spin | hands | twerk
     this.actionUntil = 0;
     this.build(agent);
   }
@@ -229,7 +229,7 @@ export class Person {
   // beat: nhịp chung (giây × số nhịp/giây, theo giờ Gateway) – ai nhảy cũng khớp nhịp với nhau
   animate(dt, t, { moving, speed, seated, typing, beat, meditate, kneel }) {
     const p = this.pose;
-    const T = { hip: 0, foot: 0, legL: 0, legR: 0, legLz: 0, legRz: 0, armLx: 0, armRx: 0, armLz: 0.1, armRz: -0.1, headY: 0, headX: 0, lean: 0, lift: 0 };
+    const T = { hip: 0, foot: 0, legL: 0, legR: 0, legLz: 0, legRz: 0, armLx: 0, armRx: 0, armLz: 0.1, armRz: -0.1, headY: 0, headX: 0, lean: 0, lift: 0, turn: 0, wig: 0 };
     if (this.action && t > this.actionUntil) this.action = null;
     if (moving) {
       this.phase += dt * (4 + speed * 3.2);
@@ -331,7 +331,9 @@ export class Person {
     for (const sh of this.shoes) sh.rotation.x = p.foot;
     J.armL.rotation.set(p.armLx, 0, p.armLz); J.armR.rotation.set(p.armRx, 0, p.armRz);
     J.head.rotation.set(p.headX, p.headY, 0);
-    this.body.rotation.x = p.lean;
+    // turn: quay lưng (lắc mông); wig: lắc hông sang 2 bên. Thứ tự YXZ: cúi người theo hướng đã quay
+    this.body.rotation.order = 'YXZ';
+    this.body.rotation.set(p.lean, p.turn, p.wig);
     // quỳ lạy: xoay thân quanh hông (0,42 m) thay vì quanh gót chân → cúi rạp mà hông không trượt
     const pv = p.hip * 0.42;
     this.body.position.set(0, p.lift + pv * (1 - Math.cos(p.lean)), -pv * Math.sin(p.lean));
@@ -346,7 +348,7 @@ export class Person {
     this.mouth.scale.set(talking ? 0.8 : 1, talking ? 1 + Math.abs(Math.sin(t * 17)) * 2.6 : 1, 1);
   }
 
-  // 6 điệu nhảy; b = số nhịp đã qua (chung cho cả Sảnh) → mọi người nhún cùng lúc
+  // 7 điệu nhảy; b = số nhịp đã qua (chung cho cả Sảnh) → mọi người nhún cùng lúc
   dancePose(T, b, seated) {
     const B = b * Math.PI; // nửa vòng mỗi nhịp
     const bounce = Math.abs(Math.sin(B));
@@ -376,6 +378,20 @@ export class Person {
         T.armLx = -0.15; T.armRx = -0.15; T.armLz = 1.35; T.armRz = -1.35; T.headX = -0.1;
         if (!seated) T.lift = bounce * 0.06;
         break;
+      case 'twerk': {
+        // lắc mông hài hước: quay lưng, chống tay lên gối, hông lắc nhanh 2 lần / nhịp, ngoái đầu nhìn lại;
+        // cứ 8 nhịp quay mặt lại 1 nhịp "nháy mắt" rồi quay lưng lắc tiếp
+        const peek = (Math.floor(b) % 8) === 7;
+        const w = Math.sin(B * 2);
+        if (seated) { T.armLx = -0.4; T.armRx = -0.4; T.headY = w * 0.3; T.wig = w * 0.08; break; }
+        T.turn = peek ? 0 : Math.PI;
+        T.lean = peek ? 0.05 : 0.42; T.wig = peek ? 0 : w * 0.2;
+        T.armLx = peek ? -2.6 : -0.55; T.armRx = peek ? -0.4 : -0.55; T.armLz = peek ? 0.5 : 0.32; T.armRz = peek ? -0.2 : -0.32;
+        T.legLz = 0.2; T.legRz = -0.2; T.legL = peek ? 0 : -0.25; T.legR = peek ? 0 : -0.25;
+        T.headY = peek ? 0 : 0.75 * (Math.sin(B / 2) > 0 ? 1 : -1); T.headX = peek ? -0.15 : -0.35;
+        T.lift = Math.abs(w) * 0.035;
+        break;
+      }
       case 'hands':
         T.armLx = -2.9 + Math.sin(B) * 0.25; T.armRx = -2.9 - Math.sin(B) * 0.25; T.armLz = 0.45 + Math.sin(B) * 0.2; T.armRz = -0.45 + Math.sin(B) * 0.2; T.headX = -0.22;
         if (!seated) T.lift = bounce * 0.13;
