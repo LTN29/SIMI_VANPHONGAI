@@ -40,9 +40,12 @@ function rpc(child, msg) {
 }
 
 run(async () => {
+  const XLSX = await require('../src/export').toXlsx('# Chiến dịch Tết\n\n| Kênh | Ngân sách |\n|---|---|\n| Facebook | 12500000 |\n| Shopee | 8000000 |\n');
   const srv = http.createServer((req, res) => {
     if (req.url === '/bao-gia.txt') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'content-disposition': 'attachment; filename="bao-gia.txt"' }); return res.end('Báo giá SIMI'); }
+    if (req.url === '/ke-hoach.xlsx') { res.writeHead(200, { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'content-disposition': "attachment; filename*=UTF-8''K%E1%BA%BF%20ho%E1%BA%A1ch%20T%E1%BA%BFt.xlsx" }); return res.end(XLSX); }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    if (req.url === '/rieng-tu.docx') return res.end('<!doctype html><title>Đăng nhập</title><h1>Sign in to your account</h1>');
     if (req.url === '/editor') return res.end(EDITOR);
     res.end(req.url === '/trang-2' ? '<!doctype html><meta charset="utf-8"><title>Trang 2</title><h1>Trang thứ hai</h1>' : PAGE);
   });
@@ -66,7 +69,18 @@ run(async () => {
   const init = await rpc(mcp, { id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
   check(init.result.serverInfo.name === 'vp_browser' && /đăng nhập/.test(init.result.instructions), 'MCP vp_browser khởi động, có hướng dẫn cho AI');
   const list = await rpc(mcp, { id: 2, method: 'tools/list' });
-  check(list.result.tools.map((t) => t.name).join() === 'browser_open,browser_snapshot,browser_act,browser_read,browser_screenshot,design_render,document_create,browser_js,browser_tabs', 'đủ 9 công cụ (7 trình duyệt + xuất thiết kế + tạo file)');
+  check(list.result.tools.map((t) => t.name).join() === 'browser_open,browser_snapshot,browser_act,browser_doc,browser_read,browser_screenshot,design_render,document_create,browser_js,browser_tabs', 'đủ 10 công cụ (8 trình duyệt + xuất thiết kế + tạo file)');
+
+  // 📑 link tài liệu (SharePoint / Google…): 1 lần gọi là mở trang cạnh chat + trả nội dung file, không bấm từng ô, không vào thư mục Tải xuống
+  const cdoc = await rpc(mcp, { id: 40, method: 'tools/call', params: { name: 'browser_doc', arguments: { url: base + 'ke-hoach.xlsx' } } });
+  const ctext = cdoc.result.content[0].text;
+  check(!cdoc.result.isError && /Kế hoạch Tết\.xlsx/.test(ctext) && /Facebook \| 12500000/.test(ctext) && /Shopee \| 8000000/.test(ctext), 'browser_doc: đọc Excel trên mạng, trả nội dung bảng ngay');
+  const cfile = (ctext.match(/Bản sao để đọc: (.+)/) || [])[1];
+  check(cfile && fs.existsSync(cfile) && cfile.includes('browser-docs'), 'bản sao nằm trong bộ nhớ đệm của app (không lẫn vào thư mục Tải xuống)');
+  const cbad = await rpc(mcp, { id: 41, method: 'tools/call', params: { name: 'browser_doc', arguments: { url: base + 'rieng-tu.docx' } } });
+  check(cbad.result.isError && /đăng nhập/.test(cbad.result.content[0].text), 'link cần đăng nhập → báo rõ, trang vẫn mở cạnh chat để người dùng đăng nhập');
+  const cno = await rpc(mcp, { id: 42, method: 'tools/call', params: { name: 'browser_doc', arguments: { url: base + 'trang-2' } } });
+  check(cno.result.isError && /browser_read/.test(cno.result.content[0].text), 'trang thường → nhắc dùng browser_read');
 
   // 📄 tạo file Word / Excel / PDF ngay trong app (máy không có Python vẫn được)
   const docDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vp-doc-out-'));

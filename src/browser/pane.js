@@ -587,6 +587,40 @@ class BrowserPane {
         const snap = args.snapshot === false ? '' : '\n\n' + await this.snapshot(Number(args.max_chars) || 8000);
         return [{ type: 'text', text: 'Đã làm:\n' + log.join('\n') + snap }];
       }
+      case 'browser_doc': {
+        // tài liệu trên SharePoint / OneDrive / Google Drive: mở trang cạnh khung chat cho người dùng thấy, đồng thời tải file
+        // bằng phiên đăng nhập của trình duyệt này và rút chữ ngay trong app – 1 lần gọi, không bấm từng ô, không cần Python
+        const cd = require('./cloud-doc');
+        const given = String(args.url || '').trim();
+        if (given && this.wc().getURL() !== normUrl(given)) { this.status('Mở ' + given.slice(0, 60)); this.wc().loadURL(normUrl(given)).catch(() => {}); await sleep(200); }
+        const page = given ? normUrl(given) : this.wc().getURL();
+        const d = cd.directUrl(page) || cd.directUrl(this.wc().getURL());
+        if (!d) throw new Error('Đây không phải link tài liệu (Excel / Word / PowerPoint / PDF trên SharePoint, OneDrive, Google Drive) – dùng browser_read để đọc chữ của trang.');
+        this.status('Đang đọc tài liệu…');
+        let res;
+        try { res = await this.session().fetch(d.url, { redirect: 'follow', signal: AbortSignal.timeout(90000) }); } catch (e) { throw new Error('Không tải được tài liệu: ' + (e.message || e)); }
+        const type = String(res.headers.get('content-type') || '').toLowerCase();
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (!res.ok || /text\/html/.test(type) || /^\s*<(!doctype|html)/i.test(buf.subarray(0, 200).toString('latin1'))) {
+          await this.waitLoad(this.wc(), 8000);
+          throw new Error(`Chưa đọc được tài liệu (${res.ok ? 'trang yêu cầu đăng nhập hoặc tài khoản chưa có quyền xem' : 'HTTP ' + res.status}). Trang đã mở ở trình duyệt cạnh khung chat – nhờ người dùng đăng nhập / xin quyền ở đó rồi gọi lại browser_doc; không tự bấm tải xuống, không dùng web_fetch.`);
+        }
+        const named = decodeURIComponent((String(res.headers.get('content-disposition') || '').match(/filename\*?=(?:UTF-8'')?"?([^";]+)/i) || [])[1] || '');
+        const ext = cd.sniffExt(buf, path.extname(named).toLowerCase() || d.ext);
+        const dir = path.join(app.getPath('userData'), 'browser-docs');
+        fs.mkdirSync(dir, { recursive: true });
+        for (const f of fs.readdirSync(dir)) { try { const fp = path.join(dir, f); if (Date.now() - fs.statSync(fp).mtimeMs > 7 * 86400000) fs.unlinkSync(fp); } catch { /* đang mở */ } }
+        const base = (path.basename(named, path.extname(named)) || 'tai-lieu').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+        const file = path.join(dir, `${base}${ext || '.bin'}`);
+        fs.writeFileSync(file, buf);
+        let text = null;
+        try { text = cd.extractText(buf, ext, Math.min(200000, Number(args.max_chars) || 30000)); } catch (e) { text = null; this.status('Không rút được chữ: ' + (e.message || e)); }
+        this.status('');
+        const head = `Tài liệu: ${base}${ext} (${Math.max(1, Math.round(buf.length / 1024))} KB) – đã mở ở trình duyệt cạnh khung chat.\nBản sao để đọc: ${file}`;
+        return [{ type: 'text', text: text === null
+          ? `${head}\nApp không tự rút chữ được loại file này – đọc bằng công cụ đọc tài liệu (simi_browser document_read) với đường dẫn trên.`
+          : `${head}\n(Cần tính toán / đọc phần bị cắt: dùng công cụ đọc tài liệu với đường dẫn trên.)\n\n${text}` }];
+      }
       case 'browser_read': await this.waitLoad(this.wc(), 8000); return [{ type: 'text', text: await this.run(`${READ}(${Math.min(200000, Number(args.max_chars) || 40000)})`) }];
       case 'browser_screenshot': {
         await this.waitLoad(this.wc(), 8000);
