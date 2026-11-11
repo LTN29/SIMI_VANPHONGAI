@@ -398,7 +398,7 @@
         onFloor: (on) => { L.onFloor = on; renderDancePick(); },
         onSlow: () => { if (!ls.get('vp.slowTold', false)) { ls.set('vp.slowTold', true); toast('⚡ Máy hơi chậm – Sảnh tự giảm hiệu ứng cho mượt'); } },
       });
-      if (U.S && U.S.cfg && U.S.cfg.lobbyLight) L.scene.setLight(true);
+      { const c = (U.S && U.S.cfg) || {}; const q = c.gfx || (c.lobbyLight ? 'light' : 'auto'); if (q !== 'auto') L.scene.setQuality(q); }
       L.scene.setSkew(L.skew || 0);
       if (L.catState) L.scene.setCat(L.catState);
       L.scene.setNpc(L.npc || null);
@@ -409,6 +409,19 @@
     } catch (e) { $('#lobby3d').replaceChildren(U.el('div', { class: 'lb-no3d', text: 'Máy không chạy được 3D – vẫn chat được ở cột bên phải.' })); }
   }
 
+  // nhiều đồng nghiệp đổi trạng thái liên tục (mỗi lượt AI làm việc) → gộp lại, vẽ lại danh sách + cảnh tối đa ~4 lần/giây
+  const later = { t: null, people: false, scene: false, rooms: false };
+  function soon(what) {
+    later[what] = true;
+    if (later.t) return;
+    later.t = setTimeout(() => {
+      later.t = null;
+      const { people, scene, rooms } = later; later.people = later.scene = later.rooms = false;
+      if (rooms) renderRooms();
+      if (people) renderPeople();
+      if (scene) syncScene();
+    }, 250);
+  }
   function syncScene() {
     if (!L.scene) return;
     const list = others().map((m) => ({ ...m }));
@@ -1418,13 +1431,13 @@
       const isNew = !L.members.get(d.id) || !L.members.get(d.id).online;
       upsert(d);
       if (isNew && d.online) { toast(`👋 ${d.name} vừa vào Sảnh`); }
-      renderPeople(); syncScene();
+      soon('people'); soon('scene');
       const r = roomOf(L.room); if (r && r.with === d.id) renderComposer();
       return;
     }
     if (ev === 'leave') {
       const m = L.members.get(d.id); if (m) { m.online = false; toast(`${m.name} đã rời Sảnh`); }
-      renderPeople(); syncScene(); return;
+      soon('people'); soon('scene'); return;
     }
     if (ev === 'move') { const m = L.members.get(d.id); if (m) m.pos = { x: d.x, z: d.z, seat: d.seat || null }; if (L.scene) L.scene.moveMember(d.id, d.x, d.z, d.seat); return; }
     if (ev === 'emote') { if (L.scene) L.scene.emote(d.id, d.emote); return; }
@@ -1491,6 +1504,7 @@
   }
 
   function setLight(on) { if (L.scene) L.scene.setLight(!!on); }
+  function setQuality(q) { if (L.scene) L.scene.setQuality(q); }
 
-  window.VPLobby = { init, visible, openDm, toggleCinema, openRoom, setLight, showSide, goNpc, _state: L };
+  window.VPLobby = { init, visible, openDm, toggleCinema, openRoom, setLight, setQuality, showSide, goNpc, _state: L };
 })();

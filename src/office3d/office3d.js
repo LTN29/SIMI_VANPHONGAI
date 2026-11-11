@@ -94,7 +94,13 @@ class Office3D {
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(root);
     this.resize();
     this.clock = new THREE.Clock();
-    const loop = () => { if (this.dead) return; this.raf = requestAnimationFrame(loop); if (!this.paused) this.frame(); };
+    const loop = (ts) => {
+      if (this.dead) return; this.raf = requestAnimationFrame(loop);
+      const W = window.VP_WIN; // cửa sổ thu nhỏ → không vẽ; đang dùng app khác → ~12 khung/giây
+      if (this.paused || (W && W.minimized)) return;
+      if (W && !W.focused && ts - (this.lastTs || 0) < 80) return;
+      this.lastTs = ts; this.frame();
+    };
     loop();
   }
 

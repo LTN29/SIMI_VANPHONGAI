@@ -595,6 +595,10 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.webContents.once('did-finish-load', () => { if (global.vpBootOk) global.vpBootOk(); }); // bản cập nhật nhanh mở được → giữ
   win.on('focus', () => { if (updater) updater.checkSoon(2 * 60 * 1000); }); // quay lại app sau một lúc → xem có bản mới không
+  // báo cửa sổ đang được dùng / bị thu nhỏ → Sảnh & Văn phòng 3D giảm nhịp vẽ khi người dùng làm việc ở app khác
+  // (app tắt nhận diện "bị che" để trình duyệt cạnh chat chạy ngầm được, nên trang không tự biết mình đang bị che)
+  const winState = () => { if (win && !win.isDestroyed()) emit({ type: 'win', focused: win.isFocused(), minimized: win.isMinimized() || !win.isVisible() }); };
+  for (const ev of ['focus', 'blur', 'minimize', 'restore', 'hide', 'show']) win.on(ev, winState);
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.webContents.on('before-input-event', (_e, input) => {

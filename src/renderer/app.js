@@ -1072,7 +1072,11 @@
     const notify = el('input', { type: 'checkbox', id: 'chkNotify', checked: c.notify !== false });
     const sound = el('input', { type: 'checkbox', id: 'chkSound', checked: c.sound !== false });
     const lobbyOn = el('input', { type: 'checkbox', id: 'chkLobby', checked: c.lobbyEnabled !== false });
-    const lobbyLight = el('input', { type: 'checkbox', id: 'chkLobbyLight', checked: c.lobbyLight === true });
+    const gfx = el('select', { id: 'selGfx' },
+      el('option', { value: 'auto', text: 'Tự động – app tự cân độ nét / bóng đổ theo máy (khuyên dùng)' }),
+      el('option', { value: 'light', text: 'Nhẹ – máy yếu, chạy pin: độ nét vừa đủ, tắt bóng đổ, 30 khung hình/giây' }),
+      el('option', { value: 'high', text: 'Đẹp – máy mạnh (card rời): nét tối đa, bóng đổ mượt, không tự hạ' }));
+    gfx.value = c.gfx || (c.lobbyLight === true ? 'light' : 'auto');
     const CLIS = [['claude', 'Claude Code'], ['codex', 'Codex'], ['antigravity', 'Antigravity (agy)'], ['gemini', 'Gemini CLI']];
     const cli = {};
     for (const [k] of CLIS) { const v = c.cli[k] || { cmd: k === 'antigravity' ? 'agy' : k, extraArgs: '' }; cli[k] = { cmd: el('input', { value: v.cmd }), extra: el('input', { value: v.extraArgs || '', placeholder: '(không bắt buộc)' }) }; }
@@ -1091,7 +1095,7 @@
       el('div', { class: 'field row' }, notify, el('label', { for: 'chkNotify', text: 'Thông báo + âm báo khi xong việc' })),
       el('div', { class: 'field row' }, sound, el('label', { for: 'chkSound', text: 'Âm thanh dễ thương khi bấm, tương tác, vuốt mèo' })),
       el('div', { class: 'field row' }, lobbyOn, el('label', { for: 'chkLobby', text: 'Vào Sảnh online khi mở app (đồng nghiệp thấy bạn đang dùng AI, nhắn tin được)' })),
-      el('div', { class: 'field row' }, lobbyLight, el('label', { for: 'chkLobbyLight', text: 'Chế độ nhẹ cho Sảnh 3D (máy yếu / pin): độ nét vừa đủ, tắt bóng đổ, 30 khung hình/giây – máy chậm thì app cũng tự giảm' })),
+      field('Chất lượng đồ hoạ Sảnh 3D', gfx, 'Máy đang dùng app khác thì Sảnh tự giảm nhịp vẽ, thu nhỏ cửa sổ thì dừng vẽ.'),
       el('div', { class: 'field row' }, pcOn, el('label', { for: 'chkPc', text: 'Cho AI trong tab Chat điều khiển chuột & bàn phím (luôn hỏi bạn cho phép trước)' })),
       el('div', { class: 'field row' }, pcMin, el('label', { for: 'chkPcMin', text: 'Thu nhỏ Văn Phòng AI khi AI đang điều khiển máy' })),
       upd ? el('div', { class: 'section-title', text: 'Cập nhật' }) : null, upd ? upd.node : null,
@@ -1109,8 +1113,8 @@
       c.notify = notify.checked; c.sound = sound.checked;
       if ((c.lobbyEnabled !== false) !== lobbyOn.checked) window.vp.lobby.connect(lobbyOn.checked);
       c.lobbyEnabled = lobbyOn.checked;
-      c.lobbyLight = lobbyLight.checked;
-      if (window.VPLobby && window.VPLobby.setLight) window.VPLobby.setLight(c.lobbyLight);
+      c.gfx = gfx.value; c.lobbyLight = c.gfx === 'light';
+      if (window.VPLobby && window.VPLobby.setQuality) window.VPLobby.setQuality(c.gfx);
       for (const [k] of CLIS) c.cli[k] = { cmd: cli[k].cmd.value.trim() || (k === 'antigravity' ? 'agy' : k), extraArgs: cli[k].extra.value.trim() };
       c.ollamaUrl = ollama.value.trim() || 'http://127.0.0.1:11434';
       c.chatEngine = engine.value;
@@ -1161,6 +1165,7 @@
 
   // ---------------- sự kiện từ bộ điều phối ----------------
   function onEvent(e) {
+    if (e.type === 'win') { window.VP_WIN = { focused: !!e.focused, minimized: !!e.minimized }; return; }
     if (e.type === 'say') {
       office.enqueue(e);
       if (e.from === 'boss' && e.kind === 'assign') {

@@ -1,6 +1,7 @@
 // Nhân vật low-poly có khớp: đi, ngồi, gõ phím, nói, uống nước, vươn vai, nhìn quanh, nhảy (6 điệu theo nhịp chung),
 // đập tay, ôm, cụng ly, mời cà phê. Toàn bộ là chuyển động bằng code – không tải thêm mô hình nào.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export const SKINS = ['#f1c9a5', '#e2ae84', '#f6d7bd', '#c98e62', '#ebbf98', '#d9a074'];
 export const HAIR_STYLES = { short: 'Ngắn', long: 'Dài', bun: 'Búi', spiky: 'Dựng', bob: 'Bob', curly: 'Xoăn', ponytail: 'Đuôi ngựa', buzz: 'Húi cua', bald: 'Trọc' };
@@ -12,7 +13,15 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const geoCache = {};
 const G = (key, make) => geoCache[key] || (geoCache[key] = make());
 
-function std(color, rough = 0.75) { return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0 }); }
+// vật liệu dùng chung theo (màu, độ nhám): 30 người chung vài chục vật liệu thay vì vài trăm → GPU ít đổi trạng thái hơn
+const matCache = new Map();
+function std(color, rough = 0.75) {
+  const k = String(color).toLowerCase() + '|' + rough;
+  let m = matCache.get(k);
+  if (!m) { m = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0 }); matCache.set(k, m); }
+  return m;
+}
+const CHEEK = () => matCache.get('cheek') || matCache.set('cheek', new THREE.MeshStandardMaterial({ color: '#ff8f8f', transparent: true, opacity: 0.35, roughness: 1 })).get('cheek');
 
 // áo cà sa tu hành SIMI: vàng nghệ, vạt chéo nâu đỏ, tràng hạt, chữ SIMI sau lưng
 export const KASAYA = { robe: '#ec8a1c', under: '#d06a17', sash: '#a8401a', shoes: '#5b3a24' };
@@ -54,11 +63,12 @@ export class Person {
     const skin = a.skin || SKINS[this.index % SKINS.length];
     const style = a.hairStyle || DEFAULT_STYLES[this.index % DEFAULT_STYLES.length];
     // dọn mô hình cũ (khi đổi màu/kiểu tóc)
+    this.body.traverse((o) => { if (o.isMesh && o.geometry.userData.own) o.geometry.dispose(); }); // khối đã gộp của lần dựng trước
     while (this.body.children.length) this.body.remove(this.body.children[0]);
     const M = {
       shirt: std(a.shirt || '#3b6fb6', 0.8), skin: std(skin, 0.6), hair: std(a.hair || '#2b1d14', 0.9),
       pants: std(a.pants || '#2f3342', 0.85), shoe: std(a.shoes || '#1d1d24', 0.6), dark: std('#1f1a17', 0.4),
-      white: std('#ffffff', 0.3), mouth: std('#7a3434', 0.6), cheek: new THREE.MeshStandardMaterial({ color: '#ff8f8f', transparent: true, opacity: 0.35, roughness: 1 }),
+      white: std('#ffffff', 0.3), mouth: std('#7a3434', 0.6), cheek: CHEEK(),
     };
     this.mats = M;
     const add = (parent, geo, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; parent.add(m); return m; };
@@ -66,7 +76,7 @@ export class Person {
     // chân (khớp hông)
     const hipY = 0.42;
     this.shoes = [];
-    const legGeo = G('leg', () => new THREE.CapsuleGeometry(0.078, 0.25, 4, 10));
+    const legGeo = G('leg', () => new THREE.CapsuleGeometry(0.078, 0.25, 3, 8));
     const shoeGeo = G('shoe', () => new THREE.BoxGeometry(0.14, 0.08, 0.22));
     for (const side of [-1, 1]) {
       const g = new THREE.Group(); g.position.set(side * 0.095, hipY, 0);
@@ -76,13 +86,13 @@ export class Person {
       this.joint[side < 0 ? 'legL' : 'legR'] = g;
     }
     // thân
-    const torso = add(this.body, G('torso', () => new THREE.CapsuleGeometry(0.19, 0.2, 6, 14)), M.shirt, 0, 0.68, 0);
+    const torso = add(this.body, G('torso', () => new THREE.CapsuleGeometry(0.19, 0.2, 4, 12)), M.shirt, 0, 0.68, 0);
     torso.scale.set(1, 1, 0.78);
     this.torso = torso;
-    add(this.body, G('belt', () => new THREE.CylinderGeometry(0.185, 0.185, 0.05, 16)), M.pants, 0, 0.47, 0).scale.set(1, 1, 0.8);
+    add(this.body, G('belt', () => new THREE.CylinderGeometry(0.185, 0.185, 0.05, 12)), M.pants, 0, 0.47, 0).scale.set(1, 1, 0.8);
     // tay (khớp vai)
-    const armGeo = G('arm', () => new THREE.CapsuleGeometry(0.062, 0.22, 4, 10));
-    const handGeo = G('hand', () => new THREE.SphereGeometry(0.068, 12, 10));
+    const armGeo = G('arm', () => new THREE.CapsuleGeometry(0.062, 0.22, 3, 8));
+    const handGeo = G('hand', () => new THREE.SphereGeometry(0.068, 8, 6));
     for (const side of [-1, 1]) {
       const g = new THREE.Group(); g.position.set(side * 0.255, 0.86, 0);
       add(g, armGeo, M.shirt, 0, -0.15, 0);
@@ -103,8 +113,8 @@ export class Person {
     // đầu
     const head = new THREE.Group(); head.position.set(0, 1.0, 0); this.body.add(head); this.joint.head = head;
     add(head, G('neck', () => new THREE.CylinderGeometry(0.07, 0.08, 0.1, 10)), M.skin, 0, -0.03, 0);
-    add(head, G('head', () => new THREE.SphereGeometry(0.25, 24, 18)), M.skin, 0, 0.19, 0);
-    const eyeGeo = G('eye', () => new THREE.SphereGeometry(0.034, 12, 10));
+    add(head, G('head', () => new THREE.SphereGeometry(0.25, 20, 14)), M.skin, 0, 0.19, 0);
+    const eyeGeo = G('eye', () => new THREE.SphereGeometry(0.034, 10, 8));
     const hlGeo = G('hl', () => new THREE.SphereGeometry(0.011, 6, 6));
     this.eyes = [];
     for (const side of [-1, 1]) {
@@ -119,18 +129,18 @@ export class Person {
     // tóc
     if (style === 'bald') {
       // đầu trọc: chỉ thêm vệt bóng nhẹ trên đỉnh
-      const shine = add(head, G('shine', () => new THREE.SphereGeometry(0.06, 10, 8)), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.35, depthWrite: false }), -0.07, 0.42, 0.1);
+      const shine = add(head, G('shine', () => new THREE.SphereGeometry(0.06, 10, 8)), (matCache.get('shine') || matCache.set('shine', new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.35, depthWrite: false })).get('shine')), -0.07, 0.42, 0.1);
       shine.scale.set(1.3, 0.35, 0.8); shine.castShadow = false;
     } else {
-    const cap = add(head, G('cap', () => new THREE.SphereGeometry(0.268, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.52)), M.hair, 0, 0.2, -0.005);
+    const cap = add(head, G('cap', () => new THREE.SphereGeometry(0.268, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.52)), M.hair, 0, 0.2, -0.005);
     cap.rotation.x = -0.32;
     if (style === 'buzz') cap.scale.set(0.97, 0.9, 0.97);
     else {
-      const bang = add(head, G('bang', () => new THREE.SphereGeometry(0.2, 16, 10)), M.hair, 0, 0.36, 0.12);
+      const bang = add(head, G('bang', () => new THREE.SphereGeometry(0.2, 12, 8)), M.hair, 0, 0.36, 0.12);
       bang.scale.set(1.15, 0.38, 0.62);
     }
     if (style === 'curly') {
-      const curl = G('curl', () => new THREE.SphereGeometry(0.085, 10, 8));
+      const curl = G('curl', () => new THREE.SphereGeometry(0.085, 8, 6));
       for (let i = 0; i < 14; i++) {
         const ang = (i / 14) * Math.PI * 2; const up = i % 2 ? 0.36 : 0.28;
         add(head, curl, M.hair, Math.sin(ang) * 0.24, up + Math.cos(ang * 2) * 0.03, Math.cos(ang) * 0.22 - 0.03);
@@ -172,7 +182,7 @@ export class Person {
       for (const side of [-1, 1]) { const w = add(head, G('bowW', () => new THREE.ConeGeometry(0.07, 0.13, 4)), accM, side * 0.07, 0.43, 0.06); w.rotation.z = side * Math.PI / 2; }
       add(head, G('bowK', () => new THREE.SphereGeometry(0.035, 8, 6)), accM, 0, 0.43, 0.06);
     } else if (acc === 'crown') {
-      add(head, G('crown', () => new THREE.CylinderGeometry(0.14, 0.15, 0.1, 5, 1, true)), std('#f5c518', 0.3), 0, 0.5, -0.02).material.side = THREE.DoubleSide;
+      add(head, G('crown', () => new THREE.CylinderGeometry(0.14, 0.15, 0.1, 5, 1, true)), matCache.get('crown') || matCache.set('crown', new THREE.MeshStandardMaterial({ color: '#f5c518', roughness: 0.3, side: THREE.DoubleSide })).get('crown'), 0, 0.5, -0.02);
     } else if (acc === 'headset') {
       // tai nghe lễ tân: quai mảnh, một bên tai + cần mic tới miệng
       const dark = std('#23262f', 0.4);
@@ -196,7 +206,7 @@ export class Person {
       for (const z of [0.152, -0.152]) { const v = add(this.body, G('ksSash', () => new THREE.BoxGeometry(0.11, 0.48, 0.02)), sash, 0.02, 0.7, z); v.rotation.z = -0.62; }
       add(this.body, G('ksShoulder', () => new THREE.SphereGeometry(0.085, 12, 8)), sash, -0.2, 0.9, 0).scale.set(1, 0.6, 1.2);
       // tà áo dài phủ quá gối
-      const skirtM = new THREE.MeshStandardMaterial({ color: KASAYA.robe, roughness: 0.85, side: THREE.DoubleSide });
+      const skirtM = matCache.get('skirt') || matCache.set('skirt', new THREE.MeshStandardMaterial({ color: KASAYA.robe, roughness: 0.85, side: THREE.DoubleSide })).get('skirt');
       add(this.body, G('ksSkirt', () => new THREE.CylinderGeometry(0.195, 0.25, 0.3, 18, 1, true)), skirtM, 0, 0.32, 0).scale.set(1, 1, 0.85);
       const hem = add(this.body, G('ksHem', () => new THREE.TorusGeometry(0.25, 0.012, 6, 24)), sash, 0, 0.17, 0);
       hem.rotation.x = Math.PI / 2; hem.scale.set(1, 0.85, 1);
@@ -219,6 +229,36 @@ export class Person {
       const ring = G('glass', () => new THREE.TorusGeometry(0.062, 0.012, 8, 20));
       for (const side of [-1, 1]) add(head, ring, rim, side * 0.088, 0.21, 0.245);
       add(head, G('bridge', () => new THREE.BoxGeometry(0.06, 0.012, 0.012)), rim, 0, 0.215, 0.25);
+    }
+    this.mergeParts();
+  }
+
+  // gộp các mảnh đứng yên cùng vật liệu trong từng khớp (tóc xoăn 17 mảnh → 1, đầu + cổ → 1…) → mỗi người ít lệnh vẽ hơn hẳn.
+  // Giữ riêng các mảnh có chuyển động / ẩn hiện của chính nó: mắt, miệng, thân (thở), giày (gập bàn chân), cốc, gậy, giấy.
+  mergeParts() {
+    const keep = new Set([...this.eyes, this.mouth, this.torso, ...this.shoes, this.cup, this.stick, this.paper]);
+    for (const box of [this.body, ...Object.values(this.joint)]) {
+      const groups = new Map();
+      for (const m of box.children) {
+        if (!m.isMesh || keep.has(m) || m.children.length || !m.visible) continue;
+        const k = m.material.uuid;
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(m);
+      }
+      for (const list of groups.values()) {
+        if (list.length < 2) continue;
+        try {
+          const geos = list.map((m) => { m.updateMatrix(); const g = m.geometry.clone(); g.applyMatrix4(m.matrix); for (const n of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(n)) g.deleteAttribute(n); return g.index ? g : null; });
+          if (geos.some((g) => !g)) continue;
+          const merged = mergeGeometries(geos, false); geos.forEach((g) => g.dispose());
+          if (!merged) continue;
+          merged.userData.own = true;
+          const one = new THREE.Mesh(merged, list[0].material);
+          one.castShadow = list[0].castShadow; one.receiveShadow = list[0].receiveShadow;
+          for (const m of list) box.remove(m);
+          box.add(one);
+        } catch { /* giữ nguyên các mảnh */ }
+      }
     }
   }
 

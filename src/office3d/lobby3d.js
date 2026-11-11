@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { NavGrid } from './nav.js';
 import { Cat } from './cat.js';
 import { Person } from './person.js';
+import { Crowd } from './crowd.js';
 import { BAR, buildBar, POOL_FELT, FORTUNE, IDEAS, BAR_X, CINEMA_X } from './bar.js';
 import { mergeStatic } from './merge.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
@@ -53,7 +54,8 @@ export function avatarToLook(m) {
 const MAX_DPR = 2;
 const DEVICE_DPR = () => Math.min(window.devicePixelRatio || 1, MAX_DPR);
 function makeRenderer(canvas) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  // màn hình nét (Retina, 4K, Windows phóng 150 %+) thì răng cưa gần như không thấy → bỏ khử răng cưa (MSAA), đỡ tốn GPU nhất
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: (window.devicePixelRatio || 1) < 1.5, alpha: true, powerPreference: 'high-performance' });
   if (!renderer.getContext()) throw new Error('WebGL không khả dụng');
   renderer.setPixelRatio(DEVICE_DPR());
   renderer.shadowMap.enabled = true;
@@ -104,6 +106,7 @@ class Lobby3D {
     this.canvas = canvas;
 
     this.scene = new THREE.Scene();
+    this.crowd = new Crowd(this.scene, { cap: 300, blobGeo: BLOB_GEO, blobMat: BLOB_MAT }); this.v1 = new THREE.Vector3();
     addLights(this.scene, 2048, { x: (ROOM.minX + ROOM.maxX) / 2, z: (ROOM.minZ + ROOM.maxZ) / 2 }, { x: (ROOM.maxX - ROOM.minX) / 2 + 3, z: (ROOM.maxZ - ROOM.minZ) / 2 + 4 });
     this.world = buildBar(this.scene);
     this.pool = (this.world.poolTables || []).map((T) => ({ ...T, state: null, anim: null }));
@@ -136,6 +139,7 @@ class Lobby3D {
     this.lastInput = performance.now();
 
     this.raycaster = new THREE.Raycaster(); this.ndc = new THREE.Vector2(); this.tmpV = new THREE.Vector3();
+    this.frustum = new THREE.Frustum(); this.projM = new THREE.Matrix4(); this.sph = new THREE.Sphere(new THREE.Vector3(), 1.1);
     this.floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.marker = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.24, 28), new THREE.MeshBasicMaterial({ color: '#0a78f0', transparent: true, opacity: 0 }));
     this.marker.rotation.x = -Math.PI / 2; this.marker.position.y = 0.02; this.scene.add(this.marker);
@@ -156,12 +160,24 @@ class Lobby3D {
       this.goal.zoom = this.view.zoom = 0.7;
     }
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(root); this.resize();
+    // máy không có card đồ hoạ dùng được (trình duyệt vẽ 3D bằng CPU: SwiftShader / llvmpipe / Microsoft Basic Render)
+    // → bật chế độ nhẹ ngay từ đầu, không đợi đo vài giây giật lag mới hạ
+    try {
+      const gl = this.renderer.getContext(); const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      this.gpu = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) || '');
+      if (/swiftshader|llvmpipe|softpipe|software|basic render/i.test(this.gpu) && !opts.keepFull) { this.softGpu = true; this.setLight(true); this.capFps = true; }
+    } catch { /* không đọc được tên card đồ hoạ */ }
     this.clock = new THREE.Clock();
     // tab Sảnh đang ẩn → không vẽ; chế độ nhẹ → tối đa ~30 khung hình mỗi giây
     const loop = (ts) => {
       if (this.dead) return; this.raf = requestAnimationFrame(loop);
       if (this.paused) return;
-      if (this.slowMode() && ts - (this.lastTs || 0) < 31) return;
+      // cửa sổ app bị thu nhỏ → không vẽ; người dùng đang làm ở app khác → ~12 khung/giây (vẫn thấy mọi người đi lại, máy nhẹ hẳn)
+      const W = window.VP_WIN;
+      this.bg = !!(W && !W.focused) && performance.now() - (this.lastInput || 0) > 3000;
+      if (W && W.minimized) return;
+      const gap = this.bg ? 80 : this.slowMode() ? 31 : 0;
+      if (gap && ts - (this.lastTs || 0) < gap) return;
       this.lastTs = ts; this.frame();
     };
     loop();
@@ -177,7 +193,8 @@ class Lobby3D {
     const r = 30;
     this.cam.position.set(target.x + Math.sin(az) * Math.cos(el) * r, target.y + Math.sin(el) * r, target.z + Math.cos(az) * Math.cos(el) * r);
     this.cam.lookAt(target);
-    const w = this.wrap.clientWidth || 800, h = this.wrap.clientHeight || 500;
+    // kích thước lấy từ lần đo gần nhất (ResizeObserver) – đọc clientWidth mỗi khung hình ép trình duyệt tính lại bố cục
+    const w = this.cssW || 800, h = this.cssH || 500;
     const aspect = w / h;
     const vh = Math.max(8.4, 15.6 / aspect) / zoom;
     Object.assign(this.cam, { left: -vh * aspect / 2, right: vh * aspect / 2, top: vh / 2, bottom: -vh / 2 });
@@ -698,6 +715,14 @@ class Lobby3D {
     if (k === 'hug' || k === 'highfive') this.fx(B, FX[k]);
   }
 
+  // Chất lượng đồ hoạ: auto (tự cân theo máy – mặc định) · light (máy yếu / pin: 1x, không bóng, 30 khung)
+  // · high (máy mạnh: nét tối đa, bóng đổ cập nhật dày hơn, không tự hạ khi bận)
+  setQuality(q) {
+    this.quality = q === 'light' || q === 'high' ? q : 'auto';
+    if (this.quality === 'high') { this.capFps = false; this.perf.noShadow = false; }
+    this.setLight(this.quality === 'light');
+  }
+
   // chế độ nhẹ cho máy yếu (Cài đặt hoặc tự bật khi khung hình thấp)
   setLight(on) {
     this.light = !!on;
@@ -728,6 +753,15 @@ class Lobby3D {
     this.cat.update(dt, now, { posOf: (id) => { const q = this.people.get(id); return q && q.pos; } });
     this.keyboardMove(dt);
     this.marker.material.opacity = Math.max(0, this.marker.material.opacity - dt * 0.8);
+    // Đông người: ai nằm ngoài khung nhìn thì không dựng dáng / không vẽ; khi Sảnh trên 24 người, người không nhảy
+    // dựng dáng 1 khung nghỉ 1 khung (chuyển động vẫn mượt vì bù thời gian) → 100 người vẫn nhẹ như 30
+    this.projM.multiplyMatrices(this.cam.projectionMatrix, this.cam.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.projM);
+    const crowd = this.people.size > 24;
+    this.lodTick = !this.lodTick;
+    // người nhỏ trên màn hình (ở xa / nhìn toàn cảnh) khi Sảnh đông → hình nhân đơn giản vẽ chung (xem crowd.js)
+    const lodPx = this.quality === 'high' ? (this.people.size > 40 ? 38 : 0) : this.light || this.softGpu ? (this.people.size > 8 ? 90 : 0) : (this.people.size > 14 ? 60 : 0);
+    this.crowd.begin();
     for (const p of this.people.values()) {
       let moving = false;
       if (p.path.length) {
@@ -767,9 +801,35 @@ class Lobby3D {
       p.person.root.rotation.y = p.facing;
       // đang dùng AI: đứng thì nhìn quanh, ngồi thì gõ phím
       if (p.busy && !moving && !seated && !p.person.action && Math.random() < dt * 0.15) p.person.doAction('look', 1600);
-      p.person.animate(dt, now, { moving, speed: p.speed, seated, typing: seated && !zen && !kneel && p.busy && !p.dance, beat, meditate: zen, kneel });
       p.keyMove = false;
+      this.sph.center.set(p.pos.x, rootY + 0.8, p.pos.z);
+      const vis = p.me || this.frustum.intersectsSphere(this.sph);
+      p.onScreen = vis;
+      p.animAcc = (p.animAcc || 0) + dt;
+      if (!vis) { p.animAcc = Math.min(p.animAcc, 0.25); if (p.person.root.visible) p.person.root.visible = false; continue; }
+      let lod = false;
+      if (lodPx && !p.me && !p.game && !p.meet && !p.person.action && !p.person.holdCue) {
+        this.v1.set(p.pos.x, rootY, p.pos.z).applyMatrix4(this.projM); const y0 = this.v1.y;
+        this.v1.set(p.pos.x, rootY + 1.45, p.pos.z).applyMatrix4(this.projM);
+        const hpx = Math.abs(this.v1.y - y0) * this.cssH / 2;
+        lod = hpx < lodPx * (p.lodNow ? 1.15 : 1); // chênh ngưỡng để không nhấp nháy qua lại
+      }
+      p.lodNow = lod;
+      if (p.person.root.visible !== !lod) p.person.root.visible = !lod;
+      if (lod) {
+        p.animAcc = Math.min(p.animAcc, 0.25);
+        const B = beat * Math.PI; const d = p.dance && !moving ? p.dance : null;
+        this.crowd.add(p.person, p.pos.x, rootY, p.pos.z, p.facing, {
+          seated, bob: moving ? Math.abs(Math.sin(now * 9)) * 0.035 : d ? Math.abs(Math.sin(B)) * 0.06 : 0,
+          wig: d ? Math.sin(B * 2) * (d === 'twerk' ? 0.2 : 0.1) : 0, lean: d === 'twerk' ? 0.4 : 0, turn: d === 'twerk' ? Math.PI : 0,
+        });
+        continue;
+      }
+      if (crowd && !p.me && !p.dance && !moving && ((p.person.index || 0) % 2 === 0) === this.lodTick) continue;
+      const adt = Math.min(0.1, p.animAcc); p.animAcc = 0;
+      p.person.animate(adt, now, { moving, speed: p.speed, seated, typing: seated && !zen && !kneel && p.busy && !p.dance, beat, meditate: zen, kneel });
     }
+    this.crowd.end();
     if (this.npcRing) {
       const k = (now * 0.9) % 1;
       const [inner, outer] = this.npcRing.children;
@@ -802,6 +862,9 @@ class Lobby3D {
     this.updateCamera();
     const far = v.zoom < 0.7;
     if (far !== this.far) { this.far = far; this.layer.classList.toggle('far', far); }
+    // bóng đổ chỉ có đồ vật (người dùng vệt bóng mềm) → gần như đứng yên: vẽ lại bản đồ bóng 1/4 số khung hình
+    const sm = this.renderer.shadowMap;
+    if (sm.enabled) { sm.autoUpdate = false; if ((this.shadowTick = (this.shadowTick || 0) + 1) % (this.quality === 'high' ? 2 : 4) === 1) sm.needsUpdate = true; }
     this.renderer.render(this.scene, this.cam);
     if (this.cinemaObj) this.cssRenderer.render(this.cssScene, this.cam);
     this.placeDom();
@@ -814,7 +877,7 @@ class Lobby3D {
   adapt(raw) {
     const P = this.perf;
     const mode = this.slowMode();
-    if (raw > 1 || mode !== P.mode) { P.acc = 0; P.n = 0; P.mode = mode; return; } // vừa tạm dừng (> 1 giây) / đổi nhịp vẽ: đo lại từ đầu
+    if (raw > 1 || mode !== P.mode || this.bg || this.quality === 'high' || this.quality === 'light') { P.acc = 0; P.n = 0; P.mode = mode; return; } // nền (app khác đang dùng): không tính // vừa tạm dừng (> 1 giây) / đổi nhịp vẽ: đo lại từ đầu
     P.acc += raw; P.n++;
     if (P.acc < 2) return;
     const avg = P.acc / P.n; P.acc = 0; P.n = 0;
@@ -872,7 +935,14 @@ class Lobby3D {
 
   placeDom() {
     const all = this.npc && this.npc.person ? [...this.people.values(), this.npc] : this.people.values();
+    // Sảnh đông: người ở xa (hình nhân đơn giản) không hiện bảng tên – trừ khi đang nói / vừa thả biểu cảm –
+    // để 80 bảng tên không chồng lên nhau che hết quán (tên vẫn có ở danh sách bên phải)
+    const busy = this.people.size > 24 ? new Set([...this.bubbles, ...this.emotes].map((b) => b._p).filter(Boolean)) : null;
     for (const p of all) {
+      // ngoài khung nhìn: ẩn bảng tên, khỏi tính vị trí
+      const off = p.onScreen === false || (busy && p.lodNow && !busy.has(p));
+      if (off !== !!p.plateOff) { p.plateOff = off; p.plate.style.visibility = off ? 'hidden' : ''; }
+      if (off) continue;
       const h = this.project(p.person.headWorld(this.tmpV).setY(this.tmpV.y + 0.12));
       p.anchor = h;
       if (!p.plateH) p.plateH = p.plate.offsetHeight || 34;
@@ -881,7 +951,7 @@ class Lobby3D {
       if (tx !== p.tx || ty !== p.ty) {
         p.tx = tx; p.ty = ty;
         p.plate.style.transform = `translate3d(${tx}px, ${ty}px, 0) translate(-50%, -100%)`;
-        const z = Math.round(ty) + (p.me ? 2000 : 0);
+        const z = (Math.round(ty / 6) * 6) + (p.me ? 2000 : 0); // đổi thứ tự chồng lớp ít lần (mỗi lần đổi trình duyệt phải xếp lại lớp)
         if (z !== p.z) { p.z = z; p.plate.style.zIndex = String(z); }
       }
     }
