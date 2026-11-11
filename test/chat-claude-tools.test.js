@@ -186,3 +186,17 @@ test('schema công cụ đổi sang dạng Gemini nhận được', () => {
   const g = geminiSchema({ type: 'object', additionalProperties: false, properties: { url: { type: 'string', default: 'x' }, n: { type: ['integer', 'null'] }, list: { type: 'array', minItems: 1, items: { type: 'object', properties: { a: { enum: ['x', 'y'] } }, additionalProperties: false } } }, required: ['url', 'khong-co'] });
   assert.deepEqual(g, { type: 'object', properties: { url: { type: 'string' }, n: { type: 'integer' }, list: { type: 'array', items: { type: 'object', properties: { a: { type: 'string', enum: ['x', 'y'] } } } } }, required: ['url'] });
 });
+
+test('"vào trình duyệt mở <link>": app tự mở link ở trình duyệt cạnh chat ngay và nhắc model đọc tại đó; chỉ dán link để hỏi thì không tự mở', { skip: process.platform === 'win32' }, async () => {
+  const opened = [];
+  const ud = fs.mkdtempSync(path.join(os.tmpdir(), 'vpai-open-ud-'));
+  const e = new ChatEngine({ userData: ud, emit: () => {}, defaultDir: () => ud, codex: new IdleCodex(), getConfig: () => ({ cli: { claude: { cmd: claude } }, timeoutSec: 60 }),
+    extraConfig: () => ({}), openUrl: (u) => { opened.push(u); return true; } });
+  const t = e.create({ title: 'Mở link' });
+  await e.send(t.id, { text: 'em vào trình duyệt và mở https://simigo-my.sharepoint.com/:x:/g/personal/a_b/IQBb?e=XKXf4h hãy đánh giá cho tôi chiến dịch này?', model: 'claude-cli::sonnet' });
+  assert.deepEqual(opened, ['https://simigo-my.sharepoint.com/:x:/g/personal/a_b/IQBb?e=XKXf4h']);
+  assert.match(fs.readFileSync(claude + '.prompt', 'utf8'), /App đã mở sẵn link trên ở trình duyệt cạnh khung chat/);
+  await e.send(t.id, { text: 'Tóm tắt bài này https://example.com/bai-viet', model: 'claude-cli::sonnet' });
+  await e.send(t.id, { text: 'Mở trang https://shopee.vn xem giá áo', model: 'claude-cli::sonnet' });
+  assert.deepEqual(opened.slice(1), ['https://shopee.vn']);
+});

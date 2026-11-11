@@ -67,9 +67,10 @@ function geminiSetup({ servers, sandbox = 'workspace-write', dataDir, addDirs = 
 
 // ---------- MCP client tối giản (stdio, mỗi dòng 1 thông điệp JSON-RPC) ----------
 class McpClient {
-  constructor(name, { command, args = [], env = {} }) {
+  // exactEnv: chỉ dùng đúng env được đưa (như Codex chạy MCP với môi trường đã lọc) – để kiểm tra MCP có tự chạy được không
+  constructor(name, { command, args = [], env = {}, exactEnv = false }) {
     this.name = name; this.seq = 0; this.wait = new Map(); this.buf = ''; this.dead = '';
-    this.child = spawn(command, args, { env: { ...process.env, ...env }, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
+    this.child = spawn(command, args, { env: exactEnv ? { ...env } : { ...process.env, ...env }, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
     const fail = (why) => { this.dead = why; for (const w of this.wait.values()) w.reject(new Error(why)); this.wait.clear(); };
     this.child.on('error', (e) => fail(`Không chạy được công cụ ${name}: ${e.message}`));
     this.child.on('close', () => fail(`Công cụ ${name} đã dừng`));

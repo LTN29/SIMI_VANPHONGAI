@@ -423,6 +423,8 @@ function wasBlocked(stderr, blocks) {
 const isCU = (n) => /^(computer[-_]use|cua[-_]repl)$/i.test(String(n || ''));
 const VPC = 'vp_computer'; // công cụ điều khiển máy tính của Văn Phòng AI (src/computer/mcp.js)
 const VPC_READONLY = new Set(['screenshot', 'wait', 'list_windows']);
+// người dùng muốn MỞ link trong trình duyệt (khác với chỉ dán link để hỏi nhanh)
+const OPEN_ASK = /trình duyệt|browser|truy cập|(mở|vào|xem)\s+(giúp\s+|giùm\s+|cho\s+\S+\s+)?(link|trang|web|đường dẫn|https?:)/i;
 const TOOL_SHORT = { vp_browser: 'Trình duyệt', 'computer-use': 'Computer Use', cua_repl: 'Computer Use', simi_browser: 'Trình duyệt SIMI', vp_computer: 'Điều khiển máy' };
 const SERVER_NAME = { vp_browser: 'Trình duyệt cạnh chat', 'computer-use': 'Computer Use (điều khiển máy tính)', cua_repl: 'Computer Use (điều khiển máy tính)', simi_browser: 'Trình duyệt SIMI', vp_computer: 'Điều khiển máy tính' };
 const serverName = (n) => SERVER_NAME[n] || n || 'Công cụ';
@@ -568,7 +570,8 @@ function responseFor(method, p, choice, block) {
 }
 
 class ChatEngine {
-  constructor({ userData, getConfig, emit, defaultDir, hiddenDirs = () => [], codex, extraConfig = () => ({}), getSecret = () => '' }) {
+  constructor({ userData, getConfig, emit, defaultDir, hiddenDirs = () => [], codex, extraConfig = () => ({}), getSecret = () => '', openUrl = null }) {
+    this.openUrl = openUrl; // mở link ở trình duyệt cạnh khung chat (app tự mở ngay, không chờ model)
     this.extraConfig = extraConfig; // cấu hình Codex thêm cho mỗi phiên (MCP điều khiển máy tính)
     this.getSecret = getSecret;     // API key người dùng nhập (Claude / OpenAI / Gemini API)
     this.store = new ChatStore(userData);
@@ -880,6 +883,13 @@ class ChatEngine {
 
     const needPersona = !!persona && t.personaFor !== (t.agentId || null);
     const hints = ments.map((m) => (m.kind === 'tool' ? TOOL_HINT[m.id] : PLUGIN_HINT(m))).filter(Boolean);
+    // "vào trình duyệt mở <link>": app mở link ngay ở trình duyệt cạnh khung chat – người dùng thấy trang liền, model đọc / thao tác tiếp tại đó
+    const link = (String(text || '').match(/https?:\/\/[^\s<>"')\]]+/) || [])[0];
+    if (link && this.openUrl && OPEN_ASK.test(text)) {
+      let opened = false;
+      try { opened = !!this.openUrl(link); } catch { opened = false; }
+      if (opened) hints.push('App đã mở sẵn link trên ở trình duyệt cạnh khung chat (vp_browser). Đọc / thao tác tiếp ngay tại đó bằng vp_browser – browser_snapshot, browser_read, browser_act; link tài liệu Excel / Word / PowerPoint thì browser_doc. Không dùng web_fetch hay lệnh tải file cho link này.');
+    }
     // trao đổi "trả lời nhanh" trước đó chưa có trong phiên Codex → kèm vào để AI không mất mạch
     const prompt = withFastHistory(t, buildPrompt(t, hints.length ? `${text}\n\n(${hints.join(' ')})` : text, atts, needPersona ? persona : ''));
     if (needPersona) t.personaFor = t.agentId || null;

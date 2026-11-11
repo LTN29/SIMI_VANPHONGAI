@@ -71,6 +71,12 @@ run(async () => {
   const list = await rpc(mcp, { id: 2, method: 'tools/list' });
   check(list.result.tools.map((t) => t.name).join() === 'browser_open,browser_snapshot,browser_act,browser_doc,browser_read,browser_screenshot,design_render,document_create,browser_js,browser_tabs', 'đủ 10 công cụ (8 trình duyệt + xuất thiết kế + tạo file)');
 
+  // app tự chạy thử MCP như Codex sẽ chạy (môi trường đã lọc) → biết ngay máy này AI có điều khiển được trình duyệt không
+  let men = null;
+  for (let i = 0; i < 40; i++) { men = await win.evaluate(() => window.vp.chat.mentions()).catch(() => null); if (men) break; await new Promise((r) => setTimeout(r, 250)); }
+  const vpb = men && (men.tools || []).find((x) => x.id === 'vp_browser');
+  check(vpb && vpb.enabled && !/⚠️/.test(vpb.desc), 'app tự kiểm tra: AI điều khiển được trình duyệt cạnh chat trên máy này');
+
   // 📑 link tài liệu (SharePoint / Google…): 1 lần gọi là mở trang cạnh chat + trả nội dung file, không bấm từng ô, không vào thư mục Tải xuống
   const cdoc = await rpc(mcp, { id: 40, method: 'tools/call', params: { name: 'browser_doc', arguments: { url: base + 'ke-hoach.xlsx' } } });
   const ctext = cdoc.result.content[0].text;

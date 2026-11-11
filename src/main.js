@@ -138,16 +138,50 @@ function computerMcp() {
 
 // 🌐 MCP "vp_browser": trình duyệt cạnh khung Chat – script chạy bằng app ở chế độ Node, gọi về app qua HTTP cục bộ có token
 const browserScript = () => path.join(__dirname, 'browser', 'mcp.js').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+// Cách chạy MCP đã kiểm chứng trên máy này. Mặc định: chính app ở chế độ Node (ELECTRON_RUN_AS_NODE). Máy nào cách đó không chạy
+// (gặp trên một số máy Mac) thì dùng Node của bộ SIMI / Node trong PATH – mcp.js chỉ cần Node thuần.
+let browserLaunch = null; // { command, env }
+let browserMcpIssue = '';   // lý do AI chưa điều khiển được trình duyệt cạnh chat (hiện ở menu Công cụ + nhật ký)
+const passEnv = () => Object.fromEntries(['SystemRoot', 'windir', 'PATH', 'Path', 'TEMP', 'TMP', 'TMPDIR', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'HOME', 'LANG'].filter((k) => process.env[k]).map((k) => [k, process.env[k]]));
 function browserMcp() {
   if (!browserPane || store.getConfig().builtinBrowser === false) return {};
+  const launch = browserLaunch || { command: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } };
   return {
-    'mcp_servers.vp_browser.command': process.execPath,
+    'mcp_servers.vp_browser.command': launch.command,
     'mcp_servers.vp_browser.args': [browserScript()],
-    'mcp_servers.vp_browser.env': { ELECTRON_RUN_AS_NODE: '1', VPB_CONN: browserPane.connFile, ...Object.fromEntries(['SystemRoot', 'windir', 'PATH', 'Path', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'HOME', 'LANG'].filter((k) => process.env[k]).map((k) => [k, process.env[k]])) },
+    'mcp_servers.vp_browser.env': { ...launch.env, VPB_CONN: browserPane.connFile, ...passEnv() },
+    'mcp_servers.vp_browser.startup_timeout_sec': 30,
     'mcp_servers.vp_browser.tool_timeout_sec': 180,
     // trình duyệt riêng của app, người dùng nhìn thấy từng bước → không hỏi quyền từng công cụ (như Trình duyệt SIMI)
     'mcp_servers.vp_browser.default_tools_approval_mode': 'approve',
   };
+}
+
+// Tự chạy thử MCP vp_browser đúng như Codex sẽ chạy (môi trường đã lọc): cách nào chạy được thì dùng cách đó.
+// Không cách nào chạy → ghi rõ lý do để người dùng / kỹ thuật thấy, thay vì AI lặng lẽ không vào được trình duyệt.
+async function probeBrowserMcp() {
+  if (!browserPane) return;
+  const { McpClient } = require('./ext-tools');
+  const script = browserScript();
+  simi.refreshEnv();
+  const tries = [
+    { command: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' }, label: 'app' },
+    ...[process.env.LTN_BROWSER_NODE_PATH, process.env.LTN_NODE_PATH, 'node'].filter(Boolean).map((n) => ({ command: n, env: {}, label: 'node' })),
+  ];
+  const errors = [];
+  if (!fs.existsSync(script)) errors.push('thiếu file ' + script);
+  else for (const t of tries) {
+    const c = new McpClient('vp_browser', { command: t.command, args: [script], env: { ...t.env, VPB_CONN: browserPane.connFile, ...passEnv() }, exactEnv: true });
+    try {
+      const tools = await c.init();
+      if (!tools.some((x) => x.name === 'browser_open')) throw new Error('không trả danh sách công cụ');
+      browserLaunch = { command: t.command, env: t.env }; browserMcpIssue = '';
+      if (t.label !== 'app') emit({ type: 'log', level: 'info', text: '🌐 Trình duyệt cạnh chat: chạy bằng Node của máy (cách mặc định không chạy được trên máy này).' });
+      return;
+    } catch (e) { errors.push(`${t.label}: ${e.message || e}`); } finally { c.close(); }
+  }
+  browserMcpIssue = errors.join(' · ').slice(0, 400);
+  emit({ type: 'log', level: 'error', text: '🌐 AI chưa điều khiển được trình duyệt cạnh chat trên máy này: ' + browserMcpIssue });
 }
 
 // kiểm tra máy có điều khiển được không (quyền macOS, xdotool trên Linux)
@@ -461,10 +495,10 @@ function registerIpc() {
   // danh sách cho menu @ trong ô chat: công cụ của app + plugin Codex đã cài
   let mentionCache = null;
   handle('chat:mentions', async () => {
-    if (mentionCache && Date.now() - mentionCache.t < 5 * 60 * 1000) return mentionCache.v;
+    if (mentionCache && mentionCache.issue === browserMcpIssue && Date.now() - mentionCache.t < 5 * 60 * 1000) return mentionCache.v;
     const cfg = store.getConfig();
     const tools = [
-      { id: 'vp_browser', name: 'Trình duyệt', icon: '🌐', desc: 'Trình duyệt hiện cạnh khung chat – AI mở trang, bấm, gõ; bạn xem trực tiếp', enabled: !!browserPane && cfg.builtinBrowser !== false },
+      { id: 'vp_browser', name: 'Trình duyệt', icon: '🌐', desc: browserMcpIssue ? '⚠️ AI chưa điều khiển được trên máy này: ' + browserMcpIssue : 'Trình duyệt hiện cạnh khung chat – AI mở trang, bấm, gõ; bạn xem trực tiếp', enabled: !!browserPane && cfg.builtinBrowser !== false },
       { id: 'canva_web', name: 'Canva', icon: '🎨', desc: 'Thiết kế trên Canva ngay trong trình duyệt cạnh chat (đăng nhập Canva 1 lần)', enabled: !!browserPane && cfg.builtinBrowser !== false },
       { id: 'vp_computer', name: 'Máy tính', icon: '🖱️', desc: 'Điều khiển chuột, bàn phím – mọi app trên máy, kể cả trình duyệt', enabled: cfg.computerControl !== false },
       { id: 'simi_browser', name: 'Trình duyệt SIMI', icon: '🧭', desc: 'Đọc & thao tác trang web (điền form, sửa / đăng bài) – nhanh, giữ đăng nhập', enabled: !!simi.readCodexConfig().browserMcp },
@@ -473,7 +507,7 @@ function registerIpc() {
     try { plugins = (await codexServer.plugins()).plugins.filter((p) => p.installed && p.enabled).map((p) => ({ id: p.id, name: p.name, title: /computer-use/.test(p.name) ? 'Computer Use (ChatGPT)' : p.title, description: p.description })); } catch { /* Codex chưa sẵn sàng */ }
     const seen = new Set();
     plugins = plugins.filter((p) => !seen.has(p.id) && seen.add(p.id));
-    mentionCache = { t: Date.now(), v: { tools, plugins } };
+    mentionCache = { t: Date.now(), issue: browserMcpIssue, v: { tools, plugins } };
     return mentionCache.v;
   });
   handle('computer:check', () => computerCheck());
@@ -603,7 +637,7 @@ app.whenReady().then(() => {
     idle: () => powerMonitor.getSystemIdleTime() >= 180,
   });
   updater.start();
-  chat = new ChatEngine({ userData: app.getPath('userData'), getConfig: () => store.getConfig(), emit, defaultDir: chatDir, hiddenDirs: () => [workDir()], codex: codexServer, extraConfig: () => ({ ...computerMcp(), ...browserMcp() }), getSecret: (n) => store.getSecret(n) });
+  chat = new ChatEngine({ userData: app.getPath('userData'), getConfig: () => store.getConfig(), emit, defaultDir: chatDir, hiddenDirs: () => [workDir()], codex: codexServer, openUrl: (u) => { if (!browserPane || store.getConfig().builtinBrowser === false) return false; browserPane.call('browser_open', { url: u, max_chars: 200 }).catch(() => {}); return true; }, extraConfig: () => ({ ...computerMcp(), ...browserMcp() }), getSecret: (n) => store.getSecret(n) });
   lobby = new LobbyClient({
     getAuth: () => simi.gatewayAuth(),
     appInfo: { version: appVersion(), os: `${process.platform}-${process.arch}` },
@@ -648,7 +682,11 @@ app.whenReady().then(() => {
   youtubeReferer();
   createWindow();
   browserPane = new BrowserPane({ getWindow: () => win, emit, connFile: path.join(app.getPath('userData'), 'browser-pane.json') });
-  browserPane.listen().catch((e) => { console.warn('Trình duyệt cạnh chat không mở được cổng điều khiển:', e.message); browserPane = null; });
+  browserPane.listen().then(() => probeBrowserMcp()).catch((e) => {
+    console.warn('Trình duyệt cạnh chat không mở được cổng điều khiển:', e.message);
+    browserMcpIssue = 'không mở được cổng điều khiển: ' + e.message; browserPane = null;
+    setTimeout(() => emit({ type: 'log', level: 'error', text: '🌐 AI chưa điều khiển được trình duyệt cạnh chat trên máy này: ' + browserMcpIssue }), 4000);
+  });
 });
 
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0 && store) createWindow(); });
