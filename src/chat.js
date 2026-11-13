@@ -84,6 +84,37 @@ const NO_CODEX = 'Máy chưa có Codex. Bấm "Cài đặt SIMI", dán key team 
 const STOPPED = 'Đã dừng';
 const STOP_GRACE_MS = 4000; // bấm Dừng mà Codex chưa ngắt được lượt sau chừng này → app tự kết thúc lượt
 
+// Lượt mới bên ChatGPT Work (Codex) mà app chưa có: tìm lượt cuối cùng của app đã đi qua Codex trong bản Codex
+// (so theo nội dung tin nhắn người dùng), lấy các lượt sau nó. Không khớp được thì dựa vào số lượt đã qua Codex.
+const normText = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+function viaCodex(local) {
+  // các tin người dùng mà câu trả lời đi qua Codex (không phải ⚡ trả lời nhanh, không phải tài khoản riêng)
+  const out = [];
+  local.forEach((m, i) => {
+    if (m.role !== 'user') return;
+    const a = local[i + 1];
+    if (a && a.role === 'assistant' && !a.fast && !a.via) out.push(m);
+  });
+  return out;
+}
+function remoteTail(local, remote) {
+  const rUsers = remote.map((m, i) => [m, i]).filter(([m]) => m.role === 'user');
+  if (!rUsers.length) return [];
+  const mine = viaCodex(local);
+  const after = (i) => { let j = i + 1; while (j < remote.length && remote[j].role !== 'user') j++; return remote.slice(j); };
+  const last = mine[mine.length - 1];
+  const key = last && normText(last.text).slice(0, 160);
+  if (key) {
+    for (let k = rUsers.length - 1; k >= 0; k--) {
+      const [m, i] = rUsers[k];
+      if (normText(m.text).includes(key)) return after(i);
+    }
+  }
+  // không khớp nội dung: Codex có nhiều lượt hơn số lượt app đã gửi qua Codex → phần dư là lượt mới
+  if (rUsers.length > mine.length) return remote.slice(rUsers[mine.length][1]);
+  return [];
+}
+
 class ChatStore {
   constructor(dir) {
     this.dir = path.join(dir, 'chats');
@@ -96,8 +127,29 @@ class ChatStore {
   save(t) {
     t.updatedAt = Date.now();
     const f = this.file(t.id); const tmp = f + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(t), 'utf8'); fs.renameSync(tmp, f);
+    const data = JSON.stringify(t);
+    fs.writeFileSync(tmp, data, 'utf8');
+    // Windows: phần mềm diệt virus / OneDrive đang mở file → rename báo EPERM/EBUSY. Thử lại vài lần,
+    // vẫn không được thì ghi thẳng – không để lượt chat vừa trả lời bị mất vì không lưu được.
+    for (let i = 0; ; i++) {
+      try { fs.renameSync(tmp, f); break; } catch (e) {
+        if (!/EPERM|EBUSY|EACCES/.test(e.code || '') || i >= 6) {
+          try { fs.writeFileSync(f, data, 'utf8'); fs.rmSync(tmp, { force: true }); break; } catch { throw e; }
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25 * (i + 1));
+      }
+    }
     return t;
+  }
+  // bản sao trước khi đổi lịch sử (giữ 5 bản gần nhất / đoạn chat) – để còn đường khôi phục
+  backup(t) {
+    try {
+      const dir = path.join(this.dir, '_backup'); fs.mkdirSync(dir, { recursive: true });
+      const src = this.file(t.id); if (!fs.existsSync(src)) return;
+      fs.copyFileSync(src, path.join(dir, `${t.id}.${Date.now()}.json`));
+      const mine = fs.readdirSync(dir).filter((f) => f.startsWith(t.id + '.')).sort();
+      for (const f of mine.slice(0, -5)) fs.rmSync(path.join(dir, f), { force: true });
+    } catch { /* sao lưu là phụ, không chặn việc chính */ }
   }
   list() {
     const out = [];
@@ -622,21 +674,28 @@ class ChatEngine {
     return this.store.save(t);
   }
 
-  // đoạn chat đã liên kết: nếu bên ChatGPT Work có lượt mới thì nạp lại toàn bộ
+  // đoạn chat đã liên kết: bên ChatGPT Work có lượt mới thì NỐI phần mới vào cuối.
+  // Không bao giờ thay cả lịch sử bằng bản của Codex: lượt "trả lời nhanh" (⚡) và lượt bằng tài khoản riêng
+  // (Claude, Gemini, Ollama…) chỉ nằm trong app, Codex không có → thay toàn bộ là mất chúng (lỗi "mất đoạn chat vừa chat / chat cũ").
   async sync(id) {
     const t = this.store.get(id);
     if (!t || !t.codexThread || this.running.has(id)) return t;
-    const userTurns = t.messages.filter((m) => m.role === 'user').length;
+    const local = t.messages || [];
+    const userTurns = local.filter((m) => m.role === 'user').length;
     // đang có nội dung thì lỗi đọc Codex bỏ qua (giữ bản đang có); đang rỗng thì báo lỗi để người dùng biết
     const meta = await this.codex.readThread(t.codexThread, false).catch((e) => { if (userTurns > 0) return null; throw e; });
     // Codex chưa đổi gì kể từ lần đọc trước – trừ khi lần trước đọc ra rỗng (bản Codex khác / lỗi đọc) thì đọc lại
     if (!meta || (meta.updatedAt === t.codexUpdatedAt && userTurns > 0)) return t;
     const th = await this.codex.readThread(t.codexThread);
     t.codexUpdatedAt = th.updatedAt;
-    if ((th.turns || []).length !== userTurns) {
-      t.messages = messagesFromThread(th, (u) => this._saveDataImage(t.id, u));
-      if (th.name && t.origin === 'codex') t.title = th.name.slice(0, 80);
+    const remote = messagesFromThread(th, (u) => this._saveDataImage(t.id, u));
+    if (!userTurns) {
+      t.messages = remote; // đoạn chat còn rỗng (mới mở từ ChatGPT Work / lỡ lưu rỗng) → nạp đủ
+    } else {
+      const tail = remoteTail(local, remote);
+      if (tail.length) { this.store.backup(t); t.messages = local.concat(tail); }
     }
+    if (th.name && t.origin === 'codex') t.title = th.name.slice(0, 80);
     return this.store.save(t);
   }
 
@@ -925,7 +984,7 @@ class ChatEngine {
       const items = new Map(); // id bước của Codex → block
       const run = { threadId: id, title: t.title, t, msg, codexId: null, turnId: null, stopped: false };
       const emitBlocks = (now) => {
-        const go = () => { emitTimer = null; emit({ ev: 'blocks', blocks: msg.blocks }); if (Date.now() - lastSave > 1500) { lastSave = Date.now(); this.store.save(t); } };
+        const go = () => { emitTimer = null; emit({ ev: 'blocks', blocks: msg.blocks }); if (Date.now() - lastSave > 1500) { lastSave = Date.now(); this._safeSave(t); } };
         if (now) { clearTimeout(emitTimer); go(); } else if (!emitTimer) emitTimer = setTimeout(go, 60);
       };
       run.emitBlocks = emitBlocks;
@@ -1055,7 +1114,7 @@ class ChatEngine {
     let stalled = 0; let firstByteMs = null; let firstTextMs = null; let idle = null;
     const show = (now) => {
       msg.blocks = [{ kind: 'text', id: 'fast', text: full }];
-      const go = () => { emitTimer = null; emit({ ev: 'blocks', blocks: msg.blocks }); if (Date.now() - lastSave > 1500) { lastSave = Date.now(); this.store.save(t); } };
+      const go = () => { emitTimer = null; emit({ ev: 'blocks', blocks: msg.blocks }); if (Date.now() - lastSave > 1500) { lastSave = Date.now(); this._safeSave(t); } };
       if (now) { clearTimeout(emitTimer); go(); } else if (!emitTimer) emitTimer = setTimeout(go, 50);
     };
     try {
@@ -1326,12 +1385,17 @@ class ChatEngine {
 
   openBrowser(url) { return this.codex.callTool(simi.BROWSER_MCP, 'browser_open_window', url ? { url } : {}, this.defaultDir()); }
 
+  // lưu giữa lượt / cuối lượt: lỗi ghi đĩa không được làm hỏng lượt đang chạy (báo vào nhật ký, lần lưu sau thử lại)
+  _safeSave(t) {
+    try { this.store.save(t); return true; } catch (e) { this.emit({ type: 'log', level: 'error', text: 'Không lưu được đoạn chat "' + (t.title || t.id) + '": ' + e.message }); return false; }
+  }
+
   _finish(t, msg, { error, ms }, emit, resolve) {
     msg.status = error ? (error === STOPPED ? 'stopped' : 'error') : 'done';
     if (error) msg.error = error;
     msg.ms = ms || 0;
-    t.codexUpdatedAt = null; // lần mở sau đối chiếu lại với Codex (số lượt khớp thì giữ nguyên)
-    this.store.save(t);
+    t.codexUpdatedAt = null; // lần mở sau đối chiếu lại với Codex (chỉ nối lượt mới, không thay lịch sử)
+    if (!this._safeSave(t)) setTimeout(() => this._safeSave(t), 1500);
     emit({ ev: 'done', message: msg, title: t.title, codexThread: t.codexThread });
     resolve({ ok: !error, message: msg });
   }

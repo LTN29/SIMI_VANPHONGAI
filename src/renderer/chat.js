@@ -53,6 +53,7 @@
         el('button', { class: 'ch-ib ch-fold', id: 'chFold', title: 'Thu gọn danh sách đoạn chat', 'aria-label': 'Thu gọn danh sách đoạn chat', onclick: () => foldSide() }, '«')),
       el('div', { class: 'ch-findrow hidden', id: 'chFindRow' },
         el('input', { class: 'ch-search', id: 'chSearch', placeholder: 'Tìm đoạn chat…', 'aria-label': 'Tìm đoạn chat', oninput: renderSide, onkeydown: (e) => { if (e.key === 'Escape') { e.target.value = ''; toggleSearch(false); } } })),
+      el('button', { class: 'ch-sched', id: 'chSchedBtn', title: 'Tự gửi yêu cầu cho AI theo giờ: mỗi sáng, mỗi tuần…', onclick: () => openSchedules() }, el('span', { text: '⏰' }), el('span', { class: 'ch-sched-t', text: 'Tác vụ đã lên lịch' }), el('em', { id: 'chSchedN', class: 'hidden' })),
       el('div', { class: 'ch-list', id: 'chList' }),
       el('div', { class: 'ch-ext', id: 'chExt' }),
       el('button', { class: 'ch-status', id: 'chStatus', onclick: () => U.openAccounts() }));
@@ -863,13 +864,212 @@
     const others = (info.plugins || []).filter((p) => p.installed && p.name !== 'computer-use');
     const plRow = others.length ? el('div', { class: 'tp-list' }, el('small', { class: 'dim', text: 'Plugin đã cài: ' }), ...others.map((p) => el('span', { class: 'tp-chip', title: p.description, text: p.title }))) : null;
     const eng = info.engine || {};
-    pop.replaceChildren(...[el('div', { class: 'sph', text: '🧰 Công cụ cho đoạn chat' }), wbRow, pcRow, brRow, cuRow, plRow,
+    // 🔌 kết nối người dùng thêm (GitHub, MCP tuỳ chỉnh) – trạng thái lấy từ danh sách MCP của Codex
+    const conns = await window.vp.conn.list().catch(() => []);
+    const cnRow = el('div', { class: 'tp-card' },
+      el('div', { class: 'tp-h' }, el('span', { class: 'tp-ic', text: '🔌' }), el('div', {}, el('b', { text: 'Kết nối' }),
+        el('small', { text: conns.length ? 'AI dùng được trong mọi đoạn chat (gọi bằng tên, ví dụ "xem issue mới trên GitHub repo …").' : 'Nối AI với GitHub hoặc máy chủ MCP khác để AI đọc / tạo issue, pull request…' })),
+        badge(conns.some((c) => c.enabled) ? 'ready' : 'notInstalled')),
+      conns.length ? el('div', { class: 'tp-list' }, ...conns.map((c) => {
+        const live = (info.mcp || []).find((m) => m.name === c.id);
+        return el('span', { class: 'tp-chip' + (c.enabled ? '' : ' off'), title: live && live.error ? live.error : (c.url || c.command || ''), text: `${c.icon} ${c.name}${!c.enabled ? ' · tắt' : live && live.tools ? ' · ' + live.tools + ' công cụ' : ''}` });
+      })) : null,
+      el('div', { class: 'tp-act' }, el('button', { class: 'btn mini' + (conns.length ? '' : ' primary'), onclick: () => { pop.remove(); openConnectors(conns.length ? null : 'github'); } }, conns.length ? '⚙️ Quản lý kết nối' : '🐙 Kết nối GitHub')));
+    pop.replaceChildren(...[el('div', { class: 'sph', text: '🧰 Công cụ cho đoạn chat' }), wbRow, pcRow, cnRow, brRow, cuRow, plRow,
       info.error ? el('div', { class: 'tp-err', text: info.error }) : null,
       el('div', { class: 'tp-foot' },
         el('small', { class: 'dim', title: eng.cmd || '', text: eng.desktop ? '⚙️ Đang dùng Codex của ChatGPT Work' : '⚙️ Đang dùng Codex CLI' }),
+        el('button', { class: 'linkbtn small', onclick: () => { pop.remove(); openConnectors(); } }, '🔌 Kết nối (GitHub, MCP)'),
         el('button', { class: 'linkbtn small', onclick: () => { pop.remove(); openSkillManager(); } }, '📚 Quản lý skill'),
         el('button', { class: 'linkbtn small', onclick: () => { pop.remove(); runSimiUpdate(); } }, '🔄 Cập nhật SIMI'))].filter(Boolean));
     place();
+  }
+
+  // ================= ⏰ Tác vụ đã lên lịch =================
+  const S2 = { open: false, render: () => {} }; // trạng thái bảng đang mở (để sự kiện từ main vẽ lại)
+  const KIND_OPTS = [['daily', 'Mỗi ngày'], ['weekdays', 'Thứ 2 – Thứ 6'], ['weekly', 'Mỗi tuần'], ['monthly', 'Mỗi tháng'], ['hourly', 'Mỗi N giờ'], ['once', 'Một lần']];
+  const DOWS = [[1, 'T2'], [2, 'T3'], [3, 'T4'], [4, 'T5'], [5, 'T6'], [6, 'T7'], [0, 'CN']];
+  const SCHED_IDEAS = [
+    { name: 'Tin AI buổi sáng', prompt: 'Tìm 5 tin công nghệ & AI nổi bật nhất trong 24 giờ qua, mỗi tin 2 câu tóm tắt kèm link nguồn. Trả lời bằng tiếng Việt.', when: { kind: 'weekdays', time: '08:00' } },
+    { name: 'Tổng kết GitHub tuần', prompt: 'Dùng kết nối GitHub: liệt kê issue và pull request mới / còn mở trong tuần qua ở các repo của tôi, nhóm theo repo, ghi việc cần xử lý trước.', when: { kind: 'weekly', time: '08:30', days: [1] } },
+    { name: 'Nhắc báo cáo cuối tháng', prompt: 'Soạn khung báo cáo tháng này cho phòng: mục tiêu, kết quả chính, vấn đề, kế hoạch tháng sau. Lưu thành file Word.', when: { kind: 'monthly', time: '09:00', day: 28 } },
+  ];
+  const fmtTime = (ms) => { if (!ms) return '—'; const d = new Date(ms); const p = (n) => String(n).padStart(2, '0'); const today = new Date().toDateString() === d.toDateString(); return `${today ? 'Hôm nay' : `${p(d.getDate())}/${p(d.getMonth() + 1)}`} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+  async function refreshSchedBadge() {
+    const n = $('#chSchedN'); if (!n) return;
+    const r = await window.vp.sched.list().catch(() => null); if (!r) return;
+    const on = r.tasks.filter((t) => t.enabled).length;
+    n.textContent = String(on); n.classList.toggle('hidden', !on);
+  }
+
+  async function openSchedules(editId = null) {
+    const { el } = U;
+    const body = el('div', { class: 'sch' });
+    const V = { edit: editId, form: null };
+    const put = (...k) => body.replaceChildren(...k.filter(Boolean));
+
+    function card(t) {
+      const lr = t.lastRun;
+      const sw = el('label', { class: 'sch-sw', title: t.enabled ? 'Đang bật – bấm để tạm dừng' : 'Đang tắt – bấm để bật' },
+        el('input', { type: 'checkbox', checked: t.enabled, onchange: async (e) => { try { await window.vp.sched.toggle(t.id, e.target.checked); } catch (er) { e.target.checked = !e.target.checked; U.toast(U.cleanErr(er), true); } } }), el('i'));
+      return el('div', { class: 'sch-card' + (t.enabled ? '' : ' off') + (t.running ? ' busy' : '') },
+        el('div', { class: 'sch-top' }, el('b', { text: t.name }), sw),
+        el('div', { class: 'sch-when' }, el('span', { text: '🕘 ' + t.label }), t.enabled && t.nextRun ? el('span', { class: 'dim', text: ' · lần tới ' + fmtTime(t.nextRun) }) : null),
+        el('p', { class: 'sch-prompt', text: t.prompt }),
+        el('div', { class: 'sch-foot' },
+          t.running ? el('span', { class: 'sch-st run' }, el('span', { class: 'spin' }), ' Đang chạy…')
+            : t.queued ? el('span', { class: 'sch-st run', text: '⏳ Đang chờ lượt' })
+              : lr ? el('span', { class: 'sch-st ' + (lr.ok ? 'ok' : 'bad'), title: lr.error || '', text: `${lr.ok ? '✓' : '⚠'} ${fmtTime(lr.at)}${lr.catchUp ? ' (chạy bù)' : ''}${lr.ok ? '' : ' · ' + lr.error.slice(0, 60)}` })
+                : el('span', { class: 'sch-st dim', text: 'Chưa chạy lần nào' }),
+          el('span', { class: 'grow' }),
+          lr && lr.threadId ? el('button', { class: 'btn mini', onclick: () => { U.closeModal(); openThread(lr.threadId); } }, '💬 Xem kết quả') : null,
+          el('button', { class: 'btn mini', disabled: t.running || t.queued, onclick: async () => { try { await window.vp.sched.run(t.id); U.toast(`⏰ Đang chạy "${t.name}"`); } catch (er) { U.toast(U.cleanErr(er), true); } } }, '▶ Chạy ngay'),
+          el('button', { class: 'btn mini', onclick: () => { V.edit = t.id; V.form = { ...t, when: { ...t.when } }; render(); } }, '✏️ Sửa'),
+          el('button', { class: 'btn mini danger', title: 'Xoá tác vụ', onclick: async (ev) => {
+            const b = ev.currentTarget;
+            if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = 'Xoá thật?'; setTimeout(() => { b.classList.remove('armed'); b.textContent = '🗑'; }, 3000); return; }
+            await window.vp.sched.remove(t.id); U.toast('Đã xoá tác vụ');
+          } }, '🗑')));
+    }
+
+    function form() {
+      const isNew = !V.edit || V.edit === 'new';
+      const f = V.form || (V.form = { name: '', prompt: '', when: { kind: 'daily', time: '08:00', days: [1] }, model: '', agentId: null, thread: 'new', sandbox: 'workspace-write', notify: true });
+      const w = f.when;
+      const name = el('input', { value: f.name, placeholder: 'Ví dụ: Tin AI buổi sáng', oninput: (e) => { f.name = e.target.value; } });
+      const prompt = el('textarea', { rows: 5, placeholder: 'Việc AI cần làm mỗi lần chạy – viết như nhắn trong ô chat. Có thể gọi skill ($tên-skill) hoặc kết nối (GitHub…).', oninput: (e) => { f.prompt = e.target.value; } });
+      prompt.value = f.prompt;
+      const kind = el('select', { onchange: (e) => { w.kind = e.target.value; if (w.kind === 'once' && !w.date) w.date = new Date(Date.now() + 864e5).toISOString().slice(0, 10); render(); } }, KIND_OPTS.map(([v, l]) => el('option', { value: v, text: l, selected: w.kind === v })));
+      const time = el('input', { type: 'time', value: w.time || '08:00', onchange: (e) => { w.time = e.target.value; } });
+      const extra = w.kind === 'weekly' ? el('div', { class: 'sch-days' }, DOWS.map(([d, l]) => el('button', { type: 'button', class: 'sch-day' + ((w.days || []).includes(d) ? ' on' : ''), onclick: (e) => { const set = new Set(w.days || []); if (set.has(d)) set.delete(d); else set.add(d); w.days = [...set]; e.currentTarget.classList.toggle('on'); } }, l)))
+        : w.kind === 'monthly' ? el('label', { class: 'sch-inline' }, 'Ngày ', el('input', { type: 'number', min: 1, max: 31, value: w.day || 1, onchange: (e) => { w.day = +e.target.value; } }), ' hằng tháng')
+          : w.kind === 'hourly' ? el('label', { class: 'sch-inline' }, 'Cứ ', el('input', { type: 'number', min: 1, max: 24, value: w.every || 1, onchange: (e) => { w.every = +e.target.value; } }), ' giờ một lần')
+            : w.kind === 'once' ? el('input', { type: 'date', value: w.date || '', onchange: (e) => { w.date = e.target.value; } }) : null;
+      const modelSel = $('#chModel').cloneNode(true); modelSel.removeAttribute('id'); modelSel.className = '';
+      [...modelSel.options].forEach((o) => { if (o.value.startsWith(CUSTOM) || o.value.startsWith(PREFS)) o.remove(); });
+      modelSel.value = f.model || ''; modelSel.onchange = (e) => { f.model = e.target.value; };
+      const who = el('select', { onchange: (e) => { f.agentId = e.target.value || null; } }, el('option', { value: '', text: '— Không chỉ định —' }), ...agents().map((a) => el('option', { value: a.id, text: `${a.name} · ${a.title}`, selected: f.agentId === a.id })));
+      const thread = el('select', { onchange: (e) => { f.thread = e.target.value; } }, el('option', { value: 'new', text: 'Mỗi lần một đoạn chat mới', selected: f.thread !== 'same' }), el('option', { value: 'same', text: 'Nối tiếp vào cùng 1 đoạn chat', selected: f.thread === 'same' }));
+      const sandbox = el('select', { onchange: (e) => { f.sandbox = e.target.value; } }, SANDBOX.map(([v, l, d]) => el('option', { value: v, text: l, title: d, selected: (f.sandbox || 'workspace-write') === v })));
+      const notifyCb = el('input', { type: 'checkbox', checked: f.notify !== false, onchange: (e) => { f.notify = e.target.checked; } });
+      const err = el('div', { class: 'tp-err', hidden: true });
+      const save = el('button', { class: 'btn primary', onclick: async () => {
+        err.hidden = true; save.disabled = true;
+        try { await window.vp.sched.save({ ...f, id: isNew ? undefined : V.edit }); U.toast(isNew ? '⏰ Đã lên lịch – app sẽ tự chạy đúng giờ' : 'Đã lưu tác vụ'); V.edit = null; V.form = null; render(); }
+        catch (er) { err.textContent = U.cleanErr(er); err.hidden = false; } finally { save.disabled = false; }
+      } }, isNew ? '⏰ Lên lịch' : '💾 Lưu thay đổi');
+      return el('div', { class: 'sch-form' },
+        isNew ? el('div', { class: 'sch-ideas' }, el('small', { class: 'dim', text: 'Gợi ý: ' }), ...SCHED_IDEAS.map((x) => el('button', { type: 'button', class: 'tp-chip', onclick: () => { V.form = { ...f, ...x, when: { ...x.when } }; render(); } }, x.name))) : null,
+        el('div', { class: 'field' }, el('label', { text: 'Tên tác vụ' }), name),
+        el('div', { class: 'field' }, el('label', { text: 'Việc cần làm' }), prompt),
+        el('div', { class: 'field' }, el('label', { text: 'Lịch chạy' }), el('div', { class: 'sch-row' }, kind, w.kind !== 'hourly' ? time : el('label', { class: 'sch-inline' }, 'vào phút ', el('input', { type: 'number', min: 0, max: 59, value: +(w.time || '08:00').split(':')[1], onchange: (e) => { w.time = '00:' + String(Math.max(0, Math.min(59, +e.target.value))).padStart(2, '0'); } })), extra)),
+        el('div', { class: 'sch-grid' },
+          el('div', { class: 'field' }, el('label', { text: 'Model' }), modelSel),
+          el('div', { class: 'field' }, el('label', { text: 'Nhân sự phụ trách' }), who),
+          el('div', { class: 'field' }, el('label', { text: 'Kết quả' }), thread),
+          el('div', { class: 'field' }, el('label', { text: 'Quyền trên máy' }), sandbox)),
+        el('label', { class: 'sch-check' }, notifyCb, ' Báo cho tôi khi xong (thông báo của hệ điều hành)'),
+        el('small', { class: 'dim', text: 'Khi chạy theo lịch không có ai bấm "Cho phép": việc cần sửa file ngoài dự án hoặc gọi công cụ cần hỏi quyền có thể bị dừng – chọn quyền phù hợp hoặc bật "tự cho phép" cho kết nối.' }),
+        err, el('div', { class: 'skm-cta' }, save, el('button', { class: 'btn ghost', onclick: () => { V.edit = null; V.form = null; render(); } }, 'Huỷ')));
+    }
+
+    async function render() {
+      const r = await window.vp.sched.list().catch((e) => ({ tasks: [], runs: [], error: U.cleanErr(e) }));
+      if (V.edit === 'new' || (V.edit && V.form)) { put(el('div', { class: 'skm-h' }, el('b', { text: V.edit === 'new' ? '＋ Tác vụ mới' : '✏️ Sửa tác vụ' })), form()); return; }
+      const prefs = el('div', { class: 'sch-prefs' },
+        el('label', { class: 'sch-check' }, el('input', { type: 'checkbox', checked: r.background, onchange: (e) => window.vp.sched.prefs({ background: e.target.checked }) }), ' Chạy nền khi đóng cửa sổ (ẩn xuống khay hệ thống) để tác vụ chạy đúng giờ'),
+        el('label', { class: 'sch-check' }, el('input', { type: 'checkbox', checked: r.openAtLogin, onchange: (e) => window.vp.sched.prefs({ openAtLogin: e.target.checked }) }), ' Tự mở cùng máy (chạy nền, không bật cửa sổ)'));
+      put(
+        el('div', { class: 'skm-h' }, el('b', { text: `Tác vụ đã lên lịch (${r.tasks.length})` }), el('small', { text: 'App tự gửi yêu cầu cho AI theo giờ – kết quả nằm trong tab Chat. App cần đang mở hoặc chạy nền; lượt lỡ khi tắt máy được chạy bù khi mở lại (trong 12 giờ).' })),
+        r.tasks.length ? el('div', { class: 'sch-list' }, r.tasks.map(card))
+          : el('div', { class: 'skm-empty' }, el('p', { text: 'Chưa có tác vụ nào. Ví dụ: mỗi sáng 8 giờ tóm tắt tin AI, thứ Hai tổng kết issue GitHub, ngày 28 soạn khung báo cáo tháng.' })),
+        el('div', { class: 'skm-cta' }, el('button', { class: 'btn primary', onclick: () => { V.edit = 'new'; V.form = null; render(); } }, '＋ Tạo tác vụ')),
+        prefs,
+        r.runs.length ? el('details', { class: 'skm-more' }, el('summary', { text: `Lịch sử chạy (${r.runs.length})` }),
+          el('div', { class: 'sch-runs' }, r.runs.slice(0, 20).map((x) => el('div', { class: 'sch-run' },
+            el('span', { class: x.ok ? 'ok' : 'bad', text: x.ok ? '✓' : '⚠' }), el('span', { text: fmtTime(x.at) }), el('b', { text: x.name }),
+            el('span', { class: 'dim', text: `${Math.round(x.ms / 1000)}s${x.catchUp ? ' · chạy bù' : ''}${x.error ? ' · ' + x.error.slice(0, 80) : ''}` }),
+            x.threadId ? el('button', { class: 'linkbtn small', onclick: () => { U.closeModal(); openThread(x.threadId); } }, 'Xem') : null)))) : null);
+    }
+    S2.open = true; S2.render = () => { if ($('#modal') && !$('#modal').classList.contains('hidden') && body.isConnected) { if (!V.form) render(); } else S2.open = false; };
+    if (C.view !== 'chat') setView('chat');
+    if (!C.models.length) await loadMeta();
+    U.openModal('⏰ Tác vụ đã lên lịch', body, [el('button', { class: 'btn primary', text: 'Xong', onclick: U.closeModal })], 'wide');
+    render();
+  }
+
+  // ================= 🔌 Kết nối (MCP): GitHub + MCP tuỳ chỉnh =================
+  async function openConnectors(start = null) {
+    const { el } = U;
+    const body = el('div', { class: 'sch' });
+    const presets = await window.vp.conn.presets().catch(() => ({}));
+    const V = { form: null };
+    const put = (...k) => body.replaceChildren(...k.filter(Boolean));
+    const newForm = (preset) => ({ preset: preset || '', name: preset ? presets[preset].name : '', kind: preset ? presets[preset].kind : 'http', url: '', command: '', args: '', tokenEnv: '', enabled: true, autoApprove: false });
+
+    function form() {
+      const f = V.form; const p = presets[f.preset] || null;
+      const token = el('input', { type: 'password', placeholder: f.id && f.hasToken ? '•••••••• (đã lưu – để trống nếu không đổi)' : (p ? 'Dán token vào đây' : 'Token / API key (nếu máy chủ cần)'), autocomplete: 'off' });
+      const out = el('div', { class: 'cn-out' });
+      const collect = () => ({ ...f, args: f.args });
+      const test = el('button', { class: 'btn', onclick: async () => {
+        test.disabled = true; out.replaceChildren(el('span', { class: 'spin' }), ' Đang thử kết nối…');
+        try {
+          const r = await window.vp.conn.test(collect(), token.value);
+          out.replaceChildren(r.ok ? el('div', { class: 'skm-ok', text: `✓ Kết nối được · ${r.tools} công cụ${r.names && r.names.length ? ': ' + r.names.join(', ') + (r.tools > r.names.length ? '…' : '') : ''}` }) : el('div', { class: 'tp-err', text: r.error }));
+        } catch (er) { out.replaceChildren(el('div', { class: 'tp-err', text: U.cleanErr(er) })); } finally { test.disabled = false; }
+      } }, '🔎 Thử kết nối');
+      const save = el('button', { class: 'btn primary', onclick: async () => {
+        save.disabled = true;
+        try {
+          if (p && !f.id && !token.value.trim()) throw new Error('Chưa dán token');
+          await window.vp.conn.save(collect(), token.value); U.toast(`🔌 Đã lưu kết nối ${f.name || p.name} – dùng được ở đoạn chat mới`); V.form = null; render();
+        } catch (er) { out.replaceChildren(el('div', { class: 'tp-err', text: U.cleanErr(er) })); } finally { save.disabled = false; }
+      } }, '💾 Lưu kết nối');
+      const fields = p ? [
+        el('div', { class: 'cn-preset' }, el('span', { class: 'tp-ic', text: p.icon }), el('div', {}, el('b', { text: p.name }), el('small', { text: p.desc }))),
+        el('div', { class: 'field' }, el('label', { text: p.tokenLabel }), token, el('small', {}, p.tokenHint + ' ', el('button', { class: 'linkbtn small', onclick: () => window.vp.openUrl(p.tokenHelp) }, 'Tạo token trên GitHub ↗'))),
+      ] : [
+        el('div', { class: 'field' }, el('label', { text: 'Tên hiển thị' }), el('input', { value: f.name, placeholder: 'Ví dụ: Notion nội bộ', oninput: (e) => { f.name = e.target.value; } })),
+        el('div', { class: 'field' }, el('label', { text: 'Kiểu máy chủ MCP' }), el('select', { onchange: (e) => { f.kind = e.target.value; render(); } }, el('option', { value: 'http', text: '🌐 Qua địa chỉ web (HTTP)', selected: f.kind === 'http' }), el('option', { value: 'stdio', text: '💻 Chạy lệnh trên máy (stdio)', selected: f.kind === 'stdio' }))),
+        f.kind === 'http'
+          ? el('div', { class: 'field' }, el('label', { text: 'Địa chỉ MCP' }), el('input', { value: f.url || '', placeholder: 'https://…/mcp', oninput: (e) => { f.url = e.target.value; } }))
+          : el('div', { class: 'sch-grid' },
+            el('div', { class: 'field' }, el('label', { text: 'Lệnh' }), el('input', { value: f.command || '', placeholder: 'npx', oninput: (e) => { f.command = e.target.value; } })),
+            el('div', { class: 'field' }, el('label', { text: 'Tham số' }), el('input', { value: Array.isArray(f.args) ? f.args.join(' ') : f.args || '', placeholder: '-y @scope/mcp-server', oninput: (e) => { f.args = e.target.value; } })),
+            el('div', { class: 'field' }, el('label', { text: 'Tên biến chứa token' }), el('input', { value: f.tokenEnv || '', placeholder: 'API_TOKEN', oninput: (e) => { f.tokenEnv = e.target.value.toUpperCase(); } }))),
+        el('div', { class: 'field' }, el('label', { text: f.kind === 'http' ? 'Token (gửi dạng Authorization: Bearer)' : 'Token' }), token),
+      ];
+      return el('div', { class: 'sch-form' }, ...fields,
+        el('label', { class: 'sch-check' }, el('input', { type: 'checkbox', checked: f.autoApprove, onchange: (e) => { f.autoApprove = e.target.checked; } }), ' Tự cho phép công cụ của kết nối này (không hỏi từng lần – cần cho tác vụ đã lên lịch chạy một mình)'),
+        out, el('div', { class: 'skm-cta' }, save, test, el('button', { class: 'btn ghost', onclick: () => { V.form = null; render(); } }, 'Huỷ')));
+    }
+
+    async function render() {
+      if (V.form) { put(el('div', { class: 'skm-h' }, el('b', { text: V.form.id ? '✏️ Sửa kết nối' : '＋ Kết nối mới' })), form()); return; }
+      const list = await window.vp.conn.list().catch(() => []);
+      const row = (c) => el('div', { class: 'sch-card' + (c.enabled ? '' : ' off') },
+        el('div', { class: 'sch-top' }, el('b', {}, `${c.icon} ${c.name} `, el('code', { class: 'dim', text: c.id })),
+          el('label', { class: 'sch-sw' }, el('input', { type: 'checkbox', checked: c.enabled, onchange: async (e) => { await window.vp.conn.save({ ...c, enabled: e.target.checked }, ''); render(); } }), el('i'))),
+        el('div', { class: 'sch-when' }, el('span', { class: 'dim', text: c.kind === 'http' ? c.url : `${c.command} ${(c.args || []).join(' ')}` }), el('span', { text: c.hasToken ? ' · 🔑 đã lưu token' : ' · chưa có token' })),
+        el('div', { class: 'sch-foot' }, el('span', { class: 'grow' }),
+          el('button', { class: 'btn mini', onclick: () => { V.form = { ...c }; render(); } }, '✏️ Sửa'),
+          el('button', { class: 'btn mini danger', onclick: async (ev) => {
+            const b = ev.currentTarget;
+            if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = 'Gỡ thật?'; setTimeout(() => { b.classList.remove('armed'); b.textContent = '🗑'; }, 3000); return; }
+            await window.vp.conn.remove(c.id); U.toast('Đã gỡ kết nối và xoá token'); render();
+          } }, '🗑')));
+      const hasGh = list.some((c) => c.preset === 'github');
+      put(
+        el('div', { class: 'skm-h' }, el('b', { text: `Kết nối (${list.length})` }), el('small', { text: 'Máy chủ MCP cho AI dùng trong mọi đoạn chat – với model SIMI, ChatGPT, Claude, Gemini… Token mã hoá trên máy này, không gửi lên Gateway.' })),
+        list.length ? el('div', { class: 'sch-list' }, list.map(row)) : null,
+        el('div', { class: 'skm-cta' },
+          !hasGh ? el('button', { class: 'btn primary', onclick: () => { V.form = newForm('github'); render(); } }, '🐙 Kết nối GitHub') : null,
+          el('button', { class: 'btn', onclick: () => { V.form = newForm(''); render(); } }, '＋ MCP tuỳ chỉnh')));
+    }
+    if (start) V.form = newForm(start === 'github' ? 'github' : '');
+    U.openModal('🔌 Kết nối', body, [el('button', { class: 'btn primary', text: 'Xong', onclick: U.closeModal })], 'wide');
+    render();
   }
 
   // ================= 📚 Quản lý skill: tạo mới, sửa, nhập từ file / thư mục / zip, xoá =================
@@ -1118,6 +1318,8 @@
   let raf = 0;
   function onEvent(e) {
     if (e.type === 'chat-open') { setView('chat'); openThread(e.threadId); return; }
+    if (e.type === 'sched') { loadThreads(); refreshSchedBadge(); if (S2.open) S2.render(); return; }
+    if (e.type === 'sched-open') { setView('chat'); openSchedules(); return; }
     if (e.type === 'simi-update') { onSimiUpdate(e); return; }
     if (e.type === 'chat-sandbox') {
       // bấm "Luôn cho phép, không hỏi nữa" → đoạn chat này + các đoạn chat mới đều tự cho phép
@@ -1164,6 +1366,7 @@
     await loadThreads();
     C.running = new Set(await window.vp.chat.running());
     loadMeta();
+    refreshSchedBadge();
     if (ls.get('vp.mainView', 'office') === 'chat') setView('chat');
     // quay lại app (ví dụ sau khi chat bên ChatGPT Work) → cập nhật danh sách + đoạn đang mở
     window.addEventListener('focus', () => {
@@ -1173,5 +1376,5 @@
     });
   }
 
-  window.VPChat = { init, openAgent, setView, view: () => C.view, refresh: () => loadMeta(true), newThread, runSimiUpdate };
+  window.VPChat = { init, openAgent, setView, view: () => C.view, refresh: () => loadMeta(true), newThread, runSimiUpdate, openSchedules, openConnectors };
 })();

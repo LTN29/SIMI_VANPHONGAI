@@ -121,6 +121,21 @@ contextBridge.exposeInMainWorld('vp', {
     openDir: (d) => ipcRenderer.invoke('chat:openDir', d),
     pathOf: (file) => { try { return webUtils.getPathForFile(file) || ''; } catch { return ''; } },
   },
+  conn: {
+    presets: () => ipcRenderer.invoke('conn:presets'),
+    list: () => ipcRenderer.invoke('conn:list'),
+    save: (c, token) => ipcRenderer.invoke('conn:save', c, token),
+    remove: (id) => ipcRenderer.invoke('conn:remove', id),
+    test: (c, token) => ipcRenderer.invoke('conn:test', c, token),
+  },
+  sched: {
+    list: () => ipcRenderer.invoke('sched:list'),
+    save: (t) => ipcRenderer.invoke('sched:save', t),
+    remove: (id) => ipcRenderer.invoke('sched:remove', id),
+    toggle: (id, on) => ipcRenderer.invoke('sched:toggle', id, on),
+    run: (id) => ipcRenderer.invoke('sched:run', id),
+    prefs: (p) => ipcRenderer.invoke('sched:prefs', p),
+  },
   onEvent: (cb) => {
     const h = (_e, data) => cb(data);
     ipcRenderer.on('evt', h);

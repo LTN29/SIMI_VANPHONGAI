@@ -1,5 +1,5 @@
 // Tiến trình chính của Electron: cửa sổ, hàng đợi việc cho văn phòng, chat, các lệnh IPC cho giao diện.
-const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage, Menu, Notification, powerMonitor, systemPreferences, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage, Menu, Notification, powerMonitor, systemPreferences, protocol, Tray, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -19,6 +19,8 @@ const { LobbyClient } = require('./lobby-client');
 const { ImageCache, ID: IMG_ID } = require('./lobby-images');
 const { hideSimiTask } = require('./simi-task');
 const { refreshPath } = require('./sys');
+const connectors = require('./connectors');
+const { Scheduler } = require('./scheduler');
 
 // test tự động dùng thư mục dữ liệu riêng để không đụng dữ liệu thật
 if (process.env.VPAI_USER_DATA) app.setPath('userData', process.env.VPAI_USER_DATA);
@@ -44,6 +46,9 @@ let simiUpdating = null;  // cập nhật SIMI đang chạy
 let lobby = null;         // Sảnh online trên SIMI Gateway
 let lobbyImages = null;   // bộ đệm ảnh chat Sảnh
 let lobbyDnd = false;     // trạng thái "Tập trung" trong Sảnh: không bật thông báo tin nhắn / nhắc tên
+let sched = null;         // ⏰ tác vụ đã lên lịch
+let tray = null;          // biểu tượng khay hệ thống khi app chạy nền cho tác vụ đã lên lịch
+let quitting = false;     // đang thoát thật (không chỉ ẩn cửa sổ)
 const queue = [];          // các task chờ
 let running = null;        // { task, ac }
 const modelCache = new Map();
@@ -157,6 +162,29 @@ function browserMcp() {
   };
 }
 
+// 🔌 kết nối MCP người dùng thêm (GitHub, MCP tuỳ chỉnh) – token lấy từ secrets.bin, chỉ đưa vào phiên, không ghi ra file cấu hình
+function connectorsMcp() {
+  try { return connectors.codexConfig(store.getConfig().connectors || [], (n) => store.getSecret(n)); } catch { return {}; }
+}
+
+// ---------------- ⏰ chạy nền cho tác vụ đã lên lịch ----------------
+// đóng cửa sổ khi đang có tác vụ bật → ẩn xuống khay hệ thống thay vì thoát, tác vụ vẫn chạy đúng giờ
+const backgroundWanted = () => !quitting && store && store.getConfig().schedBackground !== false && !!sched && sched.data.tasks.some((t) => t.enabled);
+function ensureTray() {
+  if (tray) return;
+  let img = nativeImage.createFromPath(ICON);
+  if (!img.isEmpty()) img = img.resize({ width: process.platform === 'darwin' ? 18 : 16 });
+  tray = new Tray(img);
+  tray.setToolTip('Văn Phòng AI – đang chạy nền cho tác vụ đã lên lịch');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Mở Văn Phòng AI', click: () => focusWindow() },
+    { label: '⏰ Tác vụ đã lên lịch', click: () => { focusWindow(); if (win) win.webContents.send('evt', { type: 'sched-open' }); } },
+    { type: 'separator' },
+    { label: 'Thoát hẳn', click: () => { quitting = true; app.quit(); } },
+  ]));
+  tray.on('click', () => focusWindow());
+}
+
 // Tự chạy thử MCP vp_browser đúng như Codex sẽ chạy (môi trường đã lọc): cách nào chạy được thì dùng cách đó.
 // Không cách nào chạy → ghi rõ lý do để người dùng / kỹ thuật thấy, thay vì AI lặng lẽ không vào được trình duyệt.
 async function probeBrowserMcp() {
@@ -249,6 +277,26 @@ async function pump() {
 }
 
 // ---------------- IPC ----------------
+// ⏰ một lượt của tác vụ đã lên lịch: gửi yêu cầu vào Chat (đoạn chat mới mỗi lần, hoặc nối tiếp 1 đoạn chat)
+async function runScheduled(t) {
+  let id = t.thread === 'same' && t.threadId && chat.store.get(t.threadId) ? t.threadId : null;
+  if (!id) {
+    const d = new Date();
+    const stamp = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    id = chat.create({ project: t.project || '', model: t.model || '', agentId: t.agentId || null, sandbox: t.sandbox, title: `⏰ ${t.name} · ${stamp}`.slice(0, 80) }).id;
+    emit({ type: 'sched', threadId: id });
+  }
+  emit({ type: 'log', level: 'info', text: `⏰ Chạy tác vụ đã lên lịch: ${t.name}` });
+  const r = await chat.send(id, { text: t.prompt, ...(t.model ? { model: t.model } : {}) });
+  return { threadId: id, ok: !!(r && r.ok), error: r && !r.ok ? ((r.message && r.message.error) || 'Có lỗi') : '' };
+}
+function notifyScheduled(t, run) {
+  if (!Notification.isSupported() || store.getConfig().notify === false) return;
+  const n = new Notification({ title: `${run.ok ? '✅' : '⚠️'} Tác vụ: ${t.name}`.slice(0, 80), body: run.ok ? `Đã xong sau ${Math.round(run.ms / 1000)} giây – bấm để xem kết quả` : `Chưa xong: ${run.error}`.slice(0, 160), icon: ICON });
+  n.on('click', () => { focusWindow(); if (run.threadId && win) win.webContents.send('evt', { type: 'chat-open', threadId: run.threadId }); });
+  n.show();
+}
+
 function registerIpc() {
   const handle = (ch, fn) => ipcMain.handle(ch, (_e, ...a) => fn(...a));
 
@@ -466,6 +514,48 @@ function registerIpc() {
 
   // chat
   // đoạn chat mở từ ChatGPT Work: chia nhóm theo dự án của Codex (thư mục nháp → mục Đoạn chat)
+  // 🔌 kết nối MCP
+  const connView = (c) => ({ ...c, hasToken: !!store.getSecret(connectors.secretKey(c.id)), icon: (connectors.PRESETS[c.preset] || {}).icon || '🔌' });
+  handle('conn:presets', () => connectors.PRESETS);
+  handle('conn:list', () => (store.getConfig().connectors || []).map(connView));
+  handle('conn:save', (c, token) => {
+    const cfg = store.getConfig(); const list = cfg.connectors || [];
+    const n = connectors.normalize(c || {}, list);
+    const i = list.findIndex((x) => x.id === (c && c.id));
+    if (i >= 0) list[i] = n; else list.push(n);
+    cfg.connectors = list; store.saveConfig(cfg);
+    if (typeof token === 'string' && token.trim()) store.setSecret(connectors.secretKey(n.id), token.trim());
+    if (codexServer) codexServer.restartIfChanged();
+    return connView(n);
+  });
+  handle('conn:remove', (id) => {
+    const cfg = store.getConfig(); cfg.connectors = (cfg.connectors || []).filter((x) => x.id !== id); store.saveConfig(cfg);
+    store.setSecret(connectors.secretKey(id), ''); return true;
+  });
+  handle('conn:test', async (c, token) => {
+    const list = store.getConfig().connectors || [];
+    const saved = c && c.id ? list.find((x) => x.id === c.id) : null;
+    const n = connectors.normalize({ ...(saved || {}), ...(c || {}) }, list);
+    const tok = (typeof token === 'string' && token.trim()) || (saved ? store.getSecret(connectors.secretKey(saved.id)) : '');
+    return connectors.test(n, tok);
+  });
+
+  // ⏰ tác vụ đã lên lịch
+  handle('sched:list', () => ({ ...sched.list(), background: store.getConfig().schedBackground !== false, openAtLogin: !!store.getConfig().openAtLogin }));
+  handle('sched:save', (t) => sched.save(t || {}));
+  handle('sched:remove', (id) => sched.remove(id));
+  handle('sched:toggle', (id, on) => sched.toggle(id, on));
+  handle('sched:run', (id) => sched.runNow(id));
+  handle('sched:prefs', (p) => {
+    const cfg = store.getConfig();
+    if ('background' in p) cfg.schedBackground = !!p.background;
+    if ('openAtLogin' in p) {
+      cfg.openAtLogin = !!p.openAtLogin;
+      try { app.setLoginItemSettings({ openAtLogin: cfg.openAtLogin, args: ['--hidden'] }); } catch { /* hệ điều hành không cho */ }
+    }
+    store.saveConfig(cfg); return true;
+  });
+
   handle('chat:list', () => chat.store.list().map((t) => (t.origin === 'codex' ? { ...t, project: chat.projectFor(t.cwd || t.project) } : t)));
   handle('chat:get', (id) => chat.store.get(id));
   handle('chat:create', (o) => chat.create(o || {}));
@@ -592,6 +682,17 @@ function createWindow() {
   } else {
     win.removeMenu();
   }
+  // mở cùng máy (đăng nhập Windows / macOS) → chạy nền ở khay, không bật cửa sổ
+  if (process.argv.includes('--hidden')) { win.hide(); win.once('ready-to-show', () => win.hide()); setTimeout(() => ensureTray(), 0); }
+  win.on('close', (e) => {
+    if (!backgroundWanted()) return;
+    e.preventDefault(); win.hide(); ensureTray();
+    const cfg = store.getConfig();
+    if (!cfg.schedBgTold) {
+      cfg.schedBgTold = true; store.saveConfig(cfg);
+      if (Notification.isSupported()) new Notification({ title: 'Văn Phòng AI vẫn chạy nền', body: 'Để tác vụ đã lên lịch chạy đúng giờ. Mở lại hoặc thoát hẳn ở biểu tượng trên khay hệ thống.', icon: ICON }).show();
+    }
+  });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.webContents.once('did-finish-load', () => { if (global.vpBootOk) global.vpBootOk(); }); // bản cập nhật nhanh mở được → giữ
   win.on('focus', () => { if (updater) updater.checkSoon(2 * 60 * 1000); }); // quay lại app sau một lúc → xem có bản mới không
@@ -641,7 +742,8 @@ app.whenReady().then(() => {
     idle: () => powerMonitor.getSystemIdleTime() >= 180,
   });
   updater.start();
-  chat = new ChatEngine({ userData: app.getPath('userData'), getConfig: () => store.getConfig(), emit, defaultDir: chatDir, hiddenDirs: () => [workDir()], codex: codexServer, openUrl: (u) => { if (!browserPane || store.getConfig().builtinBrowser === false) return false; browserPane.call('browser_open', { url: u, max_chars: 200 }).catch(() => {}); return true; }, extraConfig: () => ({ ...computerMcp(), ...browserMcp() }), getSecret: (n) => store.getSecret(n) });
+  chat = new ChatEngine({ userData: app.getPath('userData'), getConfig: () => store.getConfig(), emit, defaultDir: chatDir, hiddenDirs: () => [workDir()], codex: codexServer, openUrl: (u) => { if (!browserPane || store.getConfig().builtinBrowser === false) return false; browserPane.call('browser_open', { url: u, max_chars: 200 }).catch(() => {}); return true; }, extraConfig: () => ({ ...computerMcp(), ...browserMcp(), ...connectorsMcp() }), getSecret: (n) => store.getSecret(n) });
+  sched = new Scheduler({ dir: app.getPath('userData'), emit, runTask: runScheduled, notify: notifyScheduled });
   lobby = new LobbyClient({
     getAuth: () => simi.gatewayAuth(),
     appInfo: { version: appVersion(), os: `${process.platform}-${process.arch}` },
@@ -685,6 +787,7 @@ app.whenReady().then(() => {
   registerIpc();
   youtubeReferer();
   createWindow();
+  setTimeout(() => sched.start(), 8000); // để Codex / Gateway kịp sẵn sàng, rồi chạy bù lượt lỡ
   browserPane = new BrowserPane({ getWindow: () => win, emit, connFile: path.join(app.getPath('userData'), 'browser-pane.json') });
   browserPane.listen().then(() => probeBrowserMcp()).catch((e) => {
     console.warn('Trình duyệt cạnh chat không mở được cổng điều khiển:', e.message);
@@ -695,7 +798,8 @@ app.whenReady().then(() => {
 
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0 && store) createWindow(); });
 
-app.on('will-quit', () => { if (browserPane) browserPane.stop(); });
+app.on('before-quit', () => { quitting = true; });
+app.on('will-quit', () => { if (browserPane) browserPane.stop(); if (sched) sched.stop(); if (tray) { tray.destroy(); tray = null; } });
 app.on('window-all-closed', () => {
   if (running) running.ac.abort();
   if (chat) for (const id of [...chat.running.keys()]) chat.stop(id);

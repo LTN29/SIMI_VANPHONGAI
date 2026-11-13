@@ -15,12 +15,21 @@ const envRefs = () => Object.fromEntries(SIMI_ENV.filter((n) => process.env[n]).
 function mcpServers(flat = {}, simiBrowser = null, simiName = 'simi_browser') {
   const servers = {};
   for (const [k, v] of Object.entries(flat || {})) {
-    const m = k.match(/^mcp_servers\.([^.]+)\.(command|args|env)$/);
-    if (m) (servers[m[1]] = servers[m[1]] || {})[m[2]] = v;
+    const m = k.match(/^mcp_servers\.([^.]+)\.(command|args|env|url|http_headers)$/);
+    if (m) (servers[m[1]] = servers[m[1]] || {})[m[2] === 'http_headers' ? 'headers' : m[2]] = v;
   }
   if (simiBrowser && simiBrowser.command && !servers[simiName]) servers[simiName] = { command: simiBrowser.command, args: simiBrowser.args || [], simi: true };
-  for (const n of Object.keys(servers)) if (!servers[n].command) delete servers[n];
+  for (const n of Object.keys(servers)) if (!servers[n].command && !servers[n].url) delete servers[n];
   return servers;
+}
+
+// MCP qua HTTP (kết nối như GitHub): token không ghi ra file cấu hình – file chỉ chứa ${VP_TOK_<TÊN>}, giá trị đưa qua biến môi trường
+const tokEnv = (name) => 'VP_TOK_' + String(name).toUpperCase().replace(/[^A-Z0-9]/g, '_');
+function httpEntry(name, s, style) {
+  const headers = {}; const env = {};
+  for (const [h, v] of Object.entries(s.headers || {})) { const e = tokEnv(name) + (h === 'Authorization' ? '' : '_' + h.toUpperCase().replace(/[^A-Z0-9]/g, '_')); env[e] = String(v); headers[h] = '${' + e + '}'; }
+  const entry = style === 'gemini' ? { httpUrl: s.url, headers } : { type: 'http', url: s.url, headers };
+  return { entry, env };
 }
 
 const writeJson = (file, data) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8'); };
@@ -31,11 +40,14 @@ const fileServers = (servers, extra = {}) => Object.fromEntries(Object.entries(s
 // ---------- Claude Code ----------
 // sandbox của đoạn chat → quyền cấp sẵn (claude -p không hỏi quyền được: thiếu quyền là công cụ bị chặn)
 function claudeArgs({ servers, sandbox = 'workspace-write', dataDir, addDirs = [] }) {
-  const args = []; const names = Object.keys(servers);
+  const args = []; const env = {}; const names = Object.keys(servers);
   if (names.length) {
     try {
       const file = path.join(dataDir, 'claude-mcp.json');
-      writeJson(file, { mcpServers: Object.fromEntries(Object.entries(fileServers(servers)).map(([n, s]) => [n, { type: 'stdio', ...s }])) });
+      const stdio = Object.fromEntries(Object.entries(servers).filter(([, s]) => s.command));
+      const out = Object.fromEntries(Object.entries(fileServers(stdio)).map(([n, s]) => [n, { type: 'stdio', ...s }]));
+      for (const [n, s] of Object.entries(servers)) if (!s.command && s.url) { const h = httpEntry(n, s, 'claude'); out[n] = h.entry; Object.assign(env, h.env); }
+      writeJson(file, { mcpServers: out });
       args.push('--mcp-config', file);
     } catch { /* không ghi được → chạy không MCP */ }
   }
@@ -45,7 +57,7 @@ function claudeArgs({ servers, sandbox = 'workspace-write', dataDir, addDirs = [
   const mode = sandbox === 'danger-full-access' ? 'bypassPermissions' : sandbox === 'read-only' ? 'default' : 'acceptEdits';
   args.push('--permission-mode', mode, '--allowedTools', allow.join(' '));
   for (const d of addDirs) if (fs.existsSync(d)) args.push('--add-dir', d);
-  return { args, servers: withMcp ? names : [] };
+  return { args, env, servers: withMcp ? names : [] };
 }
 
 // ---------- Gemini CLI ----------
@@ -55,7 +67,10 @@ function geminiSetup({ servers, sandbox = 'workspace-write', dataDir, addDirs = 
   if (names.length) {
     try {
       const file = path.join(dataDir, 'gemini-settings.json');
-      writeJson(file, { mcpServers: fileServers(servers, { trust: true, timeout: 600000 }) });
+      const stdio = Object.fromEntries(Object.entries(servers).filter(([, s]) => s.command));
+      const out = fileServers(stdio, { trust: true, timeout: 600000 });
+      for (const [n, s] of Object.entries(servers)) if (!s.command && s.url) { const h = httpEntry(n, s, 'gemini'); out[n] = { ...h.entry, trust: true, timeout: 600000 }; Object.assign(env, h.env); }
+      writeJson(file, { mcpServers: out });
       env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = file;
     } catch { /* không ghi được → chạy không MCP */ }
   }
@@ -109,6 +124,72 @@ class McpClient {
   call(tool, args, timeoutMs = 600000) { return this.request('tools/call', { name: tool, arguments: args || {} }, timeoutMs); }
   close() { try { this.child.kill(); } catch { /* đã dừng */ } }
 }
+
+// ---------- MCP client qua HTTP (Streamable HTTP: POST JSON-RPC, trả JSON hoặc luồng SSE) ----------
+class McpHttpClient {
+  constructor(name, { url, headers = {} }) { this.name = name; this.url = url; this.headers = headers; this.seq = 0; this.session = ''; this.proto = ''; this.ctrls = new Set(); }
+
+  async _post(body, timeoutMs, wantId) {
+    const ac = new AbortController(); this.ctrls.add(ac);
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+      const res = await fetch(this.url, {
+        method: 'POST', signal: ac.signal,
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...this.headers, ...(this.session ? { 'Mcp-Session-Id': this.session } : {}), ...(this.proto ? { 'MCP-Protocol-Version': this.proto } : {}) },
+        body: JSON.stringify(body),
+      });
+      const sid = res.headers.get('mcp-session-id'); if (sid) this.session = sid;
+      if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(`Công cụ ${this.name}: HTTP ${res.status}${t ? ' – ' + t.slice(0, 200) : ''}`); }
+      if (wantId == null) return null;
+      const type = res.headers.get('content-type') || '';
+      let msg = null;
+      if (type.includes('text/event-stream')) {
+        // đọc luồng SSE tới khi gặp câu trả lời đúng id
+        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+        while (!msg) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let i;
+          while (!msg && (i = buf.indexOf('\n\n')) >= 0) {
+            const ev = buf.slice(0, i); buf = buf.slice(i + 2);
+            const data = ev.split(/\r?\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trimStart()).join('\n');
+            if (!data) continue;
+            try { const m = JSON.parse(data); if (m && m.id === wantId) msg = m; } catch { /* bỏ dòng hỏng */ }
+          }
+        }
+        try { reader.cancel(); } catch { /* đã đóng */ }
+      } else {
+        const m = await res.json();
+        msg = Array.isArray(m) ? m.find((x) => x && x.id === wantId) : m;
+      }
+      if (!msg) throw new Error(`Công cụ ${this.name} không trả kết quả`);
+      if (msg.error) throw new Error(msg.error.message || JSON.stringify(msg.error));
+      return msg.result;
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error(`Công cụ ${this.name} không trả lời (quá ${Math.round(timeoutMs / 1000)} giây)`);
+      throw e;
+    } finally { clearTimeout(timer); this.ctrls.delete(ac); }
+  }
+
+  request(method, params, timeoutMs = 30000) { const id = ++this.seq; return this._post({ jsonrpc: '2.0', id, method, params }, timeoutMs, id); }
+
+  async init() {
+    const r = await this.request('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'vanphong-ai', version: '1' } }, 20000);
+    this.proto = (r && r.protocolVersion) || '2025-03-26';
+    await this._post({ jsonrpc: '2.0', method: 'notifications/initialized' }, 10000, null).catch(() => {});
+    const out = []; let cursor;
+    do {
+      const page = (await this.request('tools/list', cursor ? { cursor } : {}, 20000)) || {};
+      out.push(...(page.tools || [])); cursor = page.nextCursor;
+    } while (cursor && out.length < 500);
+    return out;
+  }
+
+  call(tool, args, timeoutMs = 600000) { return this.request('tools/call', { name: tool, arguments: args || {} }, timeoutMs); }
+  close() { for (const c of this.ctrls) c.abort(); }
+}
+// stdio (có command) hay HTTP (có url)
+McpClient.create = (name, s) => (s && s.url && !s.command ? new McpHttpClient(name, s) : new McpClient(name, s));
 
 // ---------- công cụ file có sẵn (model API không có Read / Write như Claude Code) ----------
 const under = (base, p) => { const r = path.resolve(p); const b = path.resolve(base); return r === b || r.startsWith(b + path.sep); };
@@ -243,7 +324,7 @@ async function runApiTools({ source, model, system, user, servers = {}, sandbox 
   for (const t of localTools({ workDir, sandbox, writeDirs })) tools.push({ id: t.name, server: '', tool: t.name, description: t.description, inputSchema: t.inputSchema, run: t.run });
   // khởi động các MCP cùng lúc; MCP nào hỏng thì bỏ qua, các công cụ khác vẫn dùng được
   await Promise.all(Object.entries(servers).map(async ([name, s]) => {
-    const c = new McpClient(name, s); clients.push(c);
+    const c = McpClient.create(name, s); clients.push(c);
     try {
       for (const t of await c.init()) tools.push({ id: `${name}__${t.name}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64), server: name, tool: t.name, description: String(t.description || t.title || t.name).slice(0, 1000), inputSchema: t.inputSchema, client: c });
     } catch { /* MCP không khởi động được */ }
@@ -294,4 +375,4 @@ async function runApiTools({ source, model, system, user, servers = {}, sandbox 
 
 const API_TOOL_SOURCES = new Set(Object.keys(ADAPTERS));
 
-module.exports = { mcpServers, claudeArgs, geminiSetup, runApiTools, McpClient, geminiSchema, API_TOOL_SOURCES, SIMI_ENV };
+module.exports = { mcpServers, claudeArgs, geminiSetup, runApiTools, McpClient, McpHttpClient, geminiSchema, API_TOOL_SOURCES, SIMI_ENV };
