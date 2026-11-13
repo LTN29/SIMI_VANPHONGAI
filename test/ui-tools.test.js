@@ -39,7 +39,7 @@ run(async () => {
   const rel = await startReleaseServer(kind, payload);
   const sep = process.platform === 'win32' ? ';' : ':';
   const { app, win, errors, shot, userData } = await launch({
-    prefix: 'tools', config: { chatEngine: 'cli', computerMinimize: false },
+    prefix: 'tools', config: { chatEngine: 'cli', computerMinimize: false, builtinBrowser: false }, // kiểm tra đường cũ: Chrome SIMI riêng
     env: { ...GATEWAY_ENV, CODEX_HOME: codexHome, PATH: codexDir + sep + process.env.PATH, VPAI_UPDATE_URL: rel.url },
   });
   await win.waitForSelector('.welcome', { timeout: 20000 });

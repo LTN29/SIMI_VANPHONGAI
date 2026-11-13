@@ -233,6 +233,9 @@ function openInstaller(gateway) {
 // trình duyệt SIMI (MCP simi_browser do bộ cài SIMI cài): đọc + thao tác trang → cho chạy không cần hỏi từng lần;
 // nút gửi / đăng / thanh toán / xoá do chính công cụ chặn lại, AI phải hỏi người dùng rồi mới đặt confirmed: true
 const BROWSER_MCP = 'simi_browser';
+// công cụ trình duyệt của simi_browser trùng với Trình duyệt SIMI cạnh khung chat (vp_browser): khi app có khung này thì ẩn đi
+// để AI không mở cửa sổ Chrome SIMI riêng – mọi việc trên web làm ngay trong khung (cùng tên công cụ, cùng phiên đăng nhập)
+const BROWSER_DUP_TOOLS = ['browser_read_pages', 'browser_open_window', 'browser_status', 'browser_snapshot', 'browser_act', 'browser_screenshot', 'browser_read_workbook', 'browser_read_candidate_cvs'];
 const browserApprove = () => (readCodexConfig().browserMcp ? { [`mcp_servers.${BROWSER_MCP}.default_tools_approval_mode`]: 'approve' } : {});
 
 // tham số Codex dùng chung để chạy qua SIMI Gateway (việc của Văn phòng: `codex exec`, không hỏi quyền được)
@@ -471,4 +474,5 @@ function gatewayAuth() {
   return { baseUrl: cfg.baseUrl || '', key: readKey(), clientId: readClientId() };
 }
 
-module.exports = { cleanInstallerLine, checkKey, linuxMissing, updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, skillRoots, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };
+module.exports = {
+  BROWSER_DUP_TOOLS, cleanInstallerLine, checkKey, linuxMissing, updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, skillRoots, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };

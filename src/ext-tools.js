@@ -15,10 +15,11 @@ const envRefs = () => Object.fromEntries(SIMI_ENV.filter((n) => process.env[n]).
 function mcpServers(flat = {}, simiBrowser = null, simiName = 'simi_browser') {
   const servers = {};
   for (const [k, v] of Object.entries(flat || {})) {
-    const m = k.match(/^mcp_servers\.([^.]+)\.(command|args|env|url|http_headers)$/);
-    if (m) (servers[m[1]] = servers[m[1]] || {})[m[2] === 'http_headers' ? 'headers' : m[2]] = v;
+    const m = k.match(/^mcp_servers\.([^.]+)\.(command|args|env|url|http_headers|disabled_tools)$/);
+    if (m) (servers[m[1]] = servers[m[1]] || {})[{ http_headers: 'headers', disabled_tools: 'disabled' }[m[2]] || m[2]] = v;
   }
-  if (simiBrowser && simiBrowser.command && !servers[simiName]) servers[simiName] = { command: simiBrowser.command, args: simiBrowser.args || [], simi: true };
+  // simi_browser từ config.toml; cấu hình phiên có thể chỉ thêm disabled_tools (ẩn công cụ trùng Trình duyệt SIMI cạnh chat)
+  if (simiBrowser && simiBrowser.command && !(servers[simiName] && servers[simiName].command)) servers[simiName] = { ...(servers[simiName] || {}), command: simiBrowser.command, args: simiBrowser.args || [], simi: true };
   for (const n of Object.keys(servers)) if (!servers[n].command && !servers[n].url) delete servers[n];
   return servers;
 }
@@ -33,9 +34,12 @@ function httpEntry(name, s, style) {
 }
 
 const writeJson = (file, data) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8'); };
-const fileServers = (servers, extra = {}) => Object.fromEntries(Object.entries(servers).map(([n, s]) => [n, {
+const fileServers = (servers, extra = {}, hideKey = '') => Object.fromEntries(Object.entries(servers).map(([n, s]) => [n, {
   command: s.command, args: s.args || [], ...((s.env || s.simi) ? { env: { ...(s.simi ? envRefs() : {}), ...(s.env || {}) } } : {}), ...extra,
+  ...(hideKey && Array.isArray(s.disabled) && s.disabled.length ? { [hideKey]: s.disabled } : {}),
 }]));
+// công cụ bị ẩn của từng server (disabled_tools) → tên đầy đủ kiểu Claude Code
+const hiddenTools = (servers) => Object.entries(servers).flatMap(([n, s]) => (Array.isArray(s.disabled) ? s.disabled : []).map((t) => `mcp__${n}__${t}`));
 
 // ---------- Claude Code ----------
 // sandbox của đoạn chat → quyền cấp sẵn (claude -p không hỏi quyền được: thiếu quyền là công cụ bị chặn)
@@ -56,6 +60,8 @@ function claudeArgs({ servers, sandbox = 'workspace-write', dataDir, addDirs = [
   if (sandbox !== 'read-only') allow.push('Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'Bash');
   const mode = sandbox === 'danger-full-access' ? 'bypassPermissions' : sandbox === 'read-only' ? 'default' : 'acceptEdits';
   args.push('--permission-mode', mode, '--allowedTools', allow.join(' '));
+  const deny = withMcp ? hiddenTools(servers) : [];
+  if (deny.length) args.push('--disallowedTools', deny.join(' '));
   for (const d of addDirs) if (fs.existsSync(d)) args.push('--add-dir', d);
   return { args, env, servers: withMcp ? names : [] };
 }
@@ -68,7 +74,7 @@ function geminiSetup({ servers, sandbox = 'workspace-write', dataDir, addDirs = 
     try {
       const file = path.join(dataDir, 'gemini-settings.json');
       const stdio = Object.fromEntries(Object.entries(servers).filter(([, s]) => s.command));
-      const out = fileServers(stdio, { trust: true, timeout: 600000 });
+      const out = fileServers(stdio, { trust: true, timeout: 600000 }, 'excludeTools');
       for (const [n, s] of Object.entries(servers)) if (!s.command && s.url) { const h = httpEntry(n, s, 'gemini'); out[n] = { ...h.entry, trust: true, timeout: 600000 }; Object.assign(env, h.env); }
       writeJson(file, { mcpServers: out });
       env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = file;
@@ -326,7 +332,8 @@ async function runApiTools({ source, model, system, user, servers = {}, sandbox 
   await Promise.all(Object.entries(servers).map(async ([name, s]) => {
     const c = McpClient.create(name, s); clients.push(c);
     try {
-      for (const t of await c.init()) tools.push({ id: `${name}__${t.name}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64), server: name, tool: t.name, description: String(t.description || t.title || t.name).slice(0, 1000), inputSchema: t.inputSchema, client: c });
+      const hide = new Set(Array.isArray(s.disabled) ? s.disabled : []);
+      for (const t of (await c.init()).filter((x) => !hide.has(x.name))) tools.push({ id: `${name}__${t.name}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64), server: name, tool: t.name, description: String(t.description || t.title || t.name).slice(0, 1000), inputSchema: t.inputSchema, client: c });
     } catch { /* MCP không khởi động được */ }
   }));
   const byId = new Map(tools.map((t) => [t.id, t]));

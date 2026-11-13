@@ -69,7 +69,7 @@ run(async () => {
   const init = await rpc(mcp, { id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
   check(init.result.serverInfo.name === 'vp_browser' && /đăng nhập/.test(init.result.instructions), 'MCP vp_browser khởi động, có hướng dẫn cho AI');
   const list = await rpc(mcp, { id: 2, method: 'tools/list' });
-  check(list.result.tools.map((t) => t.name).join() === 'browser_open,browser_snapshot,browser_act,browser_doc,browser_read,browser_screenshot,design_render,document_create,browser_js,browser_tabs', 'đủ 10 công cụ (8 trình duyệt + xuất thiết kế + tạo file)');
+  check(list.result.tools.map((t) => t.name).join() === 'browser_open,browser_snapshot,browser_act,browser_doc,browser_read_pages,browser_open_window,browser_read,browser_screenshot,design_render,document_create,browser_js,browser_tabs', 'đủ 12 công cụ (10 trình duyệt + xuất thiết kế + tạo file)');
 
   // app tự chạy thử MCP như Codex sẽ chạy (môi trường đã lọc) → biết ngay máy này AI có điều khiển được trình duyệt không
   let men = null;
@@ -207,10 +207,22 @@ run(async () => {
   check(!(await pageShown()), 'hộp thoại của app mở → tạm ẩn trang (không đè lên hộp thoại)');
   await win.evaluate(() => document.getElementById('modal').classList.add('hidden'));
   check(await pageShown(), 'đóng hộp thoại → trang hiện lại');
+  // đọc nhiều trang 1 lần ngay trong khung (thay Chrome SIMI riêng): trang đầu ở tab đang xem, trang sau ở tab nền rồi đóng
+  const tabs0 = (await win.evaluate(() => window.vp.browser.state())).tabs.length;
+  const rp = await rpc(mcp, { id: 60, method: 'tools/call', params: { name: 'browser_read_pages', arguments: { urls: [base + 'trang-2', base, base + 'rieng-tu.docx'] } } });
+  const rpt = rp.result.content[0].text;
+  check(!rp.result.isError && /### 1\/3[\s\S]*Trang thứ hai/.test(rpt) && /### 2\/3[\s\S]*Form thử SIMI/.test(rpt) && /### 3\/3[\s\S]*Sign in/.test(rpt), 'browser_read_pages đọc 3 trang trong 1 lần gọi');
+  check(/đăng nhập ngay trong Trình duyệt SIMI/.test(rpt), 'trang đòi đăng nhập → nhắc người dùng đăng nhập ngay trong khung');
+  const stRp = await win.evaluate(() => window.vp.browser.state());
+  check(stRp.tabs.length === tabs0 && /trang-2/.test(stRp.tabs.find((t) => t.active).url), 'tab nền tự đóng, tab đang xem là trang đầu');
+  const ow = await rpc(mcp, { id: 61, method: 'tools/call', params: { name: 'browser_open_window', arguments: { url: base } } });
+  check(/Trình duyệt SIMI cạnh khung chat/.test(ow.result.content[0].text), 'browser_open_window (skill cũ) mở trang ngay trong khung để đăng nhập');
   await win.click('#chTools');
   await win.waitForSelector('.tools-pop .tp-card');
   await new Promise((r) => setTimeout(r, 200));
-  check(/Trình duyệt cạnh chat/.test(await win.locator('.tools-pop').innerText()), '🧰 Công cụ có mục "Trình duyệt cạnh chat"');
+  const popTxt = await win.locator('.tools-pop').innerText();
+  check(/Trình duyệt SIMI \(cạnh chat\)/.test(popTxt), '🧰 Công cụ có mục "Trình duyệt SIMI (cạnh chat)"');
+  check(!/Mở để đăng nhập/.test(popTxt), 'không còn mục mở Chrome SIMI riêng khi đã có khung cạnh chat');
   await win.mouse.click(400, 300);
   // thu gọn cột danh sách đoạn chat → khung chat rộng ra, trang web vẫn khít bên phải
   const mainW0 = (await win.locator('.ch-main').boundingBox()).width;

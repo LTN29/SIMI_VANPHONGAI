@@ -893,8 +893,8 @@
         } }, '🔑 Mở để đăng nhập') : el('small', { class: 'dim', text: 'Chưa cài – bấm Cập nhật SIMI để cài trình duyệt SIMI.' }),
         br.configured ? el('button', { class: 'btn mini', onclick: () => tryIt(C.skills.some((s) => s.name === 'simi-trinh-duyet') ? '$simi-trinh-duyet Đọc trang ' : 'Dùng trình duyệt SIMI đọc trang ') }, '▶ Dùng thử') : null));
     const wbRow = window.VPBrowser ? el('div', { class: 'tp-card main' },
-      el('div', { class: 'tp-h' }, el('span', { class: 'tp-ic', text: '🌐' }), el('div', {}, el('b', { text: 'Trình duyệt cạnh chat' }),
-        el('small', { text: 'Giống Claude Desktop: trang web hiện ngay bên phải, AI tự mở trang, bấm, gõ, điền form – bạn xem trực tiếp và bấm tiếp được. Đăng nhập 1 lần trong khung, lần sau tự nhớ.' })), badge('ready')),
+      el('div', { class: 'tp-h' }, el('span', { class: 'tp-ic', text: '🌐' }), el('div', {}, el('b', { text: info.builtin ? 'Trình duyệt SIMI (cạnh chat)' : 'Trình duyệt cạnh chat' }),
+        el('small', { text: 'Trang web hiện ngay bên phải – AI dùng khung này cho mọi việc trên web: đọc link, Shopee, Facebook, SharePoint, điền form, đăng bài; không mở Chrome riêng nữa. Bạn xem trực tiếp, đăng nhập 1 lần trong khung, lần sau tự nhớ.' })), badge('ready')),
       el('div', { class: 'tp-act' },
         el('button', { class: 'btn mini', onclick: () => { pop.remove(); window.VPBrowser.toggle(true); } }, '🌐 Mở khung'),
         el('button', { class: 'btn mini', title: 'Mở Canva trong khung trình duyệt – đăng nhập 1 lần, AI thiết kế giúp', onclick: () => { pop.remove(); window.VPBrowser.go('https://www.canva.com/'); } }, '🎨 Canva'),
@@ -913,7 +913,7 @@
         return el('span', { class: 'tp-chip' + (c.enabled ? '' : ' off'), title: live && live.error ? live.error : (c.url || c.command || ''), text: `${c.icon} ${c.name}${!c.enabled ? ' · tắt' : live && live.tools ? ' · ' + live.tools + ' công cụ' : ''}` });
       })) : null,
       el('div', { class: 'tp-act' }, el('button', { class: 'btn mini' + (conns.length ? '' : ' primary'), onclick: () => { pop.remove(); openConnectors(conns.length ? null : 'github'); } }, conns.length ? '⚙️ Quản lý kết nối' : '🐙 Kết nối GitHub')));
-    pop.replaceChildren(...[el('div', { class: 'sph', text: '🧰 Công cụ cho đoạn chat' }), wbRow, pcRow, cnRow, brRow, cuRow, plRow,
+    pop.replaceChildren(...[el('div', { class: 'sph', text: '🧰 Công cụ cho đoạn chat' }), wbRow, pcRow, cnRow, info.builtin && wbRow ? null : brRow, cuRow, plRow,
       info.error ? el('div', { class: 'tp-err', text: info.error }) : null,
       el('div', { class: 'tp-foot' },
         el('small', { class: 'dim', title: eng.cmd || '', text: eng.desktop ? '⚙️ Đang dùng Codex của ChatGPT Work' : '⚙️ Đang dùng Codex CLI' }),

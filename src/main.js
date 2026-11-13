@@ -159,8 +159,13 @@ function browserMcp() {
     'mcp_servers.vp_browser.tool_timeout_sec': 180,
     // trình duyệt riêng của app, người dùng nhìn thấy từng bước → không hỏi quyền từng công cụ (như Trình duyệt SIMI)
     'mcp_servers.vp_browser.default_tools_approval_mode': 'approve',
+    // khung này chính là Trình duyệt SIMI: ẩn các công cụ trình duyệt trùng của simi_browser (mở Chrome SIMI riêng) –
+    // simi_browser chỉ còn tìm web, tạo / sửa ảnh, chép lời, đọc / sửa tài liệu
+    ...(simiBrowserOn() ? { [`mcp_servers.${simi.BROWSER_MCP}.disabled_tools`]: simi.BROWSER_DUP_TOOLS } : {}),
   };
 }
+const simiBrowserOn = () => { try { return !!simi.readCodexConfig().browserMcp; } catch { return false; } };
+const builtinOn = () => !!browserPane && store.getConfig().builtinBrowser !== false;
 
 // 🔌 kết nối MCP người dùng thêm (GitHub, MCP tuỳ chỉnh) – token lấy từ secrets.bin, chỉ đưa vào phiên, không ghi ra file cấu hình
 function connectorsMcp() {
@@ -580,19 +585,25 @@ function registerIpc() {
   // Computer Use, trình duyệt SIMI, plugin, MCP
   handle('chat:setupComputerUse', () => { codexServer.restartIfChanged(); return chat.setupComputerUse(); });
   handle('chat:checkComputerUse', () => { codexServer.restartIfChanged(); return chat.checkComputerUse(); });
-  handle('chat:tools', () => { codexServer.restartIfChanged(); return chat.tools(); });
+  handle('chat:tools', async () => { codexServer.restartIfChanged(); return { ...(await chat.tools()), builtin: builtinOn() }; });
   handle('chat:installPlugin', (name, mk) => chat.installPlugin(String(name || ''), mk || null).then((r) => { codexServer.stop(); return r; }));
-  handle('chat:openBrowser', (url) => chat.openBrowser(typeof url === 'string' && /^https?:\/\//i.test(url) ? url : ''));
+  handle('chat:openBrowser', (url) => {
+    const u = typeof url === 'string' && /^https?:\/\//i.test(url) ? url : '';
+    // Trình duyệt SIMI = khung cạnh chat: mở trang ngay trong khung để người dùng đăng nhập (không bật Chrome riêng)
+    if (builtinOn()) return browserPane.call('browser_open_window', u ? { url: u } : {}).then(() => ({ builtin: true }));
+    return chat.openBrowser(u);
+  });
   // danh sách cho menu @ trong ô chat: công cụ của app + plugin Codex đã cài
   let mentionCache = null;
   handle('chat:mentions', async () => {
     if (mentionCache && mentionCache.issue === browserMcpIssue && Date.now() - mentionCache.t < 5 * 60 * 1000) return mentionCache.v;
     const cfg = store.getConfig();
     const tools = [
-      { id: 'vp_browser', name: 'Trình duyệt', icon: '🌐', desc: browserMcpIssue ? '⚠️ AI chưa điều khiển được trên máy này: ' + browserMcpIssue : 'Trình duyệt hiện cạnh khung chat – AI mở trang, bấm, gõ; bạn xem trực tiếp', enabled: !!browserPane && cfg.builtinBrowser !== false },
+      { id: 'vp_browser', name: 'Trình duyệt SIMI', icon: '🌐', desc: browserMcpIssue ? '⚠️ AI chưa điều khiển được trên máy này: ' + browserMcpIssue : 'Trình duyệt hiện cạnh khung chat – AI mở trang, bấm, gõ; bạn xem trực tiếp', enabled: !!browserPane && cfg.builtinBrowser !== false },
       { id: 'canva_web', name: 'Canva', icon: '🎨', desc: 'Thiết kế trên Canva ngay trong trình duyệt cạnh chat (đăng nhập Canva 1 lần)', enabled: !!browserPane && cfg.builtinBrowser !== false },
       { id: 'vp_computer', name: 'Máy tính', icon: '🖱️', desc: 'Điều khiển chuột, bàn phím – mọi app trên máy, kể cả trình duyệt', enabled: cfg.computerControl !== false },
-      { id: 'simi_browser', name: 'Trình duyệt SIMI', icon: '🧭', desc: 'Đọc & thao tác trang web (điền form, sửa / đăng bài) – nhanh, giữ đăng nhập', enabled: !!simi.readCodexConfig().browserMcp },
+      // có khung cạnh chat thì Chrome SIMI riêng không còn dùng nữa → ẩn khỏi danh sách @
+      { id: 'simi_browser', name: 'Trình duyệt SIMI', icon: '🧭', desc: 'Đọc & thao tác trang web (điền form, sửa / đăng bài) – cửa sổ Chrome SIMI riêng, giữ đăng nhập', enabled: !!simi.readCodexConfig().browserMcp && !builtinOn() },
     ];
     let plugins = [];
     try { plugins = (await codexServer.plugins()).plugins.filter((p) => p.installed && p.enabled).map((p) => ({ id: p.id, name: p.name, title: /computer-use/.test(p.name) ? 'Computer Use (ChatGPT)' : p.title, description: p.description })); } catch { /* Codex chưa sẵn sàng */ }

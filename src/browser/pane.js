@@ -249,7 +249,7 @@ class BrowserPane {
     this.ses = s; return s;
   }
 
-  newTab(url) {
+  newTab(url, { background = false } = {}) {
     const view = new WebContentsView({ webPreferences: { partition: PARTITION, sandbox: true, contextIsolation: true, backgroundThrottling: false, spellcheck: false } });
     this.session();
     const id = 't' + (++this.seq);
@@ -261,7 +261,7 @@ class BrowserPane {
     wc.on('did-fail-load', (_e, code, desc, u, isMain) => { if (isMain && code !== -3) this.emit({ type: 'browser', ev: 'error', text: `Không mở được ${u}: ${desc}` }); });
     view.setBackgroundColor('#ffffff');
     this.attachCdp(tab);
-    this.select(id);
+    if (background && this.active && this.tabs.has(this.active)) this.push(); else this.select(id); // tab nền: tải song song, không giành khung đang xem
     wc.loadURL(normUrl(url)).catch(() => {});
     return tab;
   }
@@ -620,6 +620,35 @@ class BrowserPane {
         return [{ type: 'text', text: text === null
           ? `${head}\nApp không tự rút chữ được loại file này – đọc bằng công cụ đọc tài liệu (simi_browser document_read) với đường dẫn trên.`
           : `${head}\n(Cần tính toán / đọc phần bị cắt: dùng công cụ đọc tài liệu với đường dẫn trên.)\n\n${text}` }];
+      }
+      case 'browser_read_pages': {
+        // đọc nhiều trang 1 lần (thay cho Chrome SIMI riêng): trang đầu mở ở tab đang xem cho người dùng thấy,
+        // các trang sau tải song song ở tab nền rồi đóng lại; dùng chung phiên đăng nhập của Trình duyệt SIMI cạnh chat
+        const urls = [...new Set((Array.isArray(args.urls) ? args.urls : [args.url]).map((u) => String(u || '').trim()).filter((u) => /^https?:\/\//i.test(u)))].slice(0, 8);
+        if (!urls.length) throw new Error('Cần urls: 1–8 địa chỉ http/https');
+        const max = Math.max(1000, Math.min(200000, Number(args.max_chars_per_page) || Number(args.max_chars) || 40000));
+        this.status(`Đang đọc ${urls.length} trang…`);
+        const first = this.wc(); first.loadURL(normUrl(urls[0])).catch(() => {});
+        const extra = urls.slice(1).map((u) => this.newTab(u, { background: true }));
+        const read = async (wc, url) => {
+          try {
+            await sleep(200); await this.waitLoad(wc, 25000); await sleep(700); // trang SPA (Shopee, Facebook…) vẽ nội dung sau khi tải xong
+            return await wc.executeJavaScript(`${READ}(${max})`, true);
+          } catch (e) { return `Trang: (lỗi)\nURL: ${url}\n\nKhông đọc được: ${e.message || e}`; }
+        };
+        let out;
+        try { out = await Promise.all([read(first, urls[0]), ...extra.map((t, i) => read(t.view.webContents, urls[i + 1]))]); } finally {
+          for (const t of extra) this.close(t.id);
+        }
+        this.status('');
+        const login = out.some((x) => /đăng nhập|log ?in|sign ?in|captcha|xác minh|verify/i.test(String(x).slice(0, 600)));
+        return [{ type: 'text', text: out.map((x, i) => `### ${i + 1}/${out.length}\n${x}`).join('\n\n---\n\n')
+          + (login ? '\n\n(Có trang đòi đăng nhập / xác minh: nhờ người dùng đăng nhập ngay trong Trình duyệt SIMI cạnh khung chat – đã mở trang đầu ở đó – rồi gọi lại.)' : '') }];
+      }
+      case 'browser_open_window': {
+        // tương thích skill cũ của Chrome SIMI: hiện trang để người dùng tự đăng nhập / xác minh – nay ngay trong khung cạnh chat
+        if (args.url) { this.wc().loadURL(normUrl(args.url)).catch(() => {}); await sleep(200); await this.waitLoad(this.wc(), 15000); }
+        return [{ type: 'text', text: `Đã mở ${this.wc().getURL()} ở Trình duyệt SIMI cạnh khung chat. Nhờ người dùng đăng nhập / xác minh ngay trong khung đó rồi gọi lại công cụ đọc trang (browser_read_pages / browser_snapshot).` }];
       }
       case 'browser_read': await this.waitLoad(this.wc(), 8000); return [{ type: 'text', text: await this.run(`${READ}(${Math.min(200000, Number(args.max_chars) || 40000)})`) }];
       case 'browser_screenshot': {
