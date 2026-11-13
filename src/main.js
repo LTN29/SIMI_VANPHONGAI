@@ -572,6 +572,7 @@ function registerIpc() {
   handle('chat:import', (codexId) => chat.importExternal(codexId));
   handle('chat:sync', (id) => chat.sync(id));
   handle('chat:send', (id, payload) => chat.send(id, payload || {}));
+  handle('chat:edit', (id, index, payload) => chat.edit(id, Number(index), payload || {}));
   handle('chat:stop', (id) => chat.stop(id));
   handle('chat:running', () => [...chat.running.keys()]);
   handle('chat:answer', (id, rid, choice, values) => chat.answer(id, rid, choice, values));

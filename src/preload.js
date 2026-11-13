@@ -103,6 +103,7 @@ contextBridge.exposeInMainWorld('vp', {
     importExternal: (codexId) => ipcRenderer.invoke('chat:import', codexId),
     sync: (id) => ipcRenderer.invoke('chat:sync', id),
     send: (id, p) => ipcRenderer.invoke('chat:send', id, p),
+    edit: (id, index, p) => ipcRenderer.invoke('chat:edit', id, index, p),
     stop: (id) => ipcRenderer.invoke('chat:stop', id),
     running: () => ipcRenderer.invoke('chat:running'),
     answer: (id, rid, choice, values) => ipcRenderer.invoke('chat:answer', id, rid, choice, values),

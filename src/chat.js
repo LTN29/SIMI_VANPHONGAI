@@ -345,6 +345,14 @@ function withFastHistory(t, prompt) {
   return `(Trao đổi gần đây trong đoạn chat này, trả lời nhanh không qua công cụ:)\n${lines}\n\n---\n\n${prompt}`;
 }
 
+// sau khi sửa tin nhắn mà không cắt được lịch sử phiên Codex cũ → phiên mới, kèm bản tóm lược hội thoại đã giữ lại
+function withTranscript(t, prompt) {
+  const msgs = t.messages.slice(0, -2).filter((m) => m.role === 'user' || m.status === 'done');
+  if (!msgs.length) return prompt;
+  const lines = msgs.map((m) => `${m.role === 'user' ? 'Người dùng' : 'Trợ lý'}: ${blockText(m).slice(0, 3000)}`).join('\n\n').slice(-16000);
+  return `(Lịch sử đoạn chat này trước tin nhắn hiện tại:)\n${lines}\n\n---\n\n${prompt}`;
+}
+
 function buildPrompt(t, text, atts, persona) {
   let prompt = text;
   const files = atts.filter((a) => !a.image);
@@ -699,6 +707,62 @@ class ChatEngine {
     return this.store.save(t);
   }
 
+  // ✏️ sửa một tin đã gửi rồi gửi lại: bỏ tin đó cùng mọi trao đổi phía sau, cắt lịch sử phiên Codex về đúng chỗ, rồi gửi bản mới
+  async edit(id, index, payload = {}) {
+    const t = this.store.get(id); if (!t) throw new Error('Không tìm thấy đoạn chat');
+    if (this.running.has(id)) throw new Error('Đoạn chat này đang trả lời, chờ chút hoặc bấm Dừng');
+    const m = t.messages[index];
+    if (!m || m.role !== 'user') throw new Error('Không tìm thấy tin nhắn cần sửa');
+    const text = String(payload.text == null ? m.text : payload.text).trim();
+    const attachments = Array.isArray(payload.attachments) ? payload.attachments : (m.attachments || []);
+    if (!text && !attachments.length) throw new Error('Tin nhắn đang trống');
+    this.store.backup(t); // giữ bản cũ phòng khi cần xem lại
+    const kept = t.messages.slice(0, index);
+    const cut = viaCodex(t.messages.slice(index)); // các lượt sắp bỏ đã đi qua Codex
+    if (t.codexThread && cut.length) {
+      const ok = await this._codexRevert(t, viaCodex(kept).length, cut[0].text).catch((e) => {
+        if (/active writer/i.test(e.message)) throw new Error('Đoạn chat này đang mở và chạy trong ChatGPT Work. Chờ bên đó xong (hoặc đóng đoạn chat bên đó) rồi sửa lại.');
+        return false;
+      });
+      if (!ok) {
+        // bản Codex không cắt được lịch sử → bỏ phiên cũ (ẩn khỏi danh sách liên thông), lượt tới mở phiên mới kèm lịch sử đã giữ
+        this.store.hide(t.codexThread);
+        t.codexThread = null; t.codexUpdatedAt = null; t.carryHistory = true;
+      }
+    }
+    t.messages = kept;
+    this.store.save(t);
+    this.emit({ type: 'chat', threadId: id, ev: 'truncate', length: kept.length });
+    return this.send(id, { ...payload, text, attachments, mentions: Array.isArray(payload.mentions) ? payload.mentions : (m.mentions || []) });
+  }
+
+  // cắt phiên Codex về trước lượt thứ k (đếm các lượt đi qua Codex); true = đã cắt hoặc không cần cắt
+  async _codexRevert(t, k, oldText) {
+    const th = await this.codex.readThread(t.codexThread);
+    const turns = (th && th.turns) || [];
+    if (k >= turns.length) return true;
+    const userOf = (turn) => ((messagesFromThread({ turns: [turn] }, () => null).find((x) => x.role === 'user') || {}).text || '');
+    const key = normText(oldText || '').slice(0, 80);
+    let j = k;
+    if (key && !normText(userOf(turns[k])).includes(key)) {
+      j = -1;
+      for (let i = turns.length - 1; i >= 0; i--) if (normText(userOf(turns[i])).includes(key)) { j = i; break; }
+      if (j < 0) return false;
+    }
+    if (!turns[j].id) return false;
+    // Codex chỉ cắt được phiên đang nạp → nạp (không kèm lượt), cắt, rồi nhả ra cho ChatGPT Work dùng tiếp
+    await this.codex.request('thread/resume', { threadId: t.codexThread, excludeTurns: true }, 60000);
+    try {
+      await this.codex.request('thread/revert', { threadId: t.codexThread, beforeTurnId: turns[j].id }, 60000);
+    } finally {
+      this.codex.loaded.delete(t.codexThread);
+      this.codex.request('thread/unsubscribe', { threadId: t.codexThread }).catch(() => { /* đã đóng */ });
+    }
+    const meta = await this.codex.readThread(t.codexThread, false).catch(() => null);
+    t.codexUpdatedAt = meta ? meta.updatedAt : null;
+    return true;
+  }
+
   // xóa đoạn chat; everywhere = xóa luôn phiên Codex (mất cả trong ChatGPT Work, không khôi phục được)
   async remove(id, { everywhere = false } = {}) {
     const t = this.store.get(id);
@@ -950,7 +1014,8 @@ class ChatEngine {
       if (opened) hints.push('App đã mở sẵn link trên ở trình duyệt cạnh khung chat (vp_browser). Đọc / thao tác tiếp ngay tại đó bằng vp_browser – browser_snapshot, browser_read, browser_act; link tài liệu Excel / Word / PowerPoint thì browser_doc. Không dùng web_fetch hay lệnh tải file cho link này.');
     }
     // trao đổi "trả lời nhanh" trước đó chưa có trong phiên Codex → kèm vào để AI không mất mạch
-    const prompt = withFastHistory(t, buildPrompt(t, hints.length ? `${text}\n\n(${hints.join(' ')})` : text, atts, needPersona ? persona : ''));
+    const base = buildPrompt(t, hints.length ? `${text}\n\n(${hints.join(' ')})` : text, atts, needPersona ? persona : '');
+    const prompt = t.carryHistory && !t.codexThread ? withTranscript(t, base) : withFastHistory(t, base);
     if (needPersona) t.personaFor = t.agentId || null;
     simi.refreshEnv();
     const t0 = Date.now();
@@ -1085,6 +1150,7 @@ class ChatEngine {
         if (!t.codexThread) {
           const r = await srv.request('thread/start', threadOpts, 60000);
           t.codexThread = r.thread.id;
+          delete t.carryHistory;
           if (srv.gen === gen) srv.loaded.add(t.codexThread);
           this.store.save(t);
         }

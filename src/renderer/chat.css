@@ -55,6 +55,13 @@ body.in-chat .status { display: none; }
 .cmsg.enter { animation: pop .25s ease-out; }
 .cmsg.me { justify-content: flex-end; }
 .cmsg.me .ubub { max-width: 78%; background: linear-gradient(180deg, var(--accent2), var(--accent)); color: #fff; padding: 10px 15px; border-radius: 20px 20px 6px 20px; box-shadow: 0 6px 18px var(--accentSoft); }
+.cmsg.me { flex-wrap: wrap; }
+.cmsg.me .uact { flex-basis: 100%; display: flex; justify-content: flex-end; gap: 10px; margin-top: -6px; opacity: 0; transition: opacity .15s; }
+.cmsg.me:hover .uact, .cmsg.me .uact:focus-within { opacity: 1; }
+.uedit { flex: 1; max-width: 78%; margin-left: auto; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 18px; background: var(--input); border: 1.5px solid var(--accent2); box-shadow: 0 6px 18px var(--accentSoft); }
+.uedit-ta { width: 100%; resize: none; border: 0; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 14px; line-height: 1.55; padding: 4px 6px; min-height: 60px; }
+.uedit-foot { display: flex; align-items: center; gap: 8px; }
+.uedit-foot small { font-size: 12px; }
 .cmsg.me .mtext { white-space: pre-wrap; word-break: break-word; font-weight: 600; }
 .skchip { display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; margin: 0 1px; border-radius: 999px; background: rgba(255,255,255,.22); font-weight: 900; font-size: 12.5px; }
 .matts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 7px; }

@@ -366,6 +366,7 @@
     popMenu(anchor, [
       { icon: t.pinned ? '📌' : '📍', label: t.pinned ? 'Bỏ ghim' : 'Ghim lên đầu', run: async () => { await window.vp.chat.update(t.id, { pinned: !t.pinned }); if (C.cur && C.cur.id === t.id) C.cur.pinned = !t.pinned; loadThreads(); renderHead(); } },
       { icon: '📦', label: 'Lưu trữ', disabled: C.running.has(t.id), run: () => archiveThreads([t], true) },
+      { icon: '⏰', label: 'Lên lịch chạy tự động…', title: 'Tạo tác vụ đã lên lịch từ yêu cầu đầu tiên của đoạn chat', run: async () => scheduleFrom(C.cur && C.cur.id === t.id ? C.cur : await window.vp.chat.get(t.id).catch(() => t)) },
       '-',
       { icon: '🗑', label: 'Xóa…', danger: true, disabled: C.running.has(t.id), run: () => askDelete([t]) },
     ]);
@@ -569,6 +570,7 @@
       el('span', { class: 'grow' }),
       el('button', { class: 'chip', title: t.project || 'Thư mục chat mặc định', onclick: () => window.vp.chat.openDir(t.project || '') }, icon('folder'), projName(t.project)),
       el('button', { class: 'btn icon mini', title: t.pinned ? 'Bỏ ghim' : 'Ghim lên đầu', onclick: async () => { C.cur = await window.vp.chat.update(t.id, { pinned: !t.pinned }); loadThreads(); renderHead(); } }, t.pinned ? '📌' : '📍'),
+      el('button', { class: 'btn icon mini', title: 'Lên lịch: tự chạy lại yêu cầu của đoạn chat này theo giờ', disabled: !t.messages.some((m) => m.role === 'user'), onclick: () => scheduleFrom(t) }, '⏰'),
       el('button', { class: 'btn icon mini', title: 'Lưu trữ đoạn chat', disabled: C.running.has(t.id), onclick: () => archiveThreads([t], true) }, '📦'),
       el('button', { class: 'btn icon mini', title: 'Xóa đoạn chat', disabled: C.running.has(t.id), onclick: () => askDelete([t]) }, '🗑'));
   }
@@ -686,7 +688,43 @@
         m.attachments && m.attachments.length ? el('div', { class: 'matts' }, m.attachments.map((a) => a.image
           ? el('button', { class: 'mimg', title: a.path, onclick: () => window.vp.chat.openFile(a.path) }, thumb(a.path, a.name))
           : el('button', { class: 'fchip', title: a.path, onclick: () => window.vp.chat.openFile(a.path) }, '📎 ' + a.name))) : null,
-        m.text ? el('div', { class: 'mtext' }, skillChips(m.text, m.mentions || [])) : null));
+        m.text ? el('div', { class: 'mtext' }, skillChips(m.text, m.mentions || [])) : null),
+      m.text || (m.attachments && m.attachments.length) ? el('div', { class: 'uact' },
+        el('button', { class: 'linkbtn small', title: 'Sửa tin nhắn rồi gửi lại (các câu trả lời phía sau sẽ được thay mới)', onclick: (e) => editMsg(e.currentTarget.closest('.cmsg'), m) }, '✏️ Sửa'),
+        m.text ? el('button', { class: 'linkbtn small', title: 'Chép yêu cầu', onclick: () => { navigator.clipboard.writeText(m.text); U.toast('Đã chép yêu cầu'); } }, U.icon('copy'), 'Chép') : null,
+        el('button', { class: 'linkbtn small', title: 'Tạo tác vụ đã lên lịch với đúng yêu cầu này', onclick: () => scheduleFrom(C.cur, m.text) }, '⏰ Lên lịch')) : null);
+  }
+
+  // ✏️ sửa tin đã gửi: hiện ô sửa ngay tại chỗ; Gửi lại = bỏ tin này và mọi câu trả lời phía sau, gửi bản mới
+  function editMsg(node, m) {
+    const { el } = U; const t = C.cur;
+    if (!t || !node) return;
+    if (C.running.has(t.id)) { U.toast('Đoạn chat đang trả lời – chờ xong hoặc bấm Dừng rồi sửa', true); return; }
+    const idx = t.messages.indexOf(m); if (idx < 0) return;
+    const later = t.messages.slice(idx + 1).filter((x) => x.role === 'user').length;
+    const ta = el('textarea', { class: 'uedit-ta', rows: 3 }); ta.value = m.text || '';
+    const fit = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight + 2, 320) + 'px'; };
+    const cancel = () => renderMain();
+    const go = async () => {
+      const text = ta.value.trim();
+      if (!text && !(m.attachments || []).length) { ta.focus(); return; }
+      const a = agentOf(t);
+      C.running.add(t.id); renderBar(); renderSide();
+      try { await window.vp.chat.edit(t.id, idx, { text, model: $('#chModel').value, effort: $('#chEffort').value, agentId: a ? a.id : null, persona: a ? persona(a) : '' }); } catch (e) { U.toast(U.cleanErr(e), true); renderMain(); }
+      C.running.delete(t.id); renderBar(); loadThreads();
+    };
+    const send = el('button', { class: 'btn primary mini', onclick: go }, '↻ Gửi lại');
+    ta.onkeydown = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
+      else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); go(); }
+    };
+    ta.oninput = fit;
+    node.replaceChildren(el('div', { class: 'uedit' }, ta,
+      el('div', { class: 'uedit-foot' },
+        el('small', { class: 'dim', text: later || t.messages[idx + 1] ? `Gửi lại sẽ thay câu trả lời${later ? ` và ${later} lượt hỏi phía sau` : ''} bằng câu trả lời mới.` : 'Enter để gửi · Esc để huỷ' }),
+        el('span', { class: 'grow' }),
+        el('button', { class: 'btn ghost mini', onclick: cancel }, 'Huỷ'), send)));
+    requestAnimationFrame(() => { fit(); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
   }
 
   const STEP_IC = { cmd: '⌘', tool: '🧩', web: '🔎', file: '📝', think: '💭', plan: '🗒️' };
@@ -902,10 +940,10 @@
     n.textContent = String(on); n.classList.toggle('hidden', !on);
   }
 
-  async function openSchedules(editId = null) {
+  async function openSchedules(editId = null, prefill = null) {
     const { el } = U;
     const body = el('div', { class: 'sch' });
-    const V = { edit: editId, form: null };
+    const V = prefill ? { edit: 'new', form: prefill } : { edit: editId, form: null };
     const put = (...k) => body.replaceChildren(...k.filter(Boolean));
 
     function card(t) {
@@ -951,6 +989,9 @@
       const who = el('select', { onchange: (e) => { f.agentId = e.target.value || null; } }, el('option', { value: '', text: '— Không chỉ định —' }), ...agents().map((a) => el('option', { value: a.id, text: `${a.name} · ${a.title}`, selected: f.agentId === a.id })));
       const thread = el('select', { onchange: (e) => { f.thread = e.target.value; } }, el('option', { value: 'new', text: 'Mỗi lần một đoạn chat mới', selected: f.thread !== 'same' }), el('option', { value: 'same', text: 'Nối tiếp vào cùng 1 đoạn chat', selected: f.thread === 'same' }));
       const sandbox = el('select', { onchange: (e) => { f.sandbox = e.target.value; } }, SANDBOX.map(([v, l, d]) => el('option', { value: v, text: l, title: d, selected: (f.sandbox || 'workspace-write') === v })));
+      // thư mục làm việc: tác vụ chạy trong dự án nào (đọc / sửa file ở đó)
+      const projList = [...projects()]; if (f.project && !projList.some((p) => p.dir === f.project)) projList.push({ name: projName(f.project), dir: f.project });
+      const proj = el('select', { onchange: (e) => { f.project = e.target.value; } }, el('option', { value: '', text: '— Thư mục chat mặc định —', selected: !f.project }), ...projList.map((p) => el('option', { value: p.dir, text: '📁 ' + p.name, title: p.dir, selected: f.project === p.dir })));
       const notifyCb = el('input', { type: 'checkbox', checked: f.notify !== false, onchange: (e) => { f.notify = e.target.checked; } });
       const err = el('div', { class: 'tp-err', hidden: true });
       const save = el('button', { class: 'btn primary', onclick: async () => {
@@ -967,7 +1008,8 @@
           el('div', { class: 'field' }, el('label', { text: 'Model' }), modelSel),
           el('div', { class: 'field' }, el('label', { text: 'Nhân sự phụ trách' }), who),
           el('div', { class: 'field' }, el('label', { text: 'Kết quả' }), thread),
-          el('div', { class: 'field' }, el('label', { text: 'Quyền trên máy' }), sandbox)),
+          el('div', { class: 'field' }, el('label', { text: 'Quyền trên máy' }), sandbox),
+          el('div', { class: 'field' }, el('label', { text: 'Thư mục làm việc' }), proj)),
         el('label', { class: 'sch-check' }, notifyCb, ' Báo cho tôi khi xong (thông báo của hệ điều hành)'),
         el('small', { class: 'dim', text: 'Khi chạy theo lịch không có ai bấm "Cho phép": việc cần sửa file ngoài dự án hoặc gọi công cụ cần hỏi quyền có thể bị dừng – chọn quyền phù hợp hoặc bật "tự cho phép" cho kết nối.' }),
         err, el('div', { class: 'skm-cta' }, save, el('button', { class: 'btn ghost', onclick: () => { V.edit = null; V.form = null; render(); } }, 'Huỷ')));
@@ -996,6 +1038,20 @@
     if (!C.models.length) await loadMeta();
     U.openModal('⏰ Tác vụ đã lên lịch', body, [el('button', { class: 'btn primary', text: 'Xong', onclick: U.closeModal })], 'wide');
     render();
+  }
+
+  // ⏰ lên lịch lại một yêu cầu đã gửi: mở sẵn form tác vụ với nội dung, model, nhân sự, thư mục của đoạn chat
+  function scheduleFrom(t, text) {
+    const firstUser = (t && t.messages || []).find((m) => m.role === 'user' && m.text);
+    const prompt = String(text || (firstUser && firstUser.text) || '').trim();
+    if (!prompt) { U.toast('Đoạn chat chưa có yêu cầu nào để lên lịch', true); return; }
+    const name = String((t && t.title) || prompt.split('\n')[0]).replace(/^⏰\s*/, '').replace(/\s·\s\d\d\/\d\d.*$/, '').trim().slice(0, 60);
+    openSchedules(null, {
+      name, prompt, when: { kind: 'weekly', time: '08:00', days: [1] },
+      model: (t && t.model && !String(t.model).startsWith(CUSTOM) && !String(t.model).startsWith(PREFS)) ? t.model : '',
+      agentId: (t && t.agentId) || null, project: (t && t.project) || '',
+      thread: 'new', sandbox: (t && t.sandbox) || 'workspace-write', notify: true,
+    });
   }
 
   // ================= 🔌 Kết nối (MCP): GitHub + MCP tuỳ chỉnh =================
@@ -1334,6 +1390,7 @@
     if (e.ev === 'done' && e.message && /chưa có Codex|Không tìm thấy Codex/.test(e.message.error || '') && window.VPSimiSetup && !window.VPSimiSetup.state.running) window.VPSimiSetup.open({ mode: 'install' });
     if (!C.cur || C.cur.id !== e.threadId) { if (e.ev !== 'blocks') renderSide(); return; }
     const msgs = C.cur.messages;
+    if (e.ev === 'truncate') { msgs.length = Math.min(msgs.length, e.length); renderMain(); return; }
     if (e.ev === 'start') { msgs.push(e.user, e.message); renderMain(2); renderSide(); return; }
     const m = msgs[msgs.length - 1]; if (!m || m.role !== 'assistant') return;
     if (e.ev === 'blocks') m.blocks = e.blocks;
@@ -1376,5 +1433,5 @@
     });
   }
 
-  window.VPChat = { init, openAgent, setView, view: () => C.view, refresh: () => loadMeta(true), newThread, runSimiUpdate, openSchedules, openConnectors };
+  window.VPChat = { init, openAgent, setView, view: () => C.view, refresh: () => loadMeta(true), newThread, runSimiUpdate, openSchedules, openConnectors, scheduleFrom, openThread };
 })();
