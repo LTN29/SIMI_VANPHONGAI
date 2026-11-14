@@ -66,7 +66,8 @@ function openWrite(file) {
 
 class Updater {
   constructor({ app, getGateway, emit, dir, enabled = () => true, autoDownload = () => true, current = '', shell = global.vpShell, hotRoot = '',
-    autoApply = () => false, isBusy = () => false, idle = () => false, restartEveryMs = 60 * 1000 }) {
+    autoApply = () => false, isBusy = () => false, idle = () => false, restartEveryMs = 60 * 1000, beforeExit = () => {} }) {
+    this.beforeExit = beforeExit; // app.exit() bỏ qua before-quit → tự ghi các lượt chat đang chạy trước khi tắt
     this.app = app;
     this.getGateway = getGateway;
     this.emitFn = emit;
@@ -252,6 +253,7 @@ class Updater {
   _relaunch() {
     this._set({ status: 'installing' });
     this.app.relaunch(process.env.APPIMAGE ? { execPath: process.env.APPIMAGE, args: process.argv.slice(1) } : undefined);
+    try { this.beforeExit(); } catch { /* phụ */ }
     setTimeout(() => this.app.exit(0), 400);
   }
 
@@ -329,6 +331,7 @@ class Updater {
     } else {
       throw new Error('Bản này không tự cập nhật được');
     }
+    try { this.beforeExit(); } catch { /* phụ */ }
     setTimeout(() => this.app.exit(0), 400);
     return { ...this.state };
   }

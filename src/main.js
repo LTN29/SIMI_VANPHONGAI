@@ -562,7 +562,9 @@ function registerIpc() {
   });
 
   handle('chat:list', () => chat.store.list().map((t) => (t.origin === 'codex' ? { ...t, project: chat.projectFor(t.cwd || t.project) } : t)));
-  handle('chat:get', (id) => chat.store.get(id));
+  handle('chat:get', (id) => chat.open(id));
+  handle('chat:recoverables', () => chat.store.recoverables());
+  handle('chat:restore', (id, file) => chat.store.restore(id, file));
   handle('chat:create', (o) => chat.create(o || {}));
   handle('chat:update', (id, patch) => chat.update(id, patch || {}));
   handle('chat:delete', (id, everywhere) => chat.remove(id, { everywhere: !!everywhere }));
@@ -741,10 +743,14 @@ app.whenReady().then(() => {
   store = new Store(app.getPath('userData'), safeStorage);
   refreshPath();
   simi.refreshEnv();
-  codexServer = new CodexAppServer(() => simi.chatCodexCmd(store.getConfig().cli.codex.cmd || 'codex', store.getConfig().chatEngine || 'auto'));
+  codexServer = new CodexAppServer(() => simi.chatCodexCmd(store.getConfig().cli.codex.cmd || 'codex', store.getConfig().chatEngine || 'auto'), {
+    // file danh sách model thiếu trường bản Codex trên máy đòi → Codex không mở được, mọi đoạn chat báo lỗi: tự bổ sung trước khi mở
+    preflight: () => { const r = simi.repairCatalog(); if (r.fixed) emit({ type: 'log', level: 'info', text: `Đã tự sửa danh sách model của Codex (${r.fixed} model thiếu trường)` }); },
+  });
   updater = new Updater({
     app, emit, dir: path.join(app.getPath('userData'), 'updates'), current: appVersion(),
     shell: global.vpShell, hotRoot: path.join(app.getPath('userData'), 'app'),
+    beforeExit: () => { if (chat) chat.flushRunning(); },
     getGateway: () => simi.gatewayOrigin(simi.readCodexConfig().baseUrl || store.getConfig().simiGateway || ''),
     enabled: () => store.getConfig().autoUpdate !== false,
     autoDownload: () => store.getConfig().autoUpdate !== false,
@@ -810,7 +816,7 @@ app.whenReady().then(() => {
 
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0 && store) createWindow(); });
 
-app.on('before-quit', () => { quitting = true; });
+app.on('before-quit', () => { quitting = true; try { if (chat) chat.flushRunning(); } catch { /* đang tắt */ } });
 app.on('will-quit', () => { if (browserPane) browserPane.stop(); if (sched) sched.stop(); if (tray) { tray.destroy(); tray = null; } });
 app.on('window-all-closed', () => {
   if (running) running.ac.abort();

@@ -10,9 +10,10 @@ const LIST_MS = Number(process.env.VP_CODEX_LIST_MS) || 60000;
 const SOURCE_KINDS = ['cli', 'vscode', 'exec', 'appServer', 'unknown'];
 
 class CodexAppServer extends EventEmitter {
-  constructor(getCmd) {
+  constructor(getCmd, { preflight = null } = {}) {
     super();
     this.getCmd = getCmd;
+    this.preflight = preflight; // chạy ngay trước mỗi lần mở Codex (vd tự sửa file danh sách model)
     this.proc = null;
     this.ready = null;
     this.pending = new Map();
@@ -93,7 +94,10 @@ class CodexAppServer extends EventEmitter {
   release() { this.active = Math.max(0, this.active - 1); this._touch(); }
 
   async start() {
-    if (!this.proc) this._start();
+    if (!this.proc) {
+      if (this.preflight) { try { this.preflight(); } catch { /* phụ trợ, không chặn việc mở Codex */ } }
+      this._start();
+    }
     await this.ready;
     this._touch();
     return this.gen;

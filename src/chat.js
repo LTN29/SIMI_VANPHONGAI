@@ -117,16 +117,55 @@ function remoteTail(local, remote) {
 
 class ChatStore {
   constructor(dir) {
+    this.counts = new Map(); // số tin lần lưu gần nhất của từng đoạn chat (phát hiện lịch sử bị rút ngắn)
     this.dir = path.join(dir, 'chats');
     this.files = path.join(dir, 'chat-files');
     fs.mkdirSync(this.dir, { recursive: true });
     fs.mkdirSync(this.files, { recursive: true });
   }
   file(id) { if (!/^[a-z0-9]+$/i.test(id)) throw new Error('Mã đoạn chat không hợp lệ'); return path.join(this.dir, id + '.json'); }
-  get(id) { try { return JSON.parse(fs.readFileSync(this.file(id), 'utf8')); } catch { return null; } }
-  save(t) {
+  get(id) {
+    let f; try { f = this.file(id); } catch { return null; }
+    let raw;
+    try { raw = fs.readFileSync(f, 'utf8'); } catch { return null; }
+    try { return JSON.parse(raw); } catch (e) {
+      // file hỏng (máy tắt đột ngột / ổ đầy giữa lúc ghi) → không để đoạn chat "biến mất": lấy bản sao lưu gần nhất còn đọc được
+      const back = this._bestBackup(id);
+      this.log({ ev: 'corrupt', id, error: e.message, recovered: back ? back.file : null });
+      if (!back) return null;
+      try { fs.copyFileSync(f, f + '.hong-' + Date.now()); } catch { /* giữ lại bản hỏng để xem */ }
+      try { fs.writeFileSync(f, JSON.stringify(back.t), 'utf8'); } catch { /* vẫn trả bản sao */ }
+      return back.t;
+    }
+  }
+  _backupDir() { const d = path.join(this.dir, '_backup'); fs.mkdirSync(d, { recursive: true }); return d; }
+  _bestBackup(id) {
+    try {
+      const dir = this._backupDir();
+      const mine = fs.readdirSync(dir).filter((x) => x.startsWith(id + '.') && x.endsWith('.json')).sort().reverse();
+      for (const x of mine) { try { return { file: x, t: JSON.parse(fs.readFileSync(path.join(dir, x), 'utf8')) }; } catch { /* bản này cũng hỏng */ } }
+    } catch { /* không có thư mục sao lưu */ }
+    return null;
+  }
+  // nhật ký các việc có thể làm mất tin (rút ngắn lịch sử, file hỏng, xoá) – để truy nguyên nhân khi người dùng báo mất chat
+  log(ev) {
+    try {
+      const f = path.join(this.dir, '_events.log');
+      try { if (fs.statSync(f).size > 1024 * 1024) fs.renameSync(f, f + '.1'); } catch { /* chưa có */ }
+      fs.appendFileSync(f, JSON.stringify({ at: new Date().toISOString(), ...ev }) + '\n');
+    } catch { /* phụ */ }
+  }
+  save(t, { why = '' } = {}) {
     t.updatedAt = Date.now();
     const f = this.file(t.id); const tmp = f + '.tmp';
+    // lưới an toàn: bản sắp ghi có ÍT tin hơn bản đang trên đĩa → sao lưu bản trên đĩa trước khi ghi đè + ghi nhật ký
+    const n = (t.messages || []).length;
+    let prev = this.counts.get(t.id);
+    if (prev == null) { try { prev = (JSON.parse(fs.readFileSync(f, 'utf8')).messages || []).length; } catch { prev = 0; } }
+    if (prev > n) {
+      this.backup(t, { keep: 'max' });
+      this.log({ ev: 'shrink', id: t.id, title: t.title, from: prev, to: n, why: why || 'không rõ', at2: new Error().stack.split('\n').slice(2, 6).map((x) => x.trim()).join(' < ') });
+    }
     const data = JSON.stringify(t);
     fs.writeFileSync(tmp, data, 'utf8');
     // Windows: phần mềm diệt virus / OneDrive đang mở file → rename báo EPERM/EBUSY. Thử lại vài lần,
@@ -139,30 +178,73 @@ class ChatStore {
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25 * (i + 1));
       }
     }
+    this.counts.set(t.id, n);
     return t;
   }
-  // bản sao trước khi đổi lịch sử (giữ 5 bản gần nhất / đoạn chat) – để còn đường khôi phục
-  backup(t) {
+  // bản sao trước khi đổi lịch sử (giữ 5 bản gần nhất / đoạn chat) – để còn đường khôi phục.
+  // keep 'max': thêm 1 bản "nhiều tin nhất từng có" (<id>.max.json) không bị xoay vòng đẩy mất.
+  backup(t, { keep = '' } = {}) {
     try {
-      const dir = path.join(this.dir, '_backup'); fs.mkdirSync(dir, { recursive: true });
+      const dir = this._backupDir();
       const src = this.file(t.id); if (!fs.existsSync(src)) return;
       fs.copyFileSync(src, path.join(dir, `${t.id}.${Date.now()}.json`));
-      const mine = fs.readdirSync(dir).filter((f) => f.startsWith(t.id + '.')).sort();
+      const mine = fs.readdirSync(dir).filter((f) => /^\d+\.json$/.test(f.slice(t.id.length + 1)) && f.startsWith(t.id + '.')).sort();
       for (const f of mine.slice(0, -5)) fs.rmSync(path.join(dir, f), { force: true });
+      if (keep === 'max') {
+        const maxF = path.join(dir, `${t.id}.max.json`);
+        let cur = -1; try { cur = (JSON.parse(fs.readFileSync(maxF, 'utf8')).messages || []).length; } catch { /* chưa có */ }
+        const n = (JSON.parse(fs.readFileSync(src, 'utf8')).messages || []).length;
+        if (n > cur) fs.copyFileSync(src, maxF);
+      }
     } catch { /* sao lưu là phụ, không chặn việc chính */ }
+  }
+  // các bản có thể khôi phục: đoạn chat đã xoá / file mất, hoặc bản sao có NHIỀU tin hơn bản hiện tại
+  recoverables() {
+    const dir = this._backupDir();
+    const by = new Map();
+    for (const f of fs.readdirSync(dir)) {
+      const m = f.match(/^([a-z0-9]+)\.(?:(\d+)|max|deleted\.(\d+))\.json$/i); if (!m) continue;
+      let t; try { t = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+      const n = (t.messages || []).length; if (!n) continue;
+      const cur = by.get(m[1]);
+      if (!cur || n > cur.n || (n === cur.n && (t.updatedAt || 0) > cur.updatedAt)) by.set(m[1], { id: m[1], file: f, n, title: t.title || 'Đoạn chat', updatedAt: t.updatedAt || Number(m[2] || m[3]) || 0, deleted: /deleted/.test(f) });
+    }
+    const out = [];
+    for (const b of by.values()) {
+      const now = this.get(b.id);
+      if (!now) out.push({ ...b, reason: b.deleted ? 'deleted' : 'missing', current: 0 });
+      else if (b.n > (now.messages || []).length) out.push({ ...b, reason: 'more', current: (now.messages || []).length, title: now.title || b.title });
+    }
+    return out.sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+  restore(id, file) {
+    if (!/^[a-z0-9]+\.(\d+|max|deleted\.\d+)\.json$/i.test(file) || !file.startsWith(id + '.')) throw new Error('Bản sao lưu không hợp lệ');
+    const t = JSON.parse(fs.readFileSync(path.join(this._backupDir(), file), 'utf8'));
+    if (t.id !== id) throw new Error('Bản sao lưu không khớp đoạn chat');
+    if (fs.existsSync(this.file(id))) this.backup(t);
+    t.archived = false;
+    this.log({ ev: 'restore', id, file, n: (t.messages || []).length });
+    this.counts.delete(id);
+    return this.save(t, { why: 'restore' });
   }
   list() {
     const out = [];
     for (const f of fs.readdirSync(this.dir)) {
       if (!f.endsWith('.json')) continue;
       try {
-        const t = JSON.parse(fs.readFileSync(path.join(this.dir, f), 'utf8'));
+        let t; try { t = JSON.parse(fs.readFileSync(path.join(this.dir, f), 'utf8')); } catch { t = this.get(f.slice(0, -5)); } // hỏng → lấy bản sao
+        if (!t) continue;
         out.push({ id: t.id, title: t.title, project: t.project, cwd: t.cwd || '', agentId: t.agentId || null, model: t.model, updatedAt: t.updatedAt, pinned: !!t.pinned, archived: !!t.archived, n: (t.messages || []).length, codexThread: t.codexThread || null, origin: t.origin || 'app' });
       } catch { /* bỏ file hỏng */ }
     }
     return out.sort((a, b) => (b.pinned - a.pinned) || b.updatedAt - a.updatedAt);
   }
-  remove(id) { try { fs.unlinkSync(this.file(id)); } catch { /* đã xóa */ } }
+  remove(id) {
+    // đoạn chat bị xoá: giữ 1 bản trong _backup (khôi phục được nếu lỡ tay), rồi mới xoá
+    try { const f = this.file(id); if (fs.existsSync(f)) { fs.copyFileSync(f, path.join(this._backupDir(), `${id}.deleted.${Date.now()}.json`)); this.log({ ev: 'delete', id }); } } catch { /* phụ */ }
+    try { fs.unlinkSync(this.file(id)); } catch { /* đã xóa */ }
+    this.counts.delete(id);
+  }
   hidden() { try { return new Set(JSON.parse(fs.readFileSync(path.join(this.dir, '_hidden.list'), 'utf8'))); } catch { return new Set(); } }
   hide(codexId) { const h = this.hidden(); h.add(codexId); fs.writeFileSync(path.join(this.dir, '_hidden.list'), JSON.stringify([...h])); }
 }
@@ -707,6 +789,26 @@ class ChatEngine {
     return this.store.save(t);
   }
 
+  // mở đoạn chat: câu trả lời còn "đang chạy" nhưng không có lượt nào chạy thật (app tắt / treo giữa chừng) → đánh dấu dừng,
+  // giữ nguyên phần đã trả lời
+  open(id) {
+    const t = this.store.get(id);
+    if (!t || this.running.has(id)) return t;
+    const stale = (t.messages || []).filter((m) => m.role === 'assistant' && m.status === 'running');
+    if (!stale.length) return t;
+    for (const m of stale) { m.status = 'stopped'; m.error = m.error || 'App đã tắt giữa chừng – phần trả lời phía trên đã được giữ lại.'; }
+    return this.store.save(t, { why: 'stale-running' });
+  }
+
+  // app sắp tắt (Cmd+Q, cập nhật, tắt máy): ghi ngay mọi lượt đang chạy xuống đĩa
+  flushRunning() {
+    for (const run of this.running.values()) {
+      if (!run || !run.t || !run.msg) continue;
+      if (run.msg.status === 'running') { run.msg.status = 'stopped'; run.msg.error = 'App đã tắt giữa chừng – phần trả lời phía trên đã được giữ lại.'; }
+      this._safeSave(run.t);
+    }
+  }
+
   // ✏️ sửa một tin đã gửi rồi gửi lại: bỏ tin đó cùng mọi trao đổi phía sau, cắt lịch sử phiên Codex về đúng chỗ, rồi gửi bản mới
   async edit(id, index, payload = {}) {
     const t = this.store.get(id); if (!t) throw new Error('Không tìm thấy đoạn chat');
@@ -731,7 +833,7 @@ class ChatEngine {
       }
     }
     t.messages = kept;
-    this.store.save(t);
+    this.store.save(t, { why: 'edit' });
     this.emit({ type: 'chat', threadId: id, ev: 'truncate', length: kept.length });
     return this.send(id, { ...payload, text, attachments, mentions: Array.isArray(payload.mentions) ? payload.mentions : (m.mentions || []) });
   }
@@ -1136,10 +1238,18 @@ class ChatEngine {
         const cu = await this.computerUse();
         try { fs.mkdirSync(SCRATCH, { recursive: true }); } catch { /* bỏ qua */ }
         const guide = CHAT_GUIDE + (/claude|opus|sonnet|haiku/i.test(set.model || '') ? '\n' + CLAUDE_DESIGN : '') + '\n' + docGuide(vietFonts()) + '\n' + computerGuide({ native: !!(cu && cu.native), enabled: this.getConfig().computerControl !== false });
+        // Codex báo hỏng file danh sách model (thiếu trường bản Codex trên máy đòi) → tự bổ sung rồi thử lại 1 lần
+        const req = async (method, params) => {
+          try { return await srv.request(method, params, 60000); } catch (e) {
+            if (/model_catalog_json/.test(e.message) && simi.repairCatalog().fixed) return srv.request(method, params, 60000);
+            if (/model_catalog_json/.test(e.message)) throw new Error('Danh sách model của Codex trên máy bị hỏng (' + e.message.slice(0, 160) + '). Mở 🔌 Kết nối → Cài lại / cập nhật SIMI để tải lại.');
+            throw e;
+          }
+        };
         const threadOpts = { cwd: dir, model: set.model, modelProvider: set.modelProvider, approvalPolicy: set.approvalPolicy, sandbox: set.sandbox, config: { ...set.config, ...this.extraConfig() }, developerInstructions: guide };
         if (t.codexThread && !srv.loaded.has(t.codexThread)) {
           try {
-            await srv.request('thread/resume', { ...threadOpts, threadId: t.codexThread, excludeTurns: true }, 60000);
+            await req('thread/resume', { ...threadOpts, threadId: t.codexThread, excludeTurns: true });
             if (srv.gen === gen) srv.loaded.add(t.codexThread);
           } catch (e) {
             if (/active writer/i.test(e.message)) throw new Error('Đoạn chat này đang mở và chạy trong ChatGPT Work. Chờ bên đó trả lời xong (hoặc đóng đoạn chat bên đó) rồi gửi lại.');
@@ -1148,7 +1258,7 @@ class ChatEngine {
           }
         }
         if (!t.codexThread) {
-          const r = await srv.request('thread/start', threadOpts, 60000);
+          const r = await req('thread/start', threadOpts);
           t.codexThread = r.thread.id;
           delete t.carryHistory;
           if (srv.gen === gen) srv.loaded.add(t.codexThread);
@@ -1159,7 +1269,7 @@ class ChatEngine {
         const input = [{ type: 'text', text: prompt, text_elements: [] }, ...atts.filter((a) => a.image).map((a) => ({ type: 'localImage', path: a.path })),
           ...ments.filter((m) => m.kind === 'plugin').map((m) => ({ type: 'mention', name: m.name, path: `plugin://${m.id}` }))];
         noteChatModel(set.model);
-        const r = await srv.request('turn/start', { threadId: t.codexThread, input, cwd: dir, model: set.model, effort: set.effort, approvalPolicy: set.approvalPolicy, sandboxPolicy: set.sandboxPolicy }, 60000);
+        const r = await req('turn/start', { threadId: t.codexThread, input, cwd: dir, model: set.model, effort: set.effort, approvalPolicy: set.approvalPolicy, sandboxPolicy: set.sandboxPolicy });
         run.turnId = r.turn && r.turn.id;
         if (run.stopped && run.turnId) srv.request('turn/interrupt', { threadId: run.codexId, turnId: run.turnId }).catch(() => finish(STOPPED));
       })().catch((e) => finish(/Không tìm thấy Codex|ENOENT/.test(e.message) ? NO_CODEX : e.message));

@@ -550,3 +550,5 @@ body.cbw-dragging { cursor: col-resize; user-select: none; }
 .cn-out:empty { display: none; }
 .tp-chip.off { opacity: .55; }
 @media (max-width: 760px) { .sch-grid { grid-template-columns: 1fr; } }
+
+.ch-archived.ch-recover { margin-top: 0; }

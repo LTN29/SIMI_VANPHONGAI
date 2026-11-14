@@ -119,7 +119,10 @@
   }
 
   // ================= dữ liệu =================
-  async function loadThreads() { C.threads = await window.vp.chat.list(); renderSide(); }
+  async function loadThreads() {
+    C.threads = await window.vp.chat.list(); renderSide();
+    if (C.nRecover == null) { C.nRecover = 0; window.vp.chat.recoverables().then((l) => { C.nRecover = l.filter((x) => x.reason !== 'deleted').length; renderSide(); }).catch(() => {}); }
+  }
 
   async function loadMeta(force) {
     if (!force && Date.now() - C.modelsAt < 5 * 60 * 1000 && C.models.length) return;
@@ -316,6 +319,7 @@
     }
     const nArch = C.threads.filter((t) => t.archived).length;
     list.append(el('button', { class: 'ch-archived', onclick: openArchived, title: 'Đoạn chat đã lưu trữ (của app và ChatGPT Work)' }, icon('archive'), 'Đã lưu trữ', nArch ? el('em', { text: String(nArch) }) : null));
+    list.append(el('button', { class: 'ch-archived ch-recover', onclick: openRecover, title: 'Lấy lại đoạn chat đã xoá hoặc bị mất tin (từ bản sao lưu tự động trên máy)' }, el('span', { class: 'ic', text: '🛟' }), 'Khôi phục đoạn chat', C.nRecover ? el('em', { text: String(C.nRecover) }) : null));
     const ext = $('#chExt');
     ext.replaceChildren(el('span', { text: C.extErr ? '⚠️ ' + C.extErr : C.extLoading || C.extWait ? 'Đang đọc lịch sử ChatGPT Work…' : `🔗 Liên thông ChatGPT Work · ${C.external.length} đoạn chưa mở` }),
       el('button', { class: 'linkbtn small', title: 'Đọc lại lịch sử từ ChatGPT Work / Codex', disabled: C.extLoading, onclick: () => { C.extTries = 0; loadExternal(true); } }, '⟳'));
@@ -455,6 +459,24 @@
       el('button', { class: 'btn mini ghost danger', onclick: () => askDelete([t]) }, '🗑')));
     box.replaceChildren(...(rows.length ? rows : [el('div', { class: 'ch-empty', text: 'Chưa có đoạn chat nào được lưu trữ.' })]),
       r.error ? el('small', { class: 'dim', text: '⚠️ Không đọc được mục lưu trữ của ChatGPT Work: ' + r.error }) : null);
+  }
+
+  // 🛟 khôi phục: đoạn chat đã xoá / bị mất, hoặc bản sao lưu có nhiều tin hơn bản đang thấy (lịch sử bị rút ngắn)
+  async function openRecover() {
+    const { el } = U;
+    const box = el('div', { class: 'arch-box' }, el('div', { class: 'tp-load' }, el('span', { class: 'spin' }), ' Đang tìm bản sao lưu…'));
+    U.openModal('🛟 Khôi phục đoạn chat', box, [el('button', { class: 'btn primary', text: 'Đóng', onclick: () => U.closeModal() })], 'wide');
+    const list = await window.vp.chat.recoverables().catch((e) => { U.toast(U.cleanErr(e), true); return []; });
+    C.nRecover = list.filter((x) => x.reason !== 'deleted').length; renderSide();
+    const why = (x) => x.reason === 'more' ? `Bản sao lưu có ${x.n} tin – hiện chỉ còn ${x.current} tin` : x.reason === 'deleted' ? `Đã xoá · ${x.n} tin` : `Không còn trong danh sách · ${x.n} tin`;
+    const rows = list.map((x) => el('div', { class: 'arch-row' },
+      el('span', { class: 'ti', text: x.reason === 'more' ? '⚠️' : x.reason === 'deleted' ? '🗑' : '❓' }),
+      el('div', { class: 'grow' }, el('b', { text: x.title }), el('small', { text: `${why(x)} · lưu ${ago(x.updatedAt)}` })),
+      el('button', { class: 'btn mini primary', onclick: async () => {
+        try { await window.vp.chat.restore(x.id, x.file); U.toast(`🛟 Đã khôi phục "${x.title.slice(0, 40)}" (${x.n} tin)`); U.closeModal(); await loadThreads(); openThread(x.id); } catch (e) { U.toast(U.cleanErr(e), true); }
+      } }, '↩ Khôi phục')));
+    box.replaceChildren(el('small', { class: 'dim', text: 'App tự giữ bản sao mỗi khi lịch sử đoạn chat bị rút ngắn, khi đồng bộ với ChatGPT Work và khi bạn xoá đoạn chat. Khôi phục sẽ giữ lại bản hiện tại thành 1 bản sao lưu khác.' }),
+      ...(rows.length ? rows : [el('div', { class: 'ch-empty', text: 'Không có đoạn chat nào cần khôi phục – mọi đoạn chat đang đầy đủ.' })]));
   }
 
   // đọc danh sách đoạn chat của ChatGPT Work / Codex (chưa mở trong app)

@@ -104,6 +104,8 @@ contextBridge.exposeInMainWorld('vp', {
     sync: (id) => ipcRenderer.invoke('chat:sync', id),
     send: (id, p) => ipcRenderer.invoke('chat:send', id, p),
     edit: (id, index, p) => ipcRenderer.invoke('chat:edit', id, index, p),
+    recoverables: () => ipcRenderer.invoke('chat:recoverables'),
+    restore: (id, file) => ipcRenderer.invoke('chat:restore', id, file),
     stop: (id) => ipcRenderer.invoke('chat:stop', id),
     running: () => ipcRenderer.invoke('chat:running'),
     answer: (id, rid, choice, values) => ipcRenderer.invoke('chat:answer', id, rid, choice, values),

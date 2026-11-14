@@ -48,9 +48,52 @@ function readCodexConfig() {
     defaultModel: root.model || '',
     effort: root.model_reasoning_effort || '',
     catalogPath: root.model_catalog_json || path.join(codexHome(), 'ltn-model-catalog.json'),
+    catalogConfigured: !!root.model_catalog_json,
     browserMcp: !!sections['mcp_servers.simi_browser'],
     browserServer: mcpServer(sections['mcp_servers.simi_browser']),
   };
+}
+
+// ---------- tự sửa danh sách model (model_catalog_json) ----------
+// Codex đọc file này mỗi lần khởi động; thiếu 1 trường bắt buộc là CẢ Codex không chạy ("failed to load configuration:
+// failed to parse model_catalog_json … missing field `supports_parallel_tool_calls`") → mọi đoạn chat báo lỗi ngay.
+// Mỗi bản Codex đòi một bộ trường khác nhau (bản cũ đòi supports_parallel_tool_calls, bản mới thì không) và file có thể
+// do bộ cài / Gateway cũ ghi → trước khi mở Codex, bổ sung trường thiếu bằng giá trị mặc định an toàn (không đổi trường đã có).
+const CATALOG_DEFAULTS = {
+  description: 'Model thuộc Combo được cấp', default_reasoning_level: null, supported_reasoning_levels: [], shell_type: 'local',
+  visibility: 'list', supported_in_api: true, availability_nux: null, upgrade: null,
+  base_instructions: 'You are a helpful assistant. Answer in the user\'s language.', support_verbosity: false, default_verbosity: null,
+  apply_patch_tool_type: null, truncation_policy: { mode: 'bytes', limit: 10000 }, supports_parallel_tool_calls: false,
+  supports_reasoning_summaries: false, auto_compact_token_limit: null, effective_context_window_percent: 95, context_window: null,
+  experimental_supported_tools: [], input_modalities: ['text'],
+};
+function repairCatalog(cfg = readCodexConfig()) {
+  if (!cfg.exists || !cfg.catalogConfigured) return { skipped: 'no catalog' };
+  const file = cfg.catalogPath;
+  let raw;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch (e) { return { error: 'không đọc được ' + file + ': ' + e.message }; }
+  let j;
+  try { j = JSON.parse(raw.replace(/^\uFEFF/, '')); } catch (e) { return { error: 'file danh sách model hỏng: ' + e.message }; }
+  const models = Array.isArray(j && j.models) ? j.models : null;
+  if (!models) return { error: 'file danh sách model không có "models"' };
+  let fixed = 0;
+  models.forEach((m, i) => {
+    if (!m || typeof m !== 'object' || typeof m.slug !== 'string') return;
+    let changed = false;
+    const want = { ...CATALOG_DEFAULTS, display_name: m.slug, priority: i };
+    for (const [k, v] of Object.entries(want)) if (!(k in m)) { m[k] = JSON.parse(JSON.stringify(v)); changed = true; }
+    if (m.base_instructions === null && !m.model_messages) { m.base_instructions = CATALOG_DEFAULTS.base_instructions; changed = true; }
+    if (changed) fixed++;
+  });
+  if (!fixed) return { ok: true, fixed: 0 };
+  try {
+    const bak = file + '.before-repair';
+    if (!fs.existsSync(bak)) fs.writeFileSync(bak, raw);
+    const tmp = file + '.' + process.pid + '.repair';
+    fs.writeFileSync(tmp, JSON.stringify(j, null, 2) + '\n', { mode: 0o600 });
+    fs.renameSync(tmp, file);
+  } catch (e) { return { error: 'không ghi được ' + file + ': ' + e.message }; }
+  return { ok: true, fixed };
 }
 
 // ---------- key + client id (Windows lưu trong biến môi trường User, macOS trong Keychain qua helper) ----------
@@ -475,4 +518,5 @@ function gatewayAuth() {
 }
 
 module.exports = {
+  repairCatalog, CATALOG_DEFAULTS,
   BROWSER_DUP_TOOLS, cleanInstallerLine, checkKey, linuxMissing, updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, skillRoots, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };
