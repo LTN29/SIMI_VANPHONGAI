@@ -552,3 +552,8 @@ body.cbw-dragging { cursor: col-resize; user-select: none; }
 @media (max-width: 760px) { .sch-grid { grid-template-columns: 1fr; } }
 
 .ch-archived.ch-recover { margin-top: 0; }
+
+.ch-memo { border: 0; background: none; padding: 0; margin-left: 4px; font: inherit; color: var(--accent2); cursor: pointer; }
+.ch-memo:hover { text-decoration: underline; }
+.memo-box { display: flex; flex-direction: column; gap: 10px; }
+.memo-ta { width: 100%; min-height: 320px; resize: vertical; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel); color: var(--text); font: inherit; font-size: 13.5px; line-height: 1.55; }

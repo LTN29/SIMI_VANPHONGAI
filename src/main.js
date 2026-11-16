@@ -564,6 +564,9 @@ function registerIpc() {
   handle('chat:list', () => chat.store.list().map((t) => (t.origin === 'codex' ? { ...t, project: chat.projectFor(t.cwd || t.project) } : t)));
   handle('chat:get', (id) => chat.open(id));
   handle('chat:recoverables', () => chat.store.recoverables());
+  handle('chat:memo', (id) => chat.getMemo(id));
+  handle('chat:memoSave', (id, text) => chat.setMemo(id, text));
+  handle('chat:memoRefresh', (id) => chat.updateMemo(id, { force: true }));
   handle('chat:restore', (id, file) => chat.store.restore(id, file));
   handle('chat:create', (o) => chat.create(o || {}));
   handle('chat:update', (id, patch) => chat.update(id, patch || {}));

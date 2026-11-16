@@ -370,13 +370,23 @@ const FAST_FILE_OK = /\.(png|jpe?g|webp|gif)$/i;
 const SKILL_CALL = /(^|\s)[/$][a-z][a-z0-9-]{1,40}(\s|$)/i;
 
 // việc rõ ràng cần công cụ (file, web, ảnh, máy tính, tin mới) → đi Codex ngay, không chờ model tự báo
-const TOOL_INTENT = /https?:\/\/|www\.|\.(com|vn|net|org)\b|\b(file|tệp|thư mục|folder|excel|word|docx|xlsx|pptx|powerpoint|pdf|csv|slide)\b|(tạo|vẽ|thiết kế|sửa|chỉnh|xóa phông|tách nền)\s+(cái |một |1 )?(ảnh|hình|logo|banner|poster|video|clip)|(mở|vào|truy cập|đọc)\s+(trang|web|link|website|trình duyệt|gmail|facebook|zalo)|tìm (trên|kiếm trên|trên) (mạng|google|web|internet)|tra cứu|tin tức|mới nhất|thời tiết|tỷ giá|giá (vàng|xăng|usd|đô|bitcoin|cổ phiếu)|chạy (lệnh|code|script)|cài (đặt|app|phần mềm)|điều khiển|màn hình|(gửi|soạn và gửi) (email|mail|tin)|lưu (lại|vào|thành)|xuất (ra|file|thành)|tải (về|xuống|lên)|đăng (bài|lên)|(^|\s)vẽ(\s|$)|\b(logo|poster|banner|thumbnail|mp3|m4a|wav|audio)\b|ghi âm|chép lời|gỡ băng|phụ đề|thu âm|file âm thanh|(làm|cho)( cho)? (nét|rõ|sáng|đẹp)|nét hơn|xo[áa] (chữ|logo|phông|nền|vết)|ghép (ảnh|logo)|cắt (ảnh|hình)|chỉnh màu|trang (này|đang mở)|(bấm|nhấn|click|điền|chọn) (vào |nút|ô |form|link|đường dẫn)|đăng nhập|trình duyệt/i;
+const TOOL_INTENT = /https?:\/\/|www\.|\.(com|vn|net|org)\b|\b(file|tệp|thư mục|folder|excel|word|docx|xlsx|pptx|powerpoint|pdf|csv|slide)\b|(tạo|vẽ|thiết kế|sửa|chỉnh|xóa phông|tách nền)\s+(cái |một |1 )?(ảnh|hình|logo|banner|poster|video|clip)|(mở|vào|truy cập|đọc)\s+(trang|web|link|website|trình duyệt|gmail|facebook|zalo)|tìm (trên|kiếm trên|trên) (mạng|google|web|internet)|tra cứu|tin tức|(tin|giá|thông tin|kết quả|tỷ số) mới nhất|thời tiết|tỷ giá|giá (vàng|xăng|usd|đô|bitcoin|cổ phiếu)|chạy (lệnh|code|script)|cài (đặt|app|phần mềm)|điều khiển (máy|chuột|bàn phím|ứng dụng|app|trình duyệt)|(chụp|xem|nhìn|đọc|quay) màn hình|màn hình (máy tính|của (tôi|mình|em|anh|chị))|(gửi|soạn và gửi) (email|mail|tin)|lưu (lại |vào |thành )(file|tệp|thư mục|máy|word|excel|pdf|ảnh)|xuất (ra|file|thành)|tải (về|xuống|lên)|đăng (bài|lên)|(^|\s)vẽ(\s|$)|\b(logo|poster|banner|thumbnail|mp3|m4a|wav|audio)\b|ghi âm|chép lời|gỡ băng|phụ đề|thu âm|file âm thanh|(làm|cho)( cho)? (nét|rõ|sáng|đẹp)|nét hơn|xo[áa] (chữ|logo|phông|nền|vết)|ghép (ảnh|logo)|cắt (ảnh|hình)|chỉnh màu|trang (này|đang mở)|(bấm|nhấn|click|điền|chọn) (vào |nút|ô |form|link|đường dẫn)|đăng nhập|trình duyệt/i;
 // lượt trước vừa làm việc bằng công cụ mà tin mới ngắn ("làm tiếp", "sửa lại chỗ đó", "ok") → tiếp tục bằng Codex
+// chỉ khi tin mới là lời bảo làm tiếp việc đó (tiếp, làm lại, sửa, chạy, xuất, ok…); câu hỏi / nhờ viết bình thường vẫn ⚡ trả lời ngay
+const FOLLOW_VERB = /^(ok|oke|okay|được|đc|ừ|uh|có|đồng ý|tiếp|làm tiếp|tiếp tục|continue|go|chạy|làm|thử|sửa|chỉnh|đổi|thêm|bỏ|xoá|xóa|xuất|lưu|gửi|mở|tạo|cập nhật|update|fix|redo|lại)\b/i;
 const toolFollowUp = (t, text) => {
   const prev = t.messages.slice(0, -2).filter((m) => m.role === 'assistant').pop();
-  return !!prev && !prev.fast && (prev.blocks || []).some((b) => b.kind === 'step') && text.length < 160;
+  const s = text.trim();
+  return !!prev && !prev.fast && (prev.blocks || []).some((b) => b.kind === 'step') && s.length < 160 && !/\n/.test(s) && FOLLOW_VERB.test(s);
 };
-const intentText = (text) => (text.length > 500 ? text.slice(0, 300) + '\n' + text.slice(-200) : text); // lệnh thường ở đầu / cuối, giữa là nội dung dán vào
+// tìm ý định dùng công cụ trong LỜI NHỜ, không trong nội dung người dùng dán vào để sửa / viết lại:
+// tin nhiều dòng → chỉ xét dòng đầu & dòng cuối (thường là lời nhờ) + link ở bất kỳ đâu; tin dài → đầu & cuối
+const intentText = (text) => {
+  const lines = text.split(/\n+/).map((x) => x.trim()).filter(Boolean);
+  const urls = (text.match(/https?:\/\/\S+|www\.\S+/g) || []).join(' ');
+  if (lines.length >= 2) return [lines[0].slice(0, 200), lines[lines.length - 1].slice(-300), urls].join('\n');
+  return text.length > 500 ? text.slice(0, 300) + '\n' + text.slice(-200) : text;
+};
 
 // đủ điều kiện trả lời nhanh – tự quyết định, user không phải chỉnh gì: không gọi skill / @công cụ, chỉ đính kèm ảnh,
 // không phải việc rõ ràng cần công cụ, không phải câu nối tiếp một việc đang làm bằng công cụ
@@ -398,9 +408,29 @@ const EXT_GUIDE = 'Bạn là trợ lý AI trong app Văn Phòng AI, đang trò c
 
 const blockText = (m) => (m.role === 'user' ? m.text || '' : (m.blocks || []).filter((b) => b.kind === 'text').map((b) => b.text).join('\n')).trim();
 
+// 🧠 Ghi nhớ gọn: đoạn chat dài → phần cũ được AI tóm thành "ghi nhớ" (sản phẩm, số liệu, quyết định, giọng văn, việc dở),
+// mỗi lượt chỉ gửi ghi nhớ + vài lượt gần nhất nguyên văn → nhanh hơn mà không quên. Tóm chạy ngầm sau khi trả lời xong.
+const MEMO_KEEP = 8;            // số tin gần nhất luôn gửi nguyên văn
+const MEMO_MIN_CHARS = 6000;    // phần cũ chưa tóm đủ dài mới tóm
+const MEMO_MIN_MSGS = 6;
+const MEMO_CHUNK_CHARS = 60000; // mỗi lần tóm tối đa chừng này chữ hội thoại
+const memoOf = (t) => (t.memo && t.memo.text && t.memo.upTo >= 0 && t.memo.upTo <= t.messages.length ? t.memo : null);
+const memoBlock = (t) => { const m = memoOf(t); return m ? `GHI NHỚ CỦA ĐOẠN CHAT NÀY (${m.upTo ? `tóm gọn ${m.upTo} tin trước đó` : 'người dùng ghi sẵn'} – coi như bạn đã biết, dùng khi liên quan):\n${m.text}` : ''; };
+// các tin chưa tóm, không gồm lượt đang chạy
+const sinceMemo = (t) => t.messages.slice(memoOf(t) ? t.memo.upTo : 0, -2).filter((m) => m.role === 'user' || m.status === 'done');
+const MEMO_GUIDE = [
+  'Bạn cập nhật GHI NHỚ của một đoạn chat công việc. Ghi nhớ này được dùng THAY cho phần hội thoại cũ, nên phải giữ đủ những gì cần để làm tiếp:',
+  '- Thông tin sản phẩm / khách hàng / dự án: tên, thông số, giá, số liệu, ngày, link, tên file, tên người.',
+  '- Quyết định đã chốt, nội dung đã duyệt (câu chữ, slogan, thông điệp chính – giữ nguyên văn nếu ngắn).',
+  '- Yêu cầu về giọng văn, định dạng, độ dài, điều không được nói.',
+  '- Việc còn dở / bước tiếp theo, sở thích của người dùng.',
+  'Bỏ chào hỏi, câu thử, nội dung đã bị thay bằng bản mới. Không bịa. Viết tiếng Việt, gạch đầu dòng ngắn, chia mục, tối đa khoảng 1200 từ.',
+  'Chỉ trả về nội dung ghi nhớ mới (đã gộp ghi nhớ cũ với phần hội thoại mới).',
+].join('\n');
+
 function fastRequest(t, model, text, atts, persona) {
   const input = []; let budget = 60000;
-  const past = t.messages.slice(0, -2).filter((m) => m.role === 'user' || m.status === 'done').slice(-24);
+  const past = sinceMemo(t).slice(-24);
   for (const m of past.reverse()) {
     const txt = blockText(m).slice(0, 8000);
     if (!txt) continue;
@@ -413,7 +443,10 @@ function fastRequest(t, model, text, atts, persona) {
     content.push({ type: 'input_image', image_url: `data:image/${ext};base64,${fs.readFileSync(a.path).toString('base64')}` });
   }
   input.push({ role: 'user', content });
-  return { model, instructions: FAST_GUIDE + (persona ? `\n\n${persona}` : ''), input, stream: true, store: false, prompt_cache_key: `vp-fast-${t.id}`, ...(t.effort ? { reasoning: { effort: t.effort } } : {}) };
+  const memo = memoBlock(t);
+  // để "Mặc định" mà chỉ là câu ngắn, không kèm ảnh (viết lại, hỏi nhanh) → suy nghĩ mức thấp cho nhanh
+  const effort = t.effort || (text.length < 600 && !atts.length ? 'low' : '');
+  return { model, instructions: FAST_GUIDE + (persona ? `\n\n${persona}` : '') + (memo ? `\n\n${memo}` : ''), input, stream: true, store: false, prompt_cache_key: `vp-fast-${t.id}`, ...(effort ? { reasoning: { effort } } : {}) };
 }
 
 // trao đổi nhanh sau lượt Codex cuối cùng → kèm vào lời nhắn gửi Codex
@@ -429,10 +462,11 @@ function withFastHistory(t, prompt) {
 
 // sau khi sửa tin nhắn mà không cắt được lịch sử phiên Codex cũ → phiên mới, kèm bản tóm lược hội thoại đã giữ lại
 function withTranscript(t, prompt) {
-  const msgs = t.messages.slice(0, -2).filter((m) => m.role === 'user' || m.status === 'done');
-  if (!msgs.length) return prompt;
+  const msgs = sinceMemo(t);
+  const memo = memoBlock(t);
+  if (!msgs.length) return memo ? `${memo}\n\n---\n\n${prompt}` : prompt;
   const lines = msgs.map((m) => `${m.role === 'user' ? 'Người dùng' : 'Trợ lý'}: ${blockText(m).slice(0, 3000)}`).join('\n\n').slice(-16000);
-  return `(Lịch sử đoạn chat này trước tin nhắn hiện tại:)\n${lines}\n\n---\n\n${prompt}`;
+  return `${memo ? memo + '\n\n' : ''}(Lịch sử đoạn chat này trước tin nhắn hiện tại:)\n${lines}\n\n---\n\n${prompt}`;
 }
 
 function buildPrompt(t, text, atts, persona) {
@@ -833,6 +867,7 @@ class ChatEngine {
       }
     }
     t.messages = kept;
+    if (t.memo && t.memo.upTo > kept.length) t.memo = null; // ghi nhớ gồm cả phần vừa bỏ → bỏ ghi nhớ, tóm lại sau
     this.store.save(t, { why: 'edit' });
     this.emit({ type: 'chat', threadId: id, ev: 'truncate', length: kept.length });
     return this.send(id, { ...payload, text, attachments, mentions: Array.isArray(payload.mentions) ? payload.mentions : (m.mentions || []) });
@@ -1232,7 +1267,7 @@ class ChatEngine {
 
       (async () => {
         const extModel = parseModel(t.model); // "codex-cli::<model>" = tài khoản ChatGPT riêng (provider openai của Codex)
-        const set = simi.chatSettings({ model: extModel ? extModel.model : t.model, effort: t.effort, sandbox: t.sandbox });
+        const set = simi.chatSettings({ model: extModel ? extModel.model : t.model, effort: t.effort, sandbox: t.sandbox, compactTokens: this.getConfig().chatCompactTokens });
         if (extModel) set.modelProvider = 'openai';
         const gen = await srv.start();
         const cu = await this.computerUse();
@@ -1408,7 +1443,7 @@ class ChatEngine {
     run.abort = (reason) => { run.reason = reason || STOPPED; run.stopped = true; ac.abort(); };
     this.running.set(t.id, run);
     if (pre && pre.stopped) run.abort(STOPPED);
-    const past = t.messages.slice(0, -2).filter((m) => m.role === 'user' || m.status === 'done').slice(-16);
+    const past = sinceMemo(t).slice(-16);
     let budget = 40000; const lines = [];
     for (const m of past.reverse()) {
       const txt = blockText(m).slice(0, 6000);
@@ -1423,7 +1458,8 @@ class ChatEngine {
     const dir = this.dirOf(t);
     const before = snapshot(dir);
     const system = [EXT_GUIDE, tools && tools.guide, persona].filter(Boolean).join('\n\n');
-    const user = (lines.length ? `Đoạn hội thoại trước đó:\n${lines.join('\n\n')}\n\n---\n\n` : '') + `Tin nhắn mới của người dùng:\n${text}` + (files ? `\n\nTệp người dùng đính kèm (đường dẫn trên máy):\n${files}` : '');
+    const memoTxt = memoBlock(t);
+    const user = (memoTxt ? `${memoTxt}\n\n---\n\n` : '') + (lines.length ? `Đoạn hội thoại trước đó:\n${lines.join('\n\n')}\n\n---\n\n` : '') + `Tin nhắn mới của người dùng:\n${text}` + (files ? `\n\nTệp người dùng đính kèm (đường dẫn trên máy):\n${files}` : '');
     const cfg = this.getConfig();
     let out = ''; let error = '';
     const timeoutSec = Math.max(Number(cfg.timeoutSec) || 0, tools ? 1800 : 600);
@@ -1574,7 +1610,62 @@ class ChatEngine {
     if (!this._safeSave(t)) setTimeout(() => this._safeSave(t), 1500);
     emit({ ev: 'done', message: msg, title: t.title, codexThread: t.codexThread });
     resolve({ ok: !error, message: msg });
+    if (!error) setTimeout(() => this.updateMemo(t.id).catch(() => {}), 300);
+  }
+
+  // 🧠 tóm phần cũ của đoạn chat thành ghi nhớ (chạy ngầm, 1 lần / đoạn chat cùng lúc); force = người dùng bấm "Tóm gọn ngay"
+  async updateMemo(id, { force = false } = {}) {
+    this.memoBusy = this.memoBusy || new Set();
+    if (this.memoBusy.has(id) || this.running.has(id)) return { skipped: 'busy' };
+    const t0 = this.store.get(id); if (!t0) return { skipped: 'missing' };
+    const from = memoOf(t0) ? t0.memo.upTo : 0;
+    const end = Math.max(from, t0.messages.length - MEMO_KEEP);
+    let region = t0.messages.slice(from, end);
+    const len = (ms) => ms.reduce((n, m) => n + blockText(m).length, 0);
+    if (!force && (region.length < MEMO_MIN_MSGS || len(region) < MEMO_MIN_CHARS)) return { skipped: 'short' };
+    if (!region.length) return { skipped: 'empty' };
+    // giới hạn mỗi lần tóm; kết thúc ở tin trợ lý để không cắt đôi một lượt hỏi – đáp
+    let take = 0; let used = 0;
+    for (let i = 0; i < region.length; i++) { used += Math.min(4000, blockText(region[i]).length); if (used > MEMO_CHUNK_CHARS && take) break; take = i + 1; }
+    while (take > 1 && region[take - 1].role === 'user') take--;
+    region = region.slice(0, take);
+    const auth = simi.gatewayAuth();
+    const model = t0.model && !parseModel(t0.model) ? t0.model : simi.readCodexConfig().defaultModel;
+    if (!auth.baseUrl || !auth.key || !model) return { skipped: 'no-gateway' };
+    this.memoBusy.add(id);
+    try {
+      const lines = region.filter((m) => m.role === 'user' || m.status === 'done')
+        .map((m) => `${m.role === 'user' ? 'Người dùng' : 'Trợ lý'}: ${blockText(m).slice(0, 4000)}`).join('\n\n');
+      const old = memoOf(t0) ? t0.memo.text : '(chưa có)';
+      const headers = { authorization: `Bearer ${auth.key}`, 'content-type': 'application/json' };
+      if (auth.clientId) headers['x-ltn-client-id'] = auth.clientId;
+      const body = { model, instructions: MEMO_GUIDE, stream: false, store: false, reasoning: { effort: 'low' },
+        input: [{ role: 'user', content: [{ type: 'input_text', text: `GHI NHỚ HIỆN CÓ:\n${old}\n\nPHẦN HỘI THOẠI MỚI CẦN GỘP VÀO:\n${lines}` }] }] };
+      const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), 120000);
+      let res; try { res = await fetch(`${auth.baseUrl}/responses`, { method: 'POST', headers, body: JSON.stringify(body), signal: ac.signal }); } finally { clearTimeout(timer); }
+      if (!res.ok) return { error: `Gateway HTTP ${res.status}` };
+      const j = await res.json();
+      const text = String(j.output_text || (j.output || []).flatMap((o) => o.content || []).filter((c) => c.type === 'output_text').map((c) => c.text).join('\n') || '').trim();
+      if (text.length < 40) return { error: 'tóm tắt rỗng' };
+      // đọc lại bản mới nhất (có thể vừa có tin mới) rồi mới ghi; bị sửa / xoá bớt trong lúc tóm → bỏ kết quả
+      const t = this.store.get(id);
+      if (!t || this.running.has(id) || t.messages.length < from + take || (memoOf(t) ? t.memo.upTo : 0) !== from) return { skipped: 'changed' };
+      t.memo = { text: text.slice(0, 16000), upTo: from + take, at: Date.now() };
+      this.store.save(t, { why: 'memo' });
+      this.emit({ type: 'chat', threadId: id, ev: 'memo', memo: { upTo: t.memo.upTo, at: t.memo.at } });
+      return { ok: true, upTo: t.memo.upTo };
+    } finally { this.memoBusy.delete(id); }
+  }
+
+  getMemo(id) { const t = this.store.get(id); return t && memoOf(t) ? { ...t.memo, total: t.messages.length } : { text: '', upTo: 0, total: t ? t.messages.length : 0 }; }
+  setMemo(id, text) {
+    const t = this.store.get(id); if (!t) throw new Error('Không tìm thấy đoạn chat');
+    const v = String(text || '').trim();
+    if (!v) t.memo = null;
+    else t.memo = { text: v.slice(0, 16000), upTo: memoOf(t) ? t.memo.upTo : Math.max(0, t.messages.length - MEMO_KEEP), at: Date.now(), edited: true };
+    this.store.save(t, { why: 'memo' });
+    return this.getMemo(id);
   }
 }
 
-module.exports = { cmdProgram, askKey, docGuide, isScratch, collectFiles, stepFromItem, parseModel, SCRATCH, ChatEngine };
+module.exports = { cmdProgram, askKey, docGuide, isScratch, collectFiles, stepFromItem, parseModel, fastRequest, fastEligible, SCRATCH, ChatEngine };

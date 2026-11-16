@@ -461,6 +461,25 @@
       r.error ? el('small', { class: 'dim', text: '⚠️ Không đọc được mục lưu trữ của ChatGPT Work: ' + r.error }) : null);
   }
 
+  // 🧠 ghi nhớ gọn của đoạn chat: xem / sửa / tóm lại ngay
+  async function openMemo(t) {
+    const { el } = U;
+    const m = await window.vp.chat.memo(t.id);
+    const ta = el('textarea', { class: 'memo-ta', rows: 16, placeholder: 'Chưa có ghi nhớ. Đoạn chat dài ra, app tự tóm phần cũ vào đây.' }); ta.value = m.text || '';
+    const info = el('small', { class: 'dim', text: m.upTo ? `Tóm gọn ${m.upTo}/${m.total} tin đầu · AI đọc ghi nhớ này + các tin gần nhất thay cho cả đoạn chat, nên trả lời nhanh hơn mà vẫn nhớ. Sửa / thêm ý quan trọng (thông tin sản phẩm, giọng văn…) ngay tại đây.` : 'Đoạn chat còn ngắn nên AI đọc nguyên văn. Bạn vẫn có thể ghi sẵn thông tin sản phẩm, giọng văn… ở đây để AI luôn nhớ.' });
+    const refresh = el('button', { class: 'btn ghost', onclick: async () => {
+      refresh.disabled = true; refresh.textContent = 'Đang tóm…';
+      const r = await window.vp.chat.memoRefresh(t.id).catch((e) => ({ error: U.cleanErr(e) }));
+      if (r && r.ok) { const n = await window.vp.chat.memo(t.id); ta.value = n.text; U.toast(`🧠 Đã tóm gọn ${n.upTo} tin`); } else U.toast(r && r.error ? r.error : 'Chưa có phần nào cần tóm', !!(r && r.error));
+      refresh.disabled = false; refresh.textContent = '🧹 Tóm gọn ngay';
+    } }, '🧹 Tóm gọn ngay');
+    U.openModal('🧠 Ghi nhớ của đoạn chat', el('div', { class: 'memo-box' }, info, ta), [
+      refresh, el('span', { class: 'grow' }),
+      el('button', { class: 'btn ghost', text: 'Đóng', onclick: () => U.closeModal() }),
+      el('button', { class: 'btn primary', text: 'Lưu', onclick: async () => { try { await window.vp.chat.memoSave(t.id, ta.value); U.toast('Đã lưu ghi nhớ'); U.closeModal(); if (C.cur && C.cur.id === t.id) { C.cur = await window.vp.chat.get(t.id); renderMain(); } } catch (e) { U.toast(U.cleanErr(e), true); } } }),
+    ], 'wide');
+  }
+
   // 🛟 khôi phục: đoạn chat đã xoá / bị mất, hoặc bản sao lưu có nhiều tin hơn bản đang thấy (lịch sử bị rút ngắn)
   async function openRecover() {
     const { el } = U;
@@ -588,7 +607,8 @@
     const title = el('input', { class: 'ch-tin', value: t.title, maxlength: 80, title: 'Bấm để đổi tên', onchange: async (e) => { C.cur = await window.vp.chat.update(t.id, { title: e.target.value.trim() || 'Đoạn chat' }); loadThreads(); } });
     h.replaceChildren(
       a ? U.avatar(a, 34) : el('img', { class: 'ch-hicon', src: 'icon.png', alt: '' }),
-      el('div', { class: 'ch-title' }, title, el('small', {}, a ? `Phụ trách: ${a.name} · ${a.title} · ` : '', `${t.messages.filter((m) => m.role === 'user').length} lượt hỏi`)),
+      el('div', { class: 'ch-title' }, title, el('small', {}, a ? `Phụ trách: ${a.name} · ${a.title} · ` : '', `${t.messages.filter((m) => m.role === 'user').length} lượt hỏi`,
+        el('button', { class: 'ch-memo', title: 'Ghi nhớ của đoạn chat: phần cũ được tóm gọn để AI trả lời nhanh hơn mà vẫn nhớ; bạn cũng ghi sẵn thông tin sản phẩm, giọng văn… ở đây. Bấm để xem / sửa.', onclick: () => openMemo(t) }, t.memo && t.memo.text ? (t.memo.upTo ? ` · 🧠 Nhớ gọn ${t.memo.upTo} tin` : ' · 🧠 Có ghi nhớ') : ' · 🧠 Ghi nhớ'))),
       el('span', { class: 'grow' }),
       el('button', { class: 'chip', title: t.project || 'Thư mục chat mặc định', onclick: () => window.vp.chat.openDir(t.project || '') }, icon('folder'), projName(t.project)),
       el('button', { class: 'btn icon mini', title: t.pinned ? 'Bỏ ghim' : 'Ghim lên đầu', onclick: async () => { C.cur = await window.vp.chat.update(t.id, { pinned: !t.pinned }); loadThreads(); renderHead(); } }, t.pinned ? '📌' : '📍'),
@@ -1412,6 +1432,7 @@
     if (e.ev === 'done' && e.message && /chưa có Codex|Không tìm thấy Codex/.test(e.message.error || '') && window.VPSimiSetup && !window.VPSimiSetup.state.running) window.VPSimiSetup.open({ mode: 'install' });
     if (!C.cur || C.cur.id !== e.threadId) { if (e.ev !== 'blocks') renderSide(); return; }
     const msgs = C.cur.messages;
+    if (e.ev === 'memo') { C.cur.memo = { ...(C.cur.memo || {}), ...e.memo }; renderMain(); return; }
     if (e.ev === 'truncate') { msgs.length = Math.min(msgs.length, e.length); renderMain(); return; }
     if (e.ev === 'start') { msgs.push(e.user, e.message); renderMain(2); renderSide(); return; }
     const m = msgs[msgs.length - 1]; if (!m || m.role !== 'assistant') return;
