@@ -281,6 +281,22 @@ const BROWSER_MCP = 'simi_browser';
 const BROWSER_DUP_TOOLS = ['browser_read_pages', 'browser_open_window', 'browser_status', 'browser_snapshot', 'browser_act', 'browser_screenshot', 'browser_read_workbook', 'browser_read_candidate_cvs'];
 const browserApprove = () => (readCodexConfig().browserMcp ? { [`mcp_servers.${BROWSER_MCP}.default_tools_approval_mode`]: 'approve' } : {});
 
+// giá trị TOML cho `codex exec -c key=value`: ưu tiên chuỗi nháy đơn (không có " → qua cmd.exe trên Windows an toàn)
+function tomlValue(v) {
+  const str = (s) => (/['\n\r]/.test(String(s)) ? JSON.stringify(String(s)) : `'${s}'`);
+  if (Array.isArray(v)) return `[${v.map((x) => (typeof x === 'string' ? str(x) : tomlValue(x))).join(',')}]`;
+  if (v && typeof v === 'object') return `{${Object.entries(v).map(([k, x]) => `${/^[A-Za-z0-9_-]+$/.test(k) ? k : JSON.stringify(k)}=${tomlValue(x)}`).join(',')}}`;
+  if (typeof v === 'string') return str(v);
+  return String(v);
+}
+// cấu hình phiên thêm cho việc chạy `codex exec` (Văn phòng): Trình duyệt SIMI cạnh khung chat + ẩn công cụ Chrome SIMI riêng
+let execExtra = () => ({});
+function setExecExtra(fn) { execExtra = typeof fn === 'function' ? fn : () => ({}); }
+function execExtraArgs() {
+  let o = {}; try { o = execExtra() || {}; } catch { o = {}; }
+  return Object.entries(o).flatMap(([k, v]) => ['-c', `${k}=${tomlValue(v)}`]);
+}
+
 // tham số Codex dùng chung để chạy qua SIMI Gateway (việc của Văn phòng: `codex exec`, không hỏi quyền được)
 function codexArgs({ model, effort, sandbox, viaGateway = true }) {
   const a = [];
@@ -292,6 +308,7 @@ function codexArgs({ model, effort, sandbox, viaGateway = true }) {
   // skill SIMI gọi Gateway qua mạng (tạo ảnh, video, tìm web…) nên cần mở mạng trong sandbox
   if (sb === 'workspace-write') a.push('-c', 'sandbox_workspace_write.network_access=true');
   for (const [k, v] of Object.entries(browserApprove())) a.push('-c', `${k}="${v}"`);
+  a.push(...execExtraArgs());
   return a;
 }
 
@@ -519,4 +536,4 @@ function gatewayAuth() {
 
 module.exports = {
   repairCatalog, CATALOG_DEFAULTS,
-  BROWSER_DUP_TOOLS, cleanInstallerLine, checkKey, linuxMissing, updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, skillRoots, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };
+  BROWSER_DUP_TOOLS, tomlValue, setExecExtra, execExtraArgs, cleanInstallerLine, checkKey, linuxMissing, updateToolsIfNeeded, toolsSyncedVersion, readCodexConfig, refreshEnv, listSkills, skillRoots, listModels, status, openInstaller, codexArgs, chatSettings, chatCodexCmd, desktopCodex, gatewayAuth, gatewayOrigin, runUpdate, BROWSER_MCP, DEFAULT_GATEWAY };

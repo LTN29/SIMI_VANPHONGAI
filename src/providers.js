@@ -39,7 +39,7 @@ async function callCli(source, agent, prompt, ctx) {
     case 'claude-cli':
       return (await runProcess(c.claude.cmd || 'claude', ['-p', '--output-format', 'text', ...withModel('--model'), ...(ctx.cliArgs || []), ...splitArgs(c.claude.extraArgs)], prompt, opt)).out;
     case 'codex-cli':
-      return runCodex(c.codex.cmd || 'codex', [...withModel('-m'), ...splitArgs(c.codex.extraArgs)], prompt, opt);
+      return runCodex(c.codex.cmd || 'codex', [...withModel('-m'), ...simi.execExtraArgs(), ...splitArgs(c.codex.extraArgs)], prompt, opt);
     case 'simi':
       // Codex chạy ngầm qua SIMI Gateway: có skill simi-*, MCP trình duyệt, đọc/ghi file trong khu làm việc
       simi.refreshEnv();

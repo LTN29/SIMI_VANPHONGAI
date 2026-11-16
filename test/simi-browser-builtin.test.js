@@ -44,3 +44,15 @@ test('Gemini CLI: excludeTools trong file cấu hình MCP', () => {
   assert.deepEqual(cfg.mcpServers.simi_browser.excludeTools, simi.BROWSER_DUP_TOOLS);
   assert.equal(cfg.mcpServers.vp_browser.excludeTools, undefined);
 });
+
+test('việc Văn phòng (codex exec) cũng dùng khung cạnh chat: -c truyền vp_browser + ẩn công cụ Chrome SIMI riêng', () => {
+  simi.setExecExtra(() => ({ 'mcp_servers.vp_browser.env': { VPB_CONN: 'C:\\Users\\a b\\browser-pane.json' }, 'mcp_servers.simi_browser.disabled_tools': simi.BROWSER_DUP_TOOLS }));
+  const a = simi.codexArgs({ model: 'gpt-6.1-sol', sandbox: 'workspace-write' });
+  assert.ok(a.includes(`mcp_servers.vp_browser.env={VPB_CONN='C:\\Users\\a b\\browser-pane.json'}`));
+  const dis = a.find((x) => x.startsWith('mcp_servers.simi_browser.disabled_tools='));
+  assert.ok(dis && dis.includes("'browser_read_pages'") && !dis.includes('"'), 'không có dấu " (an toàn khi qua cmd.exe)');
+  assert.equal(simi.tomlValue("it's"), '"it\'s"');
+  simi.setExecExtra(() => { throw new Error('chưa sẵn sàng'); });
+  assert.deepEqual(simi.execExtraArgs(), [], 'lỗi lấy cấu hình không chặn việc chạy');
+  simi.setExecExtra(null);
+});

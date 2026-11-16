@@ -807,6 +807,8 @@ app.whenReady().then(() => {
   createWindow();
   setTimeout(() => sched.start(), 8000); // để Codex / Gateway kịp sẵn sàng, rồi chạy bù lượt lỡ
   browserPane = new BrowserPane({ getWindow: () => win, emit, connFile: path.join(app.getPath('userData'), 'browser-pane.json') });
+  // việc của Văn phòng (`codex exec`) cũng dùng Trình duyệt SIMI cạnh khung chat, không bật Chrome SIMI riêng
+  simi.setExecExtra(() => browserMcp());
   browserPane.listen().then(() => probeBrowserMcp()).catch((e) => {
     console.warn('Trình duyệt cạnh chat không mở được cổng điều khiển:', e.message);
     browserMcpIssue = 'không mở được cổng điều khiển: ' + e.message; browserPane = null;
