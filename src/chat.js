@@ -356,6 +356,33 @@ const FAST_IDLE_MS = Number(process.env.VP_FAST_IDLE_MS) || 60000; // đang tr�
 // model chat chuyên vẽ ảnh (vd muse-image-chat): vẽ xong mới trả về → im lặng lâu là bình thường
 const IMAGE_CHAT = /image|muse/i;
 const IMAGE_WAIT_MS = Number(process.env.VP_IMAGE_WAIT_MS) || 240000;
+// gửi kèm ảnh: model đọc ảnh lâu hơn → chờ thêm 12 giây / ảnh (tối đa 3 phút)
+const firstByteWait = (nImg) => Math.min(180000, FAST_FIRST_BYTE_MS + 12000 * Math.max(0, nImg));
+const MAX_IMAGES = 10;
+const IMG_MAX_SIDE = 1568;     // cạnh dài tối đa model đọc rõ – lớn hơn chỉ làm chậm (ảnh bị thu nhỏ phía máy chủ)
+const IMG_MAX_BYTES = 1.2e6;
+// ảnh chụp / infographic gốc thường 3–8MB, 3000–5000px: gửi nguyên 7 ảnh → yêu cầu hàng chục MB, model đọc rất lâu → quá 45 giây.
+// Thu nhỏ về ≤1568px (JPEG 85) trước khi gửi – chữ trên ảnh vẫn đọc rõ; giữ bản gốc của người dùng. Lỗi gì thì dùng ảnh gốc.
+function shrinkImage(file) {
+  try {
+    const st = fs.statSync(file);
+    let nativeImage; try { ({ nativeImage } = require('electron')); } catch { return file; }
+    if (!nativeImage || typeof nativeImage.createFromPath !== 'function') return file;
+    const img = nativeImage.createFromPath(file);
+    if (img.isEmpty()) return file;
+    const { width, height } = img.getSize();
+    const side = Math.max(width, height);
+    if (side <= IMG_MAX_SIDE && st.size <= IMG_MAX_BYTES) return file;
+    const dir = path.join(os.tmpdir(), 'vpai-img'); fs.mkdirSync(dir, { recursive: true });
+    const key = require('crypto').createHash('sha1').update(`${file}|${st.size}|${st.mtimeMs}`).digest('hex').slice(0, 16);
+    const out = path.join(dir, key + '.jpg');
+    if (fs.existsSync(out)) return out;
+    const k = Math.min(1, IMG_MAX_SIDE / side);
+    const small = k < 1 ? img.resize({ width: Math.round(width * k), height: Math.round(height * k), quality: 'best' }) : img;
+    fs.writeFileSync(out, small.toJPEG(85));
+    return out;
+  } catch { return file; }
+}
 // báo cho công cụ tạo ảnh (image_generate) biết model chat người dùng ĐANG chọn → ảnh đi theo đúng hãng (GPT / Gemini…)
 function noteChatModel(model) {
   if (!model) return;
@@ -438,9 +465,10 @@ function fastRequest(t, model, text, atts, persona) {
     input.unshift(m.role === 'user' ? { role: 'user', content: [{ type: 'input_text', text: txt }] } : { role: 'assistant', content: [{ type: 'output_text', text: txt }] });
   }
   const content = [{ type: 'input_text', text }];
-  for (const a of atts.filter((x) => x.image).slice(0, 4)) {
-    const ext = path.extname(a.path).slice(1).toLowerCase().replace('jpg', 'jpeg');
-    content.push({ type: 'input_image', image_url: `data:image/${ext};base64,${fs.readFileSync(a.path).toString('base64')}` });
+  for (const a of atts.filter((x) => x.image).slice(0, MAX_IMAGES)) {
+    const p = shrinkImage(a.path);
+    const ext = path.extname(p).slice(1).toLowerCase().replace('jpg', 'jpeg');
+    content.push({ type: 'input_image', image_url: `data:image/${ext};base64,${fs.readFileSync(p).toString('base64')}` });
   }
   input.push({ role: 'user', content });
   const memo = memoBlock(t);
@@ -1301,7 +1329,7 @@ class ChatEngine {
         }
         run.codexId = t.codexThread;
         if (run.stopped) return finish(STOPPED);
-        const input = [{ type: 'text', text: prompt, text_elements: [] }, ...atts.filter((a) => a.image).map((a) => ({ type: 'localImage', path: a.path })),
+        const input = [{ type: 'text', text: prompt, text_elements: [] }, ...atts.filter((a) => a.image).map((a) => ({ type: 'localImage', path: shrinkImage(a.path) })),
           ...ments.filter((m) => m.kind === 'plugin').map((m) => ({ type: 'mention', name: m.name, path: `plugin://${m.id}` }))];
         noteChatModel(set.model);
         const r = await req('turn/start', { threadId: t.codexThread, input, cwd: dir, model: set.model, effort: set.effort, approvalPolicy: set.approvalPolicy, sandboxPolicy: set.sandboxPolicy });
@@ -1336,7 +1364,7 @@ class ChatEngine {
       const watch = (ms) => { clearTimeout(idle); idle = setTimeout(() => { stalled = Math.max(1, Math.round((Date.now() - t0) / 1000)); ac.abort(); }, ms); };
       const slow = IMAGE_CHAT.test(model || '');
       noteChatModel(model);
-      watch(slow ? IMAGE_WAIT_MS : FAST_FIRST_BYTE_MS);
+      watch(slow ? IMAGE_WAIT_MS : firstByteWait(atts.filter((a) => a.image).length));
       let res;
       try { res = await fetch(`${auth.baseUrl}/responses`, { method: 'POST', headers, body: JSON.stringify(body), signal: ac.signal }); } catch (e) { clearTimeout(idle); throw e; }
       firstByteMs = Date.now() - t0;
@@ -1668,4 +1696,4 @@ class ChatEngine {
   }
 }
 
-module.exports = { cmdProgram, askKey, docGuide, isScratch, collectFiles, stepFromItem, parseModel, fastRequest, fastEligible, SCRATCH, ChatEngine };
+module.exports = { cmdProgram, askKey, docGuide, isScratch, collectFiles, stepFromItem, parseModel, fastRequest, fastEligible, shrinkImage, firstByteWait, SCRATCH, ChatEngine };
