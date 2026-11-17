@@ -51,6 +51,8 @@ body.in-chat .status { display: none; }
 .ch-tin:hover { border-color: var(--line); } .ch-tin:focus { border-color: var(--accent2); background: var(--input); }
 
 .ch-msgs { flex: 1; overflow: auto; padding: 22px 0 10px; scroll-behavior: smooth; }
+.ch-older { display: block; margin: 0 auto 14px; padding: 6px 14px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 12.5px; }
+.ch-older:hover { background: var(--bg2); }
 .cmsg { display: flex; gap: 11px; max-width: 860px; margin: 0 auto 18px; padding: 0 26px; }
 .cmsg.enter { animation: pop .25s ease-out; }
 .cmsg.me { justify-content: flex-end; }

@@ -122,6 +122,7 @@ contextBridge.exposeInMainWorld('vp', {
     upload: (id, name, bytes) => ipcRenderer.invoke('chat:upload', id, name, bytes),
     pickFiles: () => ipcRenderer.invoke('chat:pickFiles'),
     fileData: (p) => ipcRenderer.invoke('chat:fileData', p),
+    thumb: (p) => ipcRenderer.invoke('chat:thumb', p),
     openFile: (p) => ipcRenderer.invoke('chat:openFile', p),
     showFile: (p) => ipcRenderer.invoke('chat:showFile', p),
     openDir: (d) => ipcRenderer.invoke('chat:openDir', d),

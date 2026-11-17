@@ -553,6 +553,8 @@
 
   async function openThread(id) {
     const t = await window.vp.chat.get(id); if (!t) { C.cur = null; ls.set('vp.chatCur', ''); renderMain(); return; }
+    // sang đoạn chat khác → lại chỉ vẽ 40 tin cuối; mở lại chính đoạn đang xem (vd quay lại app) thì giữ phần đã nạp
+    if (!C.cur || C.cur.id !== id) C.winFor = null;
     C.cur = t; ls.set('vp.chatCur', id);
     renderSide(); renderMain();
     $('#chInput').focus();
@@ -649,18 +651,66 @@
     send.replaceChildren(U.icon(busy ? 'stop' : 'send'));
   }
 
+  // Đoạn chat dài (hàng trăm tin) chỉ vẽ WIN tin cuối – mở nhanh, gõ / stream mượt; cuộn lên đầu thì tự nạp thêm từng đợt.
+  const WIN = 40;
+  // cuộn ngay (không trượt): .ch-msgs có scroll-behavior: smooth – cuộn bằng code mà trượt thì mỗi khung hình stream đều phải vẽ lại cả quãng
+  const toBottom = (box) => box.scrollTo({ top: box.scrollHeight, behavior: 'instant' });
+  let olderIO = null;
+
   // animateLast: số tin nhắn cuối có hiệu ứng xuất hiện (chỉ tin mới; vẽ lại khi đang stream thì không nháy)
   function renderMain(animateLast = 0) {
     renderHead(); renderBar(); renderAtts();
-    const box = $('#chMsgs'); box.replaceChildren();
-    if (!C.cur || !C.cur.messages.length) { box.append(emptyState()); return; }
+    const box = $('#chMsgs');
+    if (olderIO) { olderIO.disconnect(); olderIO = null; }
+    if (!C.cur || !C.cur.messages.length) { box.replaceChildren(emptyState()); return; }
+    if (C.winFor !== C.cur.id) { C.winFor = C.cur.id; C.win = WIN; }
     const msgs = C.cur.messages;
-    msgs.forEach((m, i) => {
+    const start = Math.max(0, msgs.length - C.win);
+    const frag = document.createDocumentFragment();
+    if (start > 0) frag.append(olderBtn(start));
+    for (let i = start; i < msgs.length; i++) {
+      const m = msgs[i];
       const node = m.role === 'user' ? userMsg(m) : botMsg(m);
       if (i >= msgs.length - animateLast) node.classList.add('enter');
-      box.append(node);
-    });
-    box.scrollTop = box.scrollHeight;
+      frag.append(node);
+    }
+    box.replaceChildren(frag);
+    toBottom(box);
+    const btn = box.querySelector('.ch-older');
+    if (btn && 'IntersectionObserver' in window) {
+      olderIO = new IntersectionObserver((es) => { if (es.some((x) => x.isIntersecting)) showOlder(); }, { root: box, rootMargin: '400px 0px 0px 0px' });
+      olderIO.observe(btn);
+    }
+  }
+
+  function olderBtn(n) {
+    return U.el('button', { class: 'ch-older linkbtn', onclick: () => showOlder() }, `⬆ Xem ${n} tin cũ hơn`);
+  }
+
+  // nạp thêm tin cũ phía trên mà giữ nguyên chỗ đang đọc
+  function showOlder() {
+    const box = $('#chMsgs'); const btn = box.querySelector('.ch-older');
+    if (!btn || !C.cur) return;
+    if (olderIO) { olderIO.disconnect(); olderIO = null; }
+    const msgs = C.cur.messages;
+    const end = Math.max(0, msgs.length - C.win);
+    C.win += WIN;
+    const start = Math.max(0, msgs.length - C.win);
+    const h = box.scrollHeight; const top = box.scrollTop;
+    const frag = document.createDocumentFragment();
+    if (start > 0) frag.append(olderBtn(start));
+    for (let i = start; i < end; i++) frag.append(msgs[i].role === 'user' ? userMsg(msgs[i]) : botMsg(msgs[i]));
+    btn.replaceWith(frag);
+    box.scrollTo({ top: top + box.scrollHeight - h, behavior: 'instant' });
+    const nb = box.querySelector('.ch-older');
+    if (nb && 'IntersectionObserver' in window) {
+      // chờ 1 khung hình rồi mới theo dõi tiếp – tránh nạp dồn liên tục khi vừa đổi vị trí cuộn
+      requestAnimationFrame(() => {
+        if (!nb.isConnected) return;
+        olderIO = new IntersectionObserver((es) => { if (es.some((x) => x.isIntersecting)) showOlder(); }, { root: box, rootMargin: '400px 0px 0px 0px' });
+        olderIO.observe(nb);
+      });
+    }
   }
 
   function emptyState() {
@@ -717,9 +767,18 @@
   function thumb(path, name) {
     const { el } = U;
     const img = el('img', { alt: name || '', class: 'thumb' });
+    img.decoding = 'async'; img.loading = 'lazy';
     const hit = C.imgCache.get(path);
     if (hit) img.src = hit;
-    else window.vp.chat.fileData(path).then((u) => { if (u) { C.imgCache.set(path, u); img.src = u; } }).catch(() => img.replaceWith(el('span', { class: 'fchip', text: '🖼 ' + (name || 'ảnh') })));
+    else {
+      // ảnh nhỏ cho khung xem trước (≤720px, vài chục KB) thay vì cả ảnh gốc 3–8MB dạng base64; bấm vào vẫn mở ảnh gốc
+      const get = window.vp.chat.thumb ? window.vp.chat.thumb(path).then((u) => u || window.vp.chat.fileData(path)) : window.vp.chat.fileData(path);
+      get.then((u) => {
+        if (!u) return;
+        if (C.imgCache.size > 300) C.imgCache.delete(C.imgCache.keys().next().value);
+        C.imgCache.set(path, u); img.src = u;
+      }).catch(() => img.replaceWith(el('span', { class: 'fchip', text: '🖼 ' + (name || 'ảnh') })));
+    }
     return img;
   }
 
@@ -788,6 +847,18 @@
     return row;
   }
 
+  // Markdown → HTML có nhớ đệm: mở lại đoạn chat / stream không phải dịch lại những khối chữ đã có
+  const MD = new Map();
+  function mdHtml(text) {
+    let h = MD.get(text);
+    if (h === undefined) {
+      h = window.renderMd(text);
+      if (MD.size > 400) MD.delete(MD.keys().next().value);
+      MD.set(text, h);
+    }
+    return h;
+  }
+
   function botMsg(m) {
     const { el, icon } = U;
     const a = (m.agentId && U.agentById(m.agentId)) || agentOf(C.cur);
@@ -804,13 +875,14 @@
           const key = (C.cur ? C.cur.id : '') + ':' + m.ts + ':' + i;
           group = el('details', { class: 'csteps' + (live ? ' live' : ''), ontoggle: (e) => { C.open['s' + key] = e.target.open; } }, el('summary', {}, live ? el('span', { class: 'spin' }) : el('span', { text: '⚙️' }), ` ${cnt} bước`, el('small', { text: ' · ' + kinds })));
           if (C.open['s' + key] || (live && C.open['s' + key] !== false)) group.open = true;
+          if (!live) group._sig = 'S' + key + ':' + steps.map((s) => s.id + s.status + (s.exit ?? '')).join(',');
           body.append(group);
         }
         group.append(stepEl(b));
       } else {
         group = null;
-        if (b.kind === 'text') body.append(el('div', { class: 'md', html: window.renderMd(b.text) }));
-        else if (b.kind === 'note') body.append(el('div', { class: 'mnote', text: '⚠️ ' + b.text }));
+        if (b.kind === 'text') { const d = el('div', { class: 'md', html: mdHtml(b.text) }); d._sig = 'T' + b.text; body.append(d); }
+        else if (b.kind === 'note') { const d = el('div', { class: 'mnote', text: '⚠️ ' + b.text }); d._sig = 'N' + b.text; body.append(d); }
         else if (b.kind === 'ask') body.append(askEl(b, m));
       }
     });
@@ -1439,14 +1511,32 @@
     if (e.ev === 'blocks') m.blocks = e.blocks;
     if (e.ev === 'done') { Object.assign(m, e.message); if (e.title) C.cur.title = e.title; }
     cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => {
-      const box = $('#chMsgs'); const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 140;
-      const last = box.querySelector('.cmsg.bot:last-child');
-      const n = botMsg(m);
-      if (last) last.replaceWith(n); else box.append(n);
-      if (nearBottom || e.ev === 'done') box.scrollTop = box.scrollHeight;
-      if (e.ev === 'done') { renderHead(); renderBar(); }
-    });
+    raf = requestAnimationFrame(() => paintLast(m, e.ev === 'done'));
+  }
+
+  // vẽ lại tin trả lời đang chạy. Khối chữ đã xong giữ nguyên node cũ (không parse / dựng lại),
+  // chỉ thay phần còn đang đổi → stream một câu trả lời dài vẫn nhẹ như câu ngắn.
+  function paintLast(m, done) {
+    const box = $('#chMsgs'); const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 140;
+    const last = box.querySelector('.cmsg.bot:last-child');
+    const n = botMsg(m);
+    if (last && !done && reuseBody(last, n)) { /* đã cập nhật tại chỗ */ } else if (last) last.replaceWith(n); else box.append(n);
+    if (nearBottom || done) toBottom(box);
+    if (done) { renderHead(); renderBar(); }
+  }
+
+  // giữ các con đầu tiên giống hệt nhau của .mbody (so bằng HTML), chỉ thay từ chỗ khác nhau trở đi
+  function reuseBody(oldMsg, newMsg) {
+    const ob = oldMsg.querySelector('.mbody'); const nb = newMsg.querySelector('.mbody');
+    if (!ob || !nb || oldMsg.className !== newMsg.className) return false;
+    const oc = [...ob.children]; const nc = [...nb.children];
+    let k = 0;
+    // chỉ khối có chữ ký (_sig: khối chữ, ghi chú, nhóm bước đã xong) mới giữ lại; khối hỏi quyền / ảnh luôn dùng node mới
+    while (k < oc.length && k < nc.length && oc[k]._sig !== undefined && oc[k]._sig === nc[k]._sig) k++;
+    if (!k) return false;
+    for (let i = oc.length - 1; i >= k; i--) oc[i].remove();
+    ob.append(...nc.slice(k));
+    return true;
   }
 
   // ================= API cho app.js =================
@@ -1476,5 +1566,5 @@
     });
   }
 
-  window.VPChat = { init, openAgent, setView, view: () => C.view, refresh: () => loadMeta(true), newThread, runSimiUpdate, openSchedules, openConnectors, scheduleFrom, openThread };
+  window.VPChat = { init, openAgent, setView, view: () => C.view, refresh: () => loadMeta(true), newThread, runSimiUpdate, openSchedules, openConnectors, scheduleFrom, openThread, _paintLast: paintLast };
 })();

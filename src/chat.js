@@ -359,6 +359,9 @@ const IMAGE_WAIT_MS = Number(process.env.VP_IMAGE_WAIT_MS) || 240000;
 // gửi kèm ảnh: model đọc ảnh lâu hơn → chờ thêm 12 giây / ảnh (tối đa 3 phút)
 const firstByteWait = (nImg) => Math.min(180000, FAST_FIRST_BYTE_MS + 12000 * Math.max(0, nImg));
 const MAX_IMAGES = 10;
+// đang stream: ghi đệm đoạn chat ra đĩa mỗi 4 giây (trước là 1,5 giây). Ghi file là việc đồng bộ ở tiến trình chính –
+// đoạn chat dài (vài MB) ghi dày quá làm khựng cả giao diện. Lúc xong, lúc thoát app, lúc cập nhật đều ghi ngay nên không mất.
+const SAVE_EVERY_MS = 4000;
 const IMG_MAX_SIDE = 1568;     // cạnh dài tối đa model đọc rõ – lớn hơn chỉ làm chậm (ảnh bị thu nhỏ phía máy chủ)
 const IMG_MAX_BYTES = 1.2e6;
 // ảnh chụp / infographic gốc thường 3–8MB, 3000–5000px: gửi nguyên 7 ảnh → yêu cầu hàng chục MB, model đọc rất lâu → quá 45 giây.
@@ -1214,7 +1217,7 @@ class ChatEngine {
       const items = new Map(); // id bước của Codex → block
       const run = { threadId: id, title: t.title, t, msg, codexId: null, turnId: null, stopped: false };
       const emitBlocks = (now) => {
-        const go = () => { emitTimer = null; emit({ ev: 'blocks', blocks: msg.blocks }); if (Date.now() - lastSave > 1500) { lastSave = Date.now(); this._safeSave(t); } };
+        const go = () => { emitTimer = null; emit({ ev: 'blocks', blocks: msg.blocks }); if (Date.now() - lastSave > SAVE_EVERY_MS) { lastSave = Date.now(); this._safeSave(t); } };
         if (now) { clearTimeout(emitTimer); go(); } else if (!emitTimer) emitTimer = setTimeout(go, 60);
       };
       run.emitBlocks = emitBlocks;
@@ -1353,7 +1356,7 @@ class ChatEngine {
     let stalled = 0; let firstByteMs = null; let firstTextMs = null; let idle = null;
     const show = (now) => {
       msg.blocks = [{ kind: 'text', id: 'fast', text: full }];
-      const go = () => { emitTimer = null; emit({ ev: 'blocks', blocks: msg.blocks }); if (Date.now() - lastSave > 1500) { lastSave = Date.now(); this._safeSave(t); } };
+      const go = () => { emitTimer = null; emit({ ev: 'blocks', blocks: msg.blocks }); if (Date.now() - lastSave > SAVE_EVERY_MS) { lastSave = Date.now(); this._safeSave(t); } };
       if (now) { clearTimeout(emitTimer); go(); } else if (!emitTimer) emitTimer = setTimeout(go, 50);
     };
     try {

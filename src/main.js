@@ -92,6 +92,41 @@ function taskDir(d) {
 }
 const canOpenChatFile = (p) => typeof p === 'string' && (insideOutput(p) || chat.canAccess(p));
 
+const THUMB_SIDE = 720;
+const thumbMem = new Map();
+function chatThumb(p) {
+  try {
+    if (!/\.(png|jpe?g|webp|bmp)$/i.test(p)) return null;
+    const st = fs.statSync(p);
+    const key = `${p}|${st.size}|${st.mtimeMs}`;
+    if (thumbMem.has(key)) return thumbMem.get(key);
+    let url = null;
+    // nhớ cả trên đĩa: mở lại app không phải thu nhỏ lại ảnh lớn lần nữa
+    const dir = path.join(require('os').tmpdir(), 'vpai-thumb');
+    const disk = path.join(dir, require('crypto').createHash('sha1').update(key).digest('hex').slice(0, 20) + (/\.png$/i.test(p) ? '.png' : '.jpg'));
+    if (fs.existsSync(disk)) {
+      url = `data:image/${/\.png$/i.test(p) ? 'png' : 'jpeg'};base64,` + fs.readFileSync(disk).toString('base64');
+      thumbMem.set(key, url);
+      return url;
+    }
+    const img = nativeImage.createFromPath(p);
+    if (!img.isEmpty()) {
+      const { width, height } = img.getSize();
+      const side = Math.max(width, height);
+      if (side <= THUMB_SIDE && st.size <= 300 * 1024) return null; // ảnh vốn đã nhỏ – dùng luôn bản gốc
+      const k = Math.min(1, THUMB_SIDE / side);
+      const small = k < 1 ? img.resize({ width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)), quality: 'good' }) : img;
+      // PNG giữ nền trong suốt (logo, ảnh tách nền); ảnh chụp thì JPEG cho nhẹ
+      const buf = /\.png$/i.test(p) ? small.toPNG() : small.toJPEG(82);
+      url = `data:image/${/\.png$/i.test(p) ? 'png' : 'jpeg'};base64,` + buf.toString('base64');
+      try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(disk, buf); } catch { /* không ghi được đệm thì thôi */ }
+    }
+    if (thumbMem.size > 200) thumbMem.delete(thumbMem.keys().next().value);
+    thumbMem.set(key, url);
+    return url;
+  } catch { return null; }
+}
+
 // ---------------- sự kiện tới giao diện + thông báo ----------------
 function focusWindow() { if (!win) return; if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
 
@@ -647,6 +682,12 @@ function registerIpc() {
     if (fs.statSync(p).size > MAX_PREVIEW) return null;
     const ext = path.extname(p).slice(1).toLowerCase().replace('jpg', 'jpeg');
     return `data:image/${ext === 'svg' ? 'svg+xml' : ext};base64,` + fs.readFileSync(p).toString('base64');
+  });
+  // ảnh xem trước trong khung chat: thu nhỏ ≤720px (đủ nét cho màn 2x) và nhớ đệm theo file + ngày sửa.
+  // Trả null khi không thu nhỏ được (svg, gif động, ảnh lỗi) → giao diện dùng fileData như cũ.
+  handle('chat:thumb', (p) => {
+    if (!canOpenChatFile(p)) throw new Error('Không được phép');
+    return chatThumb(p);
   });
   handle('chat:openFile', (p) => { if (!canOpenChatFile(p)) throw new Error('Không được phép'); return shell.openPath(p); });
   handle('chat:showFile', (p) => { if (canOpenChatFile(p)) shell.showItemInFolder(p); });
