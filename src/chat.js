@@ -24,8 +24,11 @@ function friendlyTurnError(err, model) {
 }
 // lệnh bị sandbox chặn (hay gặp với skill cần mạng / ghi ngoài thư mục dự án, nhất là trên Windows)
 const BLOCKED = /CreateRestrictedToken|sandbox (denied|error)|blocked by sandbox|Access is denied|Operation not permitted|EACCES|network (access )?(is )?(blocked|disabled|denied)|getaddrinfo|ENOTFOUND/i;
+// AI hay "làm luôn việc cũ": lượt trước nhờ nén src.zip, lượt này nhờ sửa bài viết thì sửa xong lại tự nén src.zip.
+const FOCUS_RULE = 'Chỉ làm đúng việc trong tin nhắn MỚI NHẤT của người dùng. Tin cũ trong đoạn chat, ghi nhớ, ngữ cảnh gần đây chỉ để hiểu bối cảnh: việc cũ coi như đã xong – KHÔNG làm lại, không tự làm thêm (nén / đóng gói file, xuất file, gửi, đăng bài, commit, chạy lại lệnh cũ…) nếu tin mới nhất không yêu cầu. Thấy việc cũ có vẻ còn dở thì chỉ nhắc 1 câu cuối câu trả lời, không tự làm.';
 const CHAT_GUIDE = [
   'Bạn đang chạy trong app Văn Phòng AI. Thao tác máy tính diễn ra trên máy người dùng, không phải máy Gateway.',
+  FOCUS_RULE,
   'Ưu tiên tốc độ: việc chỉ cần chữ (dịch, tóm tắt, viết lại, soạn thảo, giải thích, trả lời câu hỏi) thì trả lời thẳng ngay trong chat ở 1 lượt – không mở skill, không chạy lệnh, không tìm file, không tạo file trừ khi người dùng yêu cầu file. Ảnh và PDF đính kèm: đọc trực tiếp, không chạy OCR bằng script.',
   'Tìm web, đọc trang công khai, tạo / sửa ảnh, chép lời file ghi âm / video: gọi thẳng công cụ MCP simi_browser web_search / web_fetch / image_generate / audio_transcribe (mỗi việc 1 lần gọi, chạy ngoài sandbox) thay cho tự chạy khối lệnh trong skill hay tự viết code; chỉ dùng khối lệnh khi phiên không có các công cụ này.',
   'Tạo ảnh: image_generate tự chọn model ảnh theo model chat người dùng đang chọn (GPT → gpt-image, Gemini → Gemini). Muse (công cụ muse_image, skill muse-tao-anh) CHỈ dùng khi người dùng chọn skill Muse hoặc ghi đích danh chữ "Muse"; image_generate lỗi thì báo người dùng, không tự chuyển sang Muse.',
@@ -350,6 +353,7 @@ const FAST_GUIDE = [
   'Ở chế độ này bạn KHÔNG có công cụ: không đọc / ghi file trên máy, không mở web, không chạy lệnh, không điều khiển máy tính hay trình duyệt, không tạo ảnh / video.',
   `Nếu muốn làm đúng yêu cầu mà cần một trong các việc đó – tạo, sửa, lưu hoặc xuất file (Word, Excel, PDF, ảnh…), đọc file chưa được đính kèm, mở trang web hay link, tra thông tin mới / thời sự / giá cả hiện tại, chạy lệnh, điều khiển máy, tạo ảnh / video, hoặc người dùng gọi skill – thì chỉ trả lời đúng một dòng: ${ESCALATE_MARK} và không viết gì thêm.`,
   'Ảnh đính kèm: đọc trực tiếp. Dịch, tóm tắt, viết lại, soạn thảo, giải thích, tính toán, trả lời câu hỏi: trả lời luôn.',
+  FOCUS_RULE,
 ].join('\n');
 const FAST_FIRST_BYTE_MS = Number(process.env.VP_FAST_FIRST_BYTE_MS) || 45000; // chờ Gateway / model bắt đầu phản hồi
 const FAST_IDLE_MS = Number(process.env.VP_FAST_IDLE_MS) || 60000; // đang trả lời mà im lặng quá lâu
@@ -445,7 +449,7 @@ const MEMO_MIN_CHARS = 6000;    // phần cũ chưa tóm đủ dài mới tóm
 const MEMO_MIN_MSGS = 6;
 const MEMO_CHUNK_CHARS = 60000; // mỗi lần tóm tối đa chừng này chữ hội thoại
 const memoOf = (t) => (t.memo && t.memo.text && t.memo.upTo >= 0 && t.memo.upTo <= t.messages.length ? t.memo : null);
-const memoBlock = (t) => { const m = memoOf(t); return m ? `GHI NHỚ CỦA ĐOẠN CHAT NÀY (${m.upTo ? `tóm gọn ${m.upTo} tin trước đó` : 'người dùng ghi sẵn'} – coi như bạn đã biết, dùng khi liên quan):\n${m.text}` : ''; };
+const memoBlock = (t) => { const m = memoOf(t); return m ? `GHI NHỚ CỦA ĐOẠN CHAT NÀY (${m.upTo ? `tóm gọn ${m.upTo} tin trước đó` : 'người dùng ghi sẵn'} – coi như bạn đã biết, dùng khi liên quan; việc trong đó đã xử lý, không tự làm lại):\n${m.text}` : ''; };
 // các tin chưa tóm, không gồm lượt đang chạy
 const sinceMemo = (t) => t.messages.slice(memoOf(t) ? t.memo.upTo : 0, -2).filter((m) => m.role === 'user' || m.status === 'done');
 const MEMO_GUIDE = [
@@ -453,7 +457,9 @@ const MEMO_GUIDE = [
   '- Thông tin sản phẩm / khách hàng / dự án: tên, thông số, giá, số liệu, ngày, link, tên file, tên người.',
   '- Quyết định đã chốt, nội dung đã duyệt (câu chữ, slogan, thông điệp chính – giữ nguyên văn nếu ngắn).',
   '- Yêu cầu về giọng văn, định dạng, độ dài, điều không được nói.',
-  '- Việc còn dở / bước tiếp theo, sở thích của người dùng.',
+  '- Việc ĐÃ LÀM XONG: ghi ngắn trong mục "Đã xong (không làm lại)" kèm tên file kết quả – để lượt sau không làm lại.',
+  '- Mục "Còn dở" chỉ ghi việc người dùng dặn mà chắc chắn CHƯA làm; việc đã xong thì không bao giờ để ở đây.',
+  '- Sở thích của người dùng.',
   'Bỏ chào hỏi, câu thử, nội dung đã bị thay bằng bản mới. Không bịa. Viết tiếng Việt, gạch đầu dòng ngắn, chia mục, tối đa khoảng 1200 từ.',
   'Chỉ trả về nội dung ghi nhớ mới (đã gộp ghi nhớ cũ với phần hội thoại mới).',
 ].join('\n');
@@ -488,7 +494,7 @@ function withFastHistory(t, prompt) {
   const extra = msgs.slice(lastCodex + 1).filter((m) => m.role === 'user' || m.fast);
   if (!extra.some((m) => m.fast)) return prompt;
   const lines = extra.map((m) => `${m.role === 'user' ? 'Người dùng' : 'Trợ lý'}: ${blockText(m).slice(0, 3000)}`).join('\n\n').slice(-12000);
-  return `(Trao đổi gần đây trong đoạn chat này, trả lời nhanh không qua công cụ:)\n${lines}\n\n---\n\n${prompt}`;
+  return `(Trao đổi gần đây trong đoạn chat này – đã trả lời xong, chỉ để hiểu bối cảnh:)\n${lines}\n\n---\n\n${prompt}`;
 }
 
 // sau khi sửa tin nhắn mà không cắt được lịch sử phiên Codex cũ → phiên mới, kèm bản tóm lược hội thoại đã giữ lại
@@ -497,7 +503,7 @@ function withTranscript(t, prompt) {
   const memo = memoBlock(t);
   if (!msgs.length) return memo ? `${memo}\n\n---\n\n${prompt}` : prompt;
   const lines = msgs.map((m) => `${m.role === 'user' ? 'Người dùng' : 'Trợ lý'}: ${blockText(m).slice(0, 3000)}`).join('\n\n').slice(-16000);
-  return `${memo ? memo + '\n\n' : ''}(Lịch sử đoạn chat này trước tin nhắn hiện tại:)\n${lines}\n\n---\n\n${prompt}`;
+  return `${memo ? memo + '\n\n' : ''}(Lịch sử đoạn chat này – các yêu cầu trong đó đã xử lý xong, chỉ để hiểu bối cảnh:)\n${lines}\n\n---\n\n${prompt}`;
 }
 
 function buildPrompt(t, text, atts, persona) {
@@ -1255,6 +1261,9 @@ class ChatEngine {
           if (it.type === 'mcpToolCall' && it.status !== 'inProgress') this._toolResult(t.id, it, block);
         }
         const old = items.get(it.id);
+        // đo thời gian từng bước (lúc bắt đầu → lúc xong) để biết 1 lượt chậm vì công cụ nào hay vì model nghĩ lâu
+        block.at = (old && old.at) || Date.now();
+        if (block.kind === 'step' && block.status !== 'in_progress') block.ms = old && old.ms !== undefined ? old.ms : (old ? Date.now() - block.at : undefined);
         if (old) msg.blocks[msg.blocks.indexOf(old)] = block; else msg.blocks.push(block);
         items.set(it.id, block);
         emitBlocks();
@@ -1699,4 +1708,4 @@ class ChatEngine {
   }
 }
 
-module.exports = { cmdProgram, askKey, docGuide, isScratch, collectFiles, stepFromItem, parseModel, fastRequest, fastEligible, shrinkImage, firstByteWait, SCRATCH, ChatEngine };
+module.exports = { cmdProgram, askKey, docGuide, isScratch, collectFiles, stepFromItem, parseModel, fastRequest, fastEligible, shrinkImage, firstByteWait, SCRATCH, CHAT_GUIDE, FOCUS_RULE, ChatEngine };

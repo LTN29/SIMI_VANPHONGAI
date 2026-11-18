@@ -21,6 +21,13 @@
         el('button', { class: 'cbw-ic', title: 'Đóng khung trình duyệt', 'aria-label': 'Đóng', onclick: () => toggle(false) }, '✕')),
       el('div', { class: 'cbw-tabs', id: 'cbwTabs' }),
       el('div', { class: 'cbw-marks' }, ...MARKS.map((m) => el('button', { class: 'cbw-mark', title: m.title, onclick: () => go(m.url) }, m.label))),
+      el('div', { class: 'cbw-gblock hidden', id: 'cbwGblock', role: 'alert' },
+        el('div', { class: 'cbw-gb-t' }, el('b', { text: 'Google không cho đăng nhập trong khung này' }),
+          el('span', { text: 'Google chặn đăng nhập tài khoản Google ở mọi trình duyệt gắn trong ứng dụng – không phải lỗi máy, thử lại cũng không được.' })),
+        el('div', { class: 'cbw-gb-a' },
+          el('button', { class: 'btn mini primary', id: 'cbwGbOpen', onclick: () => openChrome() }, '🧭 Mở bằng Chrome SIMI'),
+          el('button', { class: 'btn mini', id: 'cbwGbMode', title: 'Từ giờ AI làm việc trên web bằng Chrome SIMI (giữ đăng nhập Google). Đổi lại ở 🧰 Công cụ.', onclick: () => aiChrome() }, 'Để AI dùng Chrome SIMI'),
+          el('small', { class: 'dim', text: 'Hoặc đăng nhập trang bằng email / mật khẩu thay cho nút «Tiếp tục với Google».' }))),
       el('div', { class: 'cbw-ai hidden', id: 'cbwAi', role: 'status' }, el('span', { class: 'cbw-dot' }), el('span', { id: 'cbwAiT' })),
       el('div', { class: 'cbw-host', id: 'cbwHost' }, el('div', { class: 'cbw-empty' }, el('b', { text: '🌐 Trình duyệt SIMI' }), el('small', { text: 'Đang mở trang… AI sẽ thao tác ngay tại đây, bạn xem và tự bấm được.' }))));
     const split = el('div', { class: 'cbw-split hidden', id: 'cbwSplit', title: 'Kéo để đổi độ rộng' });
@@ -49,6 +56,21 @@
     { label: '🛒 Shopee', url: 'https://shopee.vn/', title: 'Shopee' },
   ];
   function go(url) { if (!B.open) toggle(true); window.vp.browser.ui({ action: 'go', url }); }
+
+  // Google chặn đăng nhập trong khung → mở đúng trang đang dùng (vd Canva) bằng Chrome SIMI, nơi đăng nhập Google được
+  async function openChrome() {
+    const st = B.state || {};
+    const b = $('#cbwGbOpen'); if (b) b.disabled = true;
+    try { await window.vp.chat.openChromeSimi(st.site || ''); U.toast('Đã mở Chrome SIMI – đăng nhập Google ở đó, lần sau tự nhớ'); } catch (er) { U.toast('Không mở được Chrome SIMI: ' + U.cleanErr(er), true); }
+    if (b) b.disabled = false;
+  }
+  async function aiChrome() {
+    try {
+      await window.vp.browser.aiMode('chrome');
+      U.toast('Từ đoạn chat / lượt sau, AI dùng Chrome SIMI cho việc trên web. Muốn dùng lại khung cạnh chat: 🧰 Công cụ.');
+      await openChrome();
+    } catch (er) { U.toast('Không đổi được: ' + U.cleanErr(er), true); }
+  }
 
   // khung nhỏ góc màn hình: AI đang dùng trình duyệt mà người dùng ở Văn phòng / Sảnh / Quản trị (không giành màn hình của họ)
   function pipBox() {
@@ -108,6 +130,7 @@
     const { el } = U;
     const url = $('#cbwUrl'); if (url && document.activeElement !== url) url.value = st.url && !/^about:blank/.test(st.url) ? st.url : '';
     $('#cbwBack').disabled = !st.canGoBack; $('#cbwFwd').disabled = !st.canGoForward;
+    const gb = $('#cbwGblock'); if (gb && gb.classList.contains('hidden') === !!st.gblock) { gb.classList.toggle('hidden', !st.gblock); sync(); }
     $('#cbwReload').textContent = st.loading ? '✕' : '⟳';
     $('#cbwReload').title = st.loading ? 'Dừng tải' : 'Tải lại';
     $('#cbwTabs').replaceChildren(
@@ -135,6 +158,7 @@
       B.aiT = setTimeout(() => box.classList.add('hidden'), 4000);
       return;
     }
+    if (e.ev === 'gblock' && !B.open && !B.pip) U.toast('Google không cho đăng nhập trong khung trình duyệt của app – mở khung 🌐 để chọn «Mở bằng Chrome SIMI».', true);
     if (e.ev === 'error') U.toast(e.text, true);
   }
 

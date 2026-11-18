@@ -625,13 +625,21 @@ function registerIpc() {
   // Computer Use, trình duyệt SIMI, plugin, MCP
   handle('chat:setupComputerUse', () => { codexServer.restartIfChanged(); return chat.setupComputerUse(); });
   handle('chat:checkComputerUse', () => { codexServer.restartIfChanged(); return chat.checkComputerUse(); });
-  handle('chat:tools', async () => { codexServer.restartIfChanged(); return { ...(await chat.tools()), builtin: builtinOn() }; });
+  handle('chat:tools', async () => { codexServer.restartIfChanged(); return { ...(await chat.tools()), builtin: builtinOn(), aiBrowser: store.getConfig().builtinBrowser === false ? 'chrome' : 'pane' }; });
   handle('chat:installPlugin', (name, mk) => chat.installPlugin(String(name || ''), mk || null).then((r) => { codexServer.stop(); return r; }));
   handle('chat:openBrowser', (url) => {
     const u = typeof url === 'string' && /^https?:\/\//i.test(url) ? url : '';
     // Trình duyệt SIMI = khung cạnh chat: mở trang ngay trong khung để người dùng đăng nhập (không bật Chrome riêng)
     if (builtinOn()) return browserPane.call('browser_open_window', u ? { url: u } : {}).then(() => ({ builtin: true }));
     return chat.openBrowser(u);
+  });
+  // Google chặn đăng nhập trong khung → mở trang bằng Chrome SIMI (Chrome thật, giữ đăng nhập Google như trước 0.9.61)
+  handle('chat:openChromeSimi', (url) => chat.openBrowser(typeof url === 'string' && /^https?:\/\//i.test(url) ? url : ''));
+  // AI làm việc trên web bằng: 'pane' = khung cạnh chat (mặc định) · 'chrome' = Chrome SIMI riêng (trang cần tài khoản Google)
+  handle('browser:aiMode', (mode) => {
+    const cfg = store.getConfig();
+    if (mode === 'pane' || mode === 'chrome') { cfg.builtinBrowser = mode === 'pane'; store.saveConfig(cfg); mentionCache = null; }
+    return { mode: cfg.builtinBrowser === false ? 'chrome' : 'pane', builtin: builtinOn() };
   });
   // danh sách cho menu @ trong ô chat: công cụ của app + plugin Codex đã cài
   let mentionCache = null;

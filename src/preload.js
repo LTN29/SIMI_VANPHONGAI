@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld('vp', {
     bounds: (b, visible, covered, pip) => ipcRenderer.send('browser:bounds', b, visible, covered, !!pip),
     ui: (cmd) => ipcRenderer.invoke('browser:ui', cmd),
     state: () => ipcRenderer.invoke('browser:state'),
+    aiMode: (mode) => ipcRenderer.invoke('browser:aiMode', mode),
   },
   skills: {
     read: (name) => ipcRenderer.invoke('skills:read', name),
@@ -117,6 +118,7 @@ contextBridge.exposeInMainWorld('vp', {
     setupComputerUse: () => ipcRenderer.invoke('chat:setupComputerUse'),
     installPlugin: (name, mk) => ipcRenderer.invoke('chat:installPlugin', name, mk),
     openBrowser: (url) => ipcRenderer.invoke('chat:openBrowser', url),
+    openChromeSimi: (url) => ipcRenderer.invoke('chat:openChromeSimi', url),
     skills: () => ipcRenderer.invoke('chat:skills'),
     mentions: () => ipcRenderer.invoke('chat:mentions'),
     upload: (id, name, bytes) => ipcRenderer.invoke('chat:upload', id, name, bytes),

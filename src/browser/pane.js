@@ -11,6 +11,21 @@ const { WebContentsView, session, shell, app } = require('electron');
 const PARTITION = 'persist:vp-browser';
 const HOME = 'https://www.google.com/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// tách bản đọc trang thành: phần đầu (trang, URL, hộp thoại, tiêu đề) · danh sách phần tử · nội dung chính
+const EL_HEAD = '\nPhần tử thao tác được (dùng mã [eN] cho browser_act):\n';
+const TEXT_HEAD = '\n\nNội dung chính (rút gọn):\n';
+function splitSnapshot(raw) {
+  const a = raw.indexOf(EL_HEAD); const b = raw.indexOf(TEXT_HEAD, a + 1);
+  if (a < 0 || b < 0) return null;
+  return { top: raw.slice(0, a), lines: raw.slice(a + EL_HEAD.length, b).split('\n').filter(Boolean), text: raw.slice(b + TEXT_HEAD.length) };
+}
+// Google không cho đăng nhập tài khoản Google trong trình duyệt nhúng vào app (Electron, WebView…) – trang
+// accounts.google.com/…/signin/rejected «Trình duyệt hoặc ứng dụng này có thể không an toàn». Đây là chính sách của Google,
+// không phải lỗi máy: app báo rõ cho người dùng + AI và đưa cách khác (Chrome SIMI – Chrome thật; hoặc đăng nhập bằng email).
+const GOOGLE_REJECTED = /^https:\/\/accounts\.google\.com\/(?:v\d+\/)?signin\/rejected/i;
+const GOOGLE_HOST = /^https:\/\/accounts\.google\.com\//i;
+const GBLOCK_NOTE = 'Google từ chối đăng nhập tài khoản Google trong khung trình duyệt của app (chính sách của Google với mọi trình duyệt nhúng – thử lại không được). '
+  + 'KHÔNG thử đăng nhập Google lại. Báo người dùng chọn trên thanh báo của khung: «Mở bằng Chrome SIMI» (Chrome thật, đăng nhập Google được) hoặc đăng nhập trang đó bằng email / mật khẩu riêng của trang thay cho nút Google.';
 
 // ---------- mã chạy trong trang ----------
 // liệt kê phần tử bấm / gõ được (gán mã eN bền giữa các lần), tiêu đề, đoạn chữ chính → văn bản gọn cho AI
@@ -32,7 +47,22 @@ const SNAPSHOT = String.raw`(function (maxChars, full) {
   }
   // ô chọn tệp thường bị ẩn sau nút "Tải ảnh lên" → vẫn liệt kê để AI dùng action upload
   for (const f of document.querySelectorAll('input[type=file]')) if (!has.has(f)) { els.push(f); has.add(f); }
-  for (const el of els.slice(0, full ? 600 : 300)) {
+  // thứ tự ưu tiên (trang quản trị có menu bên trái hàng trăm mục đứng trước form trong HTML → trước đây bị cắt mất ô nhập):
+  // hộp thoại → ô nhập / chọn → nút trong nội dung → link trong nội dung → menu / thanh bên / đầu trang / chân trang; ngoài màn hình xếp sau
+  const NAVSEL = 'nav,aside,header,footer,[role=navigation],[role=banner],[role=contentinfo],[role=menubar]';
+  const FIELD = /^(INPUT|TEXTAREA|SELECT)$/;
+  const prio = (el) => {
+    if (el.closest('[role=dialog],dialog[open],[aria-modal=true]')) return 0;
+    const r = el.getBoundingClientRect(); const off = r.bottom < 0 || r.top > vh ? 0.5 : 0;
+    if (el.closest(NAVSEL)) return 4 + off;
+    const role = el.getAttribute('role') || '';
+    if (FIELD.test(el.tagName) || el.isContentEditable || /^(textbox|searchbox|combobox|checkbox|radio|switch|option)$/.test(role)) return 1 + off;
+    if (el.tagName !== 'A' && role !== 'link') return 2 + off;
+    return 3 + off;
+  };
+  const ranked = els.map((el, i) => ({ el, i, p: prio(el) })).sort((x, y) => x.p - y.p || x.i - y.i).map((x) => x.el);
+  const limit = full ? 600 : 300;
+  for (const el of ranked.slice(0, limit)) {
     let ref = el.getAttribute('data-vp-ref'); if (!ref) { ref = 'e' + (++seq); el.setAttribute('data-vp-ref', ref); }
     const tag = el.tagName.toLowerCase(); const type = (el.getAttribute('type') || '').toLowerCase();
     const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'select' ? 'select' : tag === 'textarea' || (tag === 'input' && !['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'range', 'color'].includes(type)) || el.isContentEditable ? 'textbox' : tag === 'input' ? type : tag);
@@ -55,7 +85,12 @@ const SNAPSHOT = String.raw`(function (maxChars, full) {
   let s = 'Trang: ' + document.title + '\nURL: ' + location.href + '\nCuộn: ' + Math.round(scrollY) + '/' + Math.max(0, document.documentElement.scrollHeight - vh) + 'px\n'
     + (dlg.length ? dlg.join('\n') + '\n' : '') + (heads.length ? '\nTiêu đề:\n' + heads.join('\n') + '\n' : '')
     + '\nPhần tử thao tác được (dùng mã [eN] cho browser_act):\n' + out.join('\n') + '\n\nNội dung chính (rút gọn):\n' + text;
-  return s.length > maxChars ? s.slice(0, maxChars) + '\n…(đã cắt – gọi browser_read để đọc hết chữ)' : s;
+  if (s.length <= maxChars) return s;
+  // quá dài: giữ phần đầu + nội dung chính, cắt bớt CUỐI danh sách phần tử (menu / ngoài màn hình – đã xếp cuối)
+  const fixed = s.length - out.join('\n').length;
+  let keep = out.length; let len = out.join('\n').length;
+  while (keep > 0 && fixed + len > maxChars - 120) { keep--; len -= out[keep].length + 1; }
+  return s.replace(out.join('\n'), out.slice(0, keep).join('\n') + '\n…(còn ' + (out.length - keep) + ' phần tử menu / ngoài màn hình – gọi browser_snapshot {full:true} nếu cần)');
 })`;
 
 // tìm phần tử theo mã, cuộn vào giữa màn hình, trả toạ độ tâm (và có bị che không)
@@ -258,9 +293,20 @@ class BrowserPane {
     const wc = view.webContents;
     wc.setWindowOpenHandler(({ url: u }) => { if (/^https?:/i.test(u)) this.newTab(u); return { action: 'deny' }; }); // link mở tab mới → tab trong khung
     for (const ev of ['did-start-loading', 'did-stop-loading', 'page-title-updated', 'did-navigate', 'did-navigate-in-page']) wc.on(ev, () => { tab.loading = wc.isLoading(); this.push(); });
+    // nhớ trang đang dùng trước khi sang trang đăng nhập Google (vd Canva) → "Mở bằng Chrome SIMI" mở lại đúng trang đó
+    wc.on('did-navigate', (_e, u) => {
+      const blocked = GOOGLE_REJECTED.test(u);
+      if (!GOOGLE_HOST.test(u) && /^https?:/i.test(u)) tab.site = u;
+      else if (GOOGLE_HOST.test(u)) this.detachCdp(tab); // sang trang đăng nhập Google → gỡ công cụ điều khiển, người dùng tự đăng nhập
+      if (blocked && !tab.gblock) { tab.gblock = true; this.emit({ type: 'browser', ev: 'gblock', site: tab.site || '' }); }
+      if (!blocked) tab.gblock = false;
+      this.push();
+    });
     wc.on('did-fail-load', (_e, code, desc, u, isMain) => { if (isMain && code !== -3) this.emit({ type: 'browser', ev: 'error', text: `Không mở được ${u}: ${desc}` }); });
     view.setBackgroundColor('#ffffff');
-    this.attachCdp(tab);
+    // KHÔNG gắn công cụ điều khiển (DevTools / CDP) ngay khi mở tab: chỉ gắn lúc AI bắt đầu thao tác (call → attachCdp).
+    // Tab người dùng tự xem / tự đăng nhập thì như trình duyệt thường – như trước 0.9.42, lúc đăng nhập Google trong khung được.
+    if (this.busy > 0) wc.once('did-start-navigation', () => this.attachCdp(tab)); // tab AI vừa mở trong lúc đang làm
     if (background && this.active && this.tabs.has(this.active)) this.push(); else this.select(id); // tab nền: tải song song, không giành khung đang xem
     wc.loadURL(normUrl(url)).catch(() => {});
     return tab;
@@ -268,8 +314,13 @@ class BrowserPane {
   // Chrome DevTools Protocol của chính tab (không lộ ra trang): khi AI đang làm thì tự xử lý hộp thoại alert / confirm
   // và hộp chọn tệp (không bật cửa sổ chọn tệp của Windows – AI đưa thẳng đường dẫn tệp vào trang).
   attachCdp(tab) {
-    const dbg = tab.view.webContents.debugger;
+    const wc = tab.view.webContents;
+    if (tab.cdp || wc.isDestroyed() || GOOGLE_HOST.test(wc.getURL())) return; // trang đăng nhập Google: người dùng tự làm, không gắn
+    const dbg = wc.debugger;
     try { dbg.attach('1.3'); } catch { return; }
+    const ready = () => { tab.cdp('Page.enable').catch(() => {}); if (this.busy > 0) tab.cdp('Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => {}); };
+    if (tab.cdpWired) { tab.cdp = (m, p) => dbg.sendCommand(m, p || {}); ready(); return; }
+    tab.cdpWired = true;
     tab.cdp = (m, p) => dbg.sendCommand(m, p || {});
     tab.notes = [];
     dbg.on('message', (_e, method, params) => {
@@ -284,7 +335,12 @@ class BrowserPane {
       }
     });
     dbg.on('detach', () => { tab.cdp = null; });
-    tab.cdp('Page.enable').catch(() => {});
+    ready();
+  }
+  detachCdp(tab) {
+    if (!tab.cdp) return;
+    tab.cdp = null;
+    try { tab.view.webContents.debugger.detach(); } catch { /* đã gỡ */ }
   }
   async cdpIntercept(on) {
     for (const t of this.tabs.values()) if (t.cdp) await t.cdp('Page.setInterceptFileChooserDialog', { enabled: !!on }).catch(() => {});
@@ -344,6 +400,7 @@ class BrowserPane {
     const wc = tab && tab.view.webContents;
     return {
       tabs: [...this.tabs.values()].map((t) => ({ id: t.id, title: t.view.webContents.getTitle() || 'Tab mới', url: t.view.webContents.getURL(), loading: t.loading, active: t.id === this.active })),
+      gblock: !!(tab && tab.gblock), site: (tab && tab.site) || '',
       url: wc ? wc.getURL() : '', title: wc ? wc.getTitle() : '', loading: !!(tab && tab.loading), shown: !!(this.attached && !this.covered), pip: !!(this.attached && this.pip), busy: this.busy > 0,
       canGoBack: !!(wc && wc.navigationHistory.canGoBack()), canGoForward: !!(wc && wc.navigationHistory.canGoForward()),
     };
@@ -388,11 +445,27 @@ class BrowserPane {
     await sleep(250);
   }
   run(code) { return this.wc().executeJavaScript(code, true); }
-  async snapshot(max = 12000, full = false) {
+  // diff = true (sau browser_act): cùng trang thì chỉ trả phần tử MỚI / ĐỔI so với lần đọc trước (mã eN cũ vẫn dùng được).
+  // Trước đây mỗi lần thao tác trả lại cả trang ~8.000 chữ (menu, thanh bên… lặp lại) → ngữ cảnh phình rất nhanh,
+  // model đọc chậm dần và Codex phải tóm tắt giữa chừng → việc đăng bài nhiều bước chậm gấp mấy lần.
+  async snapshot(max = 12000, full = false, diff = false) {
     await this.waitLoad(this.wc(), 8000);
-    const snap = await this.run(`${SNAPSHOT}(${Number(max) || 12000}, ${full ? 'true' : 'false'})`);
+    max = Number(max) || 12000;
+    const raw = await this.run(`${SNAPSHOT}(200000, ${full ? 'true' : 'false'})`);
     const fresh = this.downloads.filter((d) => !d.told); fresh.forEach((d) => { d.told = true; });
-    return (fresh.length ? 'Tệp vừa tải về máy:\n' + fresh.map((d) => '- ' + d.file).join('\n') + '\n\n' : '') + snap;
+    const head = fresh.length ? 'Tệp vừa tải về máy:\n' + fresh.map((d) => '- ' + d.file).join('\n') + '\n\n' : '';
+    const tab = this.active && this.tabs.get(this.active);
+    const parts = splitSnapshot(raw);
+    const key = (l) => l.replace(/ ·ngoài màn hình$/, '');
+    const page = String(this.wc().getURL()).replace(/#.*$/, '');
+    const prev = tab && tab.snapSeen && tab.snapSeen.url === page ? tab.snapSeen.set : null;
+    if (tab && parts) tab.snapSeen = { url: page, set: new Set([...(prev && diff ? prev : []), ...parts.lines.map(key)]) };
+    const cut = (t) => (t.length > max ? t.slice(0, max) + '\n…(đã cắt – gọi browser_read để đọc hết chữ)' : t);
+    if (!diff || !prev || !parts) return head + cut(raw);
+    const changed = parts.lines.filter((l) => !prev.has(key(l)));
+    const same = parts.lines.length - changed.length;
+    return head + cut(parts.top + `\nPhần tử MỚI / ĐỔI sau thao tác (${changed.length}; ${same} phần tử khác như lần đọc trước – mã eN cũ vẫn dùng được, cần xem lại hết thì gọi browser_snapshot):\n`
+      + (changed.length ? changed.join('\n') : '(không có)') + '\n\nNội dung chính (rút gọn):\n' + parts.text);
   }
   waitDownload(ms) {
     const fresh = this.downloads.find((d) => !d.told); if (fresh) { fresh.told = true; return Promise.resolve(fresh.file); }
@@ -558,8 +631,15 @@ class BrowserPane {
     if (tool === 'design_render') { this.emit({ type: 'toast', text: '🎨 SIMI đang xuất thiết kế…' }); return require('./design').render(args); }
     if (tool === 'document_create') return createDocument(args);
     this.busy = (this.busy || 0) + 1; clearTimeout(this.idleT);
+    for (const t of this.tabs.values()) this.attachCdp(t); // AI bắt đầu làm → gắn công cụ xử lý hộp thoại / chọn tệp (trừ trang đăng nhập Google)
     if (this.busy === 1) { this.emit({ type: 'browser', ev: 'busy', on: true }); this.cdpIntercept(true); }
-    try { return await this.callInner(tool, args); } finally {
+    try {
+      const out = await this.callInner(tool, args);
+      // AI đang ở trang Google từ chối đăng nhập → nói rõ để AI không loay hoay thử lại (mất thời gian, người dùng chờ)
+      const t = this.active ? this.tabs.get(this.active) : null;
+      if (t && t.gblock && Array.isArray(out)) out.push({ type: 'text', text: '⚠️ ' + GBLOCK_NOTE });
+      return out;
+    } finally {
       this.busy--;
       // AI hay gọi liên tiếp → giữ trạng thái "đang dùng" thêm ít giây rồi mới tắt khung nhỏ / trả hộp chọn tệp cho người dùng
       if (!this.busy) this.idleT = setTimeout(() => { if (!this.busy) { this.emit({ type: 'browser', ev: 'busy', on: false }); this.cdpIntercept(false); } }, 8000);
@@ -584,7 +664,7 @@ class BrowserPane {
       case 'browser_snapshot': return [{ type: 'text', text: await this.snapshot(Number(args.max_chars) || 12000, !!args.full) }];
       case 'browser_act': {
         const log = await this.act(Array.isArray(args.actions) ? args.actions : []);
-        const snap = args.snapshot === false ? '' : '\n\n' + await this.snapshot(Number(args.max_chars) || 8000);
+        const snap = args.snapshot === false ? '' : '\n\n' + await this.snapshot(Number(args.max_chars) || 8000, false, true);
         return [{ type: 'text', text: 'Đã làm:\n' + log.join('\n') + snap }];
       }
       case 'browser_doc': {

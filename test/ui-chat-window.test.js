@@ -80,5 +80,17 @@ run(async () => {
     return { foot: !!last.querySelector('.mfoot'), running: last.classList.contains('running') };
   });
   check(fin.foot && !fin.running, 'trả lời xong → vẽ lại đủ (có dòng model / thời gian)');
+  // thời gian từng bước + chia thời gian công cụ / AI ở chân câu trả lời → thấy chậm ở đâu
+  const tm = await win.evaluate(() => {
+    const m = { role: 'assistant', status: 'done', ms: 300000, ts: 9e9, blocks: [
+      { kind: 'step', id: 'a', sk: 'mcp', server: 'simi_browser', title: 'image_generate', status: 'completed', ms: 210000 },
+      { kind: 'step', id: 'b', sk: 'cmd', title: 'cat SKILL.md', status: 'completed', ms: 2000 },
+      { kind: 'text', text: 'Ảnh đây' }] };
+    window.VPChat._paintLast(m, true);
+    const last = document.querySelector('#chMsgs .cmsg.bot:last-child');
+    return { steps: [...last.querySelectorAll('.sms')].map((x) => x.textContent + (x.classList.contains('slow') ? '!' : '')), split: (last.querySelector('.mtime') || {}).textContent || '', tip: (last.querySelector('.mtime') || {}).title || '' };
+  });
+  check(tm.steps.join(',') === '3p30!,2s', `mỗi bước hiện thời gian, bước ≥30 giây tô đỏ (${tm.steps})`);
+  check(tm.split === '🔧 công cụ 3p32 · 🧠 AI 1p28' && /image_generate: 3p30/.test(tm.tip), `chân câu trả lời chia thời gian công cụ / AI (${tm.split})`);
   await finish(app, errors);
 });

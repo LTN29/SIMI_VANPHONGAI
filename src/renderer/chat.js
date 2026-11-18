@@ -832,6 +832,15 @@
   const TOOL_IC = { vp_browser: '🌐', 'computer-use': '🖥️', cua_repl: '🖥️', simi_browser: '🧭', vp_computer: '🖱️' };
   const STEP_NAME = { cmd: 'Chạy lệnh', tool: 'Công cụ', web: 'Tìm web', file: 'Sửa file', think: 'Suy nghĩ', plan: 'Kế hoạch' };
 
+  const secText = (ms) => (ms < 60000 ? Math.round(ms / 1000) + 's' : Math.floor(ms / 60000) + 'p' + String(Math.round((ms % 60000) / 1000)).padStart(2, '0'));
+  // chia thời gian 1 lượt: công cụ (bước nào lâu nhất) / AI nghĩ + viết → thấy ngay chậm ở đâu
+  function timeSplit(m, blocks) {
+    const steps = blocks.filter((b) => b.kind === 'step' && b.ms >= 0);
+    if (!m.ms || !steps.length) return null;
+    const tool = Math.min(m.ms, steps.reduce((a, b) => a + b.ms, 0));
+    const top = [...steps].sort((a, b) => b.ms - a.ms).slice(0, 3).map((b) => `${String(b.title || STEP_NAME[b.sk] || 'Bước').replace(/\s+/g, ' ').slice(0, 60)}: ${secText(b.ms)}`);
+    return U.el('span', { class: 'mtime', text: `🔧 công cụ ${secText(tool)} · 🧠 AI ${secText(Math.max(0, m.ms - tool))}`, title: 'Bước lâu nhất:\n' + top.join('\n') });
+  }
   function stepEl(s) {
     const { el } = U;
     const live = s.status === 'in_progress';
@@ -842,7 +851,8 @@
         s.shot ? el('button', { class: 'sshot', title: 'Ảnh màn hình – bấm để mở', onclick: () => window.vp.chat.openFile(s.shot) }, thumb(s.shot, 'màn hình')) : null) : null;
     const row = el(detail ? 'details' : 'div', { class: 'step' + (live ? ' live' : '') + (bad ? ' bad' : '') },
       el(detail ? 'summary' : 'div', { class: 'srow' }, el('span', { class: 'sic', text: TOOL_IC[s.server] || STEP_IC[s.sk] || '•' }), el('b', { text: STEP_NAME[s.sk] || 'Bước' }),
-        el('code', { text: String(s.title || '').replace(/\s+/g, ' ').slice(0, 160) }), live ? el('span', { class: 'spin' }) : bad ? el('span', { class: 'sx', text: '✕' }) : el('span', { class: 'sok', text: '✓' })),
+        el('code', { text: String(s.title || '').replace(/\s+/g, ' ').slice(0, 160) }), s.ms >= 1000 ? el('span', { class: 'sms' + (s.ms >= 30000 ? ' slow' : ''), text: secText(s.ms), title: 'Thời gian chạy bước này' }) : null,
+        live ? el('span', { class: 'spin' }) : bad ? el('span', { class: 'sx', text: '✕' }) : el('span', { class: 'sok', text: '✓' })),
       detail);
     return row;
   }
@@ -875,7 +885,7 @@
           const key = (C.cur ? C.cur.id : '') + ':' + m.ts + ':' + i;
           group = el('details', { class: 'csteps' + (live ? ' live' : ''), ontoggle: (e) => { C.open['s' + key] = e.target.open; } }, el('summary', {}, live ? el('span', { class: 'spin' }) : el('span', { text: '⚙️' }), ` ${cnt} bước`, el('small', { text: ' · ' + kinds })));
           if (C.open['s' + key] || (live && C.open['s' + key] !== false)) group.open = true;
-          if (!live) group._sig = 'S' + key + ':' + steps.map((s) => s.id + s.status + (s.exit ?? '')).join(',');
+          if (!live) group._sig = 'S' + key + ':' + steps.map((s) => s.id + s.status + (s.exit ?? '') + '/' + (s.ms ?? '')).join(',');
           body.append(group);
         }
         group.append(stepEl(b));
@@ -900,6 +910,7 @@
     const foot = el('div', { class: 'mfoot' },
       el('span', { text: modelLabel(m.model) }),
       m.ms ? el('span', { text: (m.fast ? '⚡ ' : '') + (m.ms / 1000).toFixed(1) + ' giây', title: m.fast ? 'Trả lời nhanh: gửi thẳng tới model, không qua các bước công cụ' : '' }) : null,
+      timeSplit(m, blocks),
       txt ? el('button', { class: 'linkbtn small', onclick: () => { navigator.clipboard.writeText(txt); U.toast('Đã chép câu trả lời'); } }, icon('copy'), 'Chép') : null);
     return el('div', { class: 'cmsg bot' + (m.status === 'running' ? ' running' : '') },
       a ? U.avatar(a, 32) : el('img', { class: 'bav', src: 'icon.png', alt: '' }),
@@ -1012,7 +1023,19 @@
       el('div', { class: 'tp-act' },
         el('button', { class: 'btn mini', onclick: () => { pop.remove(); window.VPBrowser.toggle(true); } }, '🌐 Mở khung'),
         el('button', { class: 'btn mini', title: 'Mở Canva trong khung trình duyệt – đăng nhập 1 lần, AI thiết kế giúp', onclick: () => { pop.remove(); window.VPBrowser.go('https://www.canva.com/'); } }, '🎨 Canva'),
-        el('button', { class: 'btn mini', onclick: () => { C.mentions = [{ kind: 'tool', id: 'vp_browser', name: 'Trình duyệt', icon: '🌐' }]; tryIt('@Trình duyệt mở google.com tìm "giá vàng hôm nay" rồi tóm tắt 3 dòng'); } }, '▶ Dùng thử'))) : null;
+        el('button', { class: 'btn mini', onclick: () => { C.mentions = [{ kind: 'tool', id: 'vp_browser', name: 'Trình duyệt', icon: '🌐' }]; tryIt('@Trình duyệt mở google.com tìm "giá vàng hôm nay" rồi tóm tắt 3 dòng'); } }, '▶ Dùng thử')),
+      aiModeRow()) : null;
+    // AI làm việc trên web bằng khung cạnh chat hay Chrome SIMI. Google không cho đăng nhập tài khoản Google trong khung
+    // (chặn mọi trình duyệt gắn trong app) → trang cần tài khoản Google (Canva đăng nhập bằng Google, Gemini, Drive…) dùng Chrome SIMI.
+    function aiModeRow() {
+      const chrome = info.aiBrowser === 'chrome';
+      const set = async (mode) => {
+        try { await window.vp.browser.aiMode(mode); U.toast(mode === 'chrome' ? 'AI dùng Chrome SIMI cho việc trên web (từ lượt chat sau)' : 'AI dùng lại khung cạnh chat (từ lượt chat sau)'); pop.remove(); openTools(anchor); } catch (er) { U.toast(U.cleanErr(er), true); }
+      };
+      return el('div', { class: 'tp-mode' },
+        el('small', { class: 'dim', text: chrome ? 'Đang để AI dùng Chrome SIMI (đăng nhập Google được).' : 'Trang cần đăng nhập Google? Google chặn đăng nhập trong khung này – để AI dùng Chrome SIMI.' }),
+        el('button', { class: 'btn mini' + (chrome ? ' primary' : ''), title: 'AI làm việc trên web bằng Chrome SIMI riêng – giữ đăng nhập Google', onclick: () => set(chrome ? 'pane' : 'chrome') }, chrome ? '🌐 Dùng lại khung cạnh chat' : '🧭 AI dùng Chrome SIMI'));
+    }
     const others = (info.plugins || []).filter((p) => p.installed && p.name !== 'computer-use');
     const plRow = others.length ? el('div', { class: 'tp-list' }, el('small', { class: 'dim', text: 'Plugin đã cài: ' }), ...others.map((p) => el('span', { class: 'tp-chip', title: p.description, text: p.title }))) : null;
     const eng = info.engine || {};

@@ -165,8 +165,8 @@ run(async () => {
   fs.writeFileSync(path.join(require('./helpers').SHOTS, 'browser-page.json'), JSON.stringify(page.b));
   await shot('ui');
 
-  // ô sản phẩm kiểu Shopee (div có con trỏ bàn tay) cũng có mã; canvas bấm theo toạ độ trên ảnh chụp
-  const card = (out.match(/\[(e\d+)\] clickable "Tai nghe Bluetooth SIMI 299\.000đ"/) || [])[1];
+  // ô sản phẩm kiểu Shopee (div có con trỏ bàn tay) cũng có mã; canvas bấm theo toạ độ trên ảnh chụp (mã có từ lần đọc trang đầu; sau thao tác chỉ liệt kê phần tử mới / đổi)
+  const card = ((snap + out).match(/\[(e\d+)\] clickable "Tai nghe Bluetooth SIMI 299\.000đ"/) || [])[1];
   check(card, 'ô sản phẩm dạng div (con trỏ bàn tay) có mã [eN] để bấm');
   const cr = await rpc(mcp, { id: 41, method: 'tools/call', params: { name: 'browser_act', arguments: { actions: [{ action: 'click', ref: card }] } } });
   check(/Đã chọn sản phẩm/.test(cr.result.content[0].text), 'bấm ô sản phẩm theo mã → đúng');
@@ -177,12 +177,12 @@ run(async () => {
   check(/Bấm canvas tại (4[7-9]|5[0-2]),(1[7-9]|2[0-2])/.test(xy.result.content[0].text), 'bấm theo toạ độ x, y trên ảnh → trúng đúng chỗ trong canvas');
 
   // tải tệp về (như Canva → Tải xuống) → AI nhận đường dẫn tệp
-  const dl = await rpc(mcp, { id: 44, method: 'tools/call', params: { name: 'browser_act', arguments: { actions: [{ action: 'click', ref: dlRef(xy.result.content[0].text) }, { action: 'wait_download', ms: 15000 }] } } });
+  const dl = await rpc(mcp, { id: 44, method: 'tools/call', params: { name: 'browser_act', arguments: { actions: [{ action: 'click', ref: dlRef(snap + xy.result.content[0].text) }, { action: 'wait_download', ms: 15000 }] } } });
   const dlFile = (dl.result.content[0].text.match(/đã lưu (.+bao-gia[^\n]*\.txt)/) || [])[1];
   check(dlFile && fs.readFileSync(dlFile, 'utf8') === 'Báo giá SIMI', 'wait_download: tải tệp về thư mục Tải xuống, trả đúng đường dẫn');
 
   // bấm link → điều hướng, nút Quay lại bật
-  const link = (out.match(/\[(e\d+)\] link "Sang trang 2"/) || [])[1];
+  const link = ((snap + out).match(/\[(e\d+)\] link "Sang trang 2"/) || [])[1];
   const nav = await rpc(mcp, { id: 5, method: 'tools/call', params: { name: 'browser_act', arguments: { actions: [{ action: 'click', ref: link }] } } });
   check(/Trang thứ hai/.test(nav.result.content[0].text), 'bấm link → chờ trang mới tải xong rồi trả về');
   await win.waitForFunction(() => !document.querySelector('#cbwBack').disabled);

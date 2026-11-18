@@ -314,9 +314,12 @@ function codexArgs({ model, effort, sandbox, viaGateway = true }) {
 
 // thiết lập 1 lượt chat qua `codex app-server`: Codex hỏi quyền khi cần (lệnh ngoài sandbox, công cụ MCP, Computer Use)
 // và app hiện hộp "Cho phép / Từ chối" ngay trong đoạn chat – giống ChatGPT Work.
-// Codex tự tóm phiên dài khi vượt ngưỡng này (token): Gateway mặc định 200k – quá muộn, mỗi lượt đã phải đọc rất nhiều.
-// 60k: đoạn chat dài vẫn nhanh, phần cũ được Codex tóm lại (vẫn nhớ). Cấu hình chatCompactTokens (0 = theo Gateway).
-const CHAT_COMPACT_TOKENS = 60000;
+// Codex tự tóm phiên dài khi vượt ngưỡng này (token). Gateway mặc định 200k.
+// 60k (0.9.63) quá thấp: riêng hướng dẫn + danh sách công cụ của Codex đã ~20k, một việc nhiều bước trên web (đăng bài Sapo,
+// mỗi lần đọc trang vài nghìn token) chạm ngưỡng sau 6–8 bước → Codex dừng giữa chừng để tóm, quên chi tiết trang rồi đọc lại
+// → việc 200 giây thành 600 giây. 150k: đoạn chat dài vẫn được tóm (câu hỏi đơn giản đã đi ⚡ + 🧠 Ghi nhớ gọn),
+// còn việc nhiều bước hiếm khi bị cắt ngang. Cấu hình chatCompactTokens (0 = theo Gateway).
+const CHAT_COMPACT_TOKENS = 150000;
 function chatSettings({ model, effort, sandbox, compactTokens }) {
   const sb = ['read-only', 'workspace-write', 'danger-full-access'].includes(sandbox) ? sandbox : 'workspace-write';
   const sandboxPolicy = sb === 'read-only' ? { type: 'readOnly', networkAccess: true }
