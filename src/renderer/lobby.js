@@ -21,7 +21,7 @@
   const HAIR = ['short', 'long', 'spiky', 'bun', 'bob', 'curly', 'ponytail', 'buzz', 'bald'];
   const HAIR_NAME = { short: 'Ngắn', long: 'Dài', spiky: 'Dựng', bun: 'Búi', bob: 'Bob', curly: 'Xoăn', ponytail: 'Đuôi ngựa', buzz: 'Húi cua', bald: 'Trọc' };
   const OUTFITS = [['none', 'Thường'], ['kasaya', '🧡 Áo cà sa SIMI']];
-  const ACC = [['none', 'Không'], ['glasses', '👓 Kính'], ['cap', '🧢 Mũ'], ['headphones', '🎧 Tai nghe'], ['bow', '🎀 Nơ'], ['tie', '👔 Cà vạt'], ['crown', '👑 Vương miện']];
+  const ACC = [['none', 'Không'], ['glasses', '👓 Kính'], ['cap', '🧢 Mũ'], ['nonla', '👒 Nón lá'], ['headphones', '🎧 Tai nghe'], ['bow', '🎀 Nơ'], ['tie', '👔 Cà vạt'], ['crown', '👑 Vương miện']];
   const PALETTE = {
     hair: ['#1a1a1a', '#2b1d14', '#5a3a1e', '#8a5a2e', '#c99a5b', '#e8d29a', '#7a2e2e', '#d65a8a', '#4a6fd6', '#7b4fa0', '#2fc1a5', '#cfd6e0'],
     skin: ['#f6d7bd', '#f1c9a5', '#ebbf98', '#e2ae84', '#d9a074', '#c98e62', '#a8714a', '#7d5236'],
@@ -384,6 +384,7 @@
     if (L.scene || !window.Lobby3D) return;
     try {
       L.scene = new window.Lobby3D($('#lobby3d'), {
+        tet: ((U.S && U.S.cfg) || {}).tetDecor, // 🧧 trang trí Tết (Cài đặt)
         onPersonClick: (id, x, y) => openPerson(id, x, y),
         onSelfClick: () => openWardrobe(),
         onMove: (pos) => { if (L.status.state === 'online') window.vp.lobby.presence({ pos }); },

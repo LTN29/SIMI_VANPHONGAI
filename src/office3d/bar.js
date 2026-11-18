@@ -6,6 +6,7 @@
 // không dùng đèn điểm (PointLight) – vùng sáng dưới đèn là "vệt sáng" vẽ sẵn.
 // Trả về chỗ ngồi (seats), vật cản cho tìm đường, các hàm hoạt cảnh.
 import * as THREE from 'three';
+import { buildTetLobby } from './tet.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
@@ -152,7 +153,7 @@ function lightPool(scene, x, z, r, color, opacity = 0.35) {
 // trang web điện thoại đặt window.VP_ASSET_BASE (ảnh nằm ở /m/sanh3d/brand/…); app máy tính để trống
 function loadTex(url, cb) { new THREE.TextureLoader().load((globalThis.VP_ASSET_BASE || '') + url, (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; cb(t); }, undefined, () => {}); }
 
-export function buildBar(scene) {
+export function buildBar(scene, opts = {}) {
   const out = { animated: [], seats: [], obstacles: [], seatMeshes: [], clickables: [] };
   const statics = []; // mesh đứng yên → gộp cuối hàm
   const add = (geo, mat, x, y, z, parent = scene, { cast = true, receive = true } = {}) => {
@@ -439,6 +440,8 @@ export function buildBar(scene) {
     hit.position.set(x, (h + 0.1) / 2, z); hit.userData.seatId = id; scene.add(hit); out.seatMeshes.push(hit);
   }
 
+  // 🧧 trang trí Tết (mai, đào, quất, đèn lồng, câu đối, băng rôn, cánh hoa bay) – nhóm riêng, không gộp
+  if (opts.tet) buildTetLobby(scene, out, { minX: BAR.minX, maxX: BAR.maxX, minZ: BAR.minZ, maxZ: BAR.maxZ, inZ: BAR.inZ, cinemaX: CINEMA_X, barX: BAR_X, gate: { x: 12.5, z: BAR.maxZ - 0.35, half: 2.2 }, umbrellas: [[-10.4, 13.4], [-6.0, 15.4], [-1.6, 13.2], [3.0, 15.3]], lamps: [[-8.0, 17.0], [-0.5, 11.4], [5.6, 11.4], [17.0, 17.0], [23.2, 11.4], [-12.6, 11.2]] });
   mergeStatics(scene, statics);
   // điểm xuất hiện: sân trước quầy lễ tân (lối vào)
   out.spawn = { minX: 8, maxX: 16, minZ: 13, maxZ: 16.5 };

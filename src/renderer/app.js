@@ -155,6 +155,11 @@
     g.strokeStyle = '#8a4a4a'; g.lineWidth = 2; g.lineCap = 'round'; g.beginPath(); g.arc(50, 61, 4.5, 0.2 * Math.PI, 0.8 * Math.PI); g.stroke();
     g.fillStyle = accent;
     if (acc === 'cap') { g.beginPath(); g.ellipse(50, 38, 28, 17, 0, Math.PI, Math.PI * 2); g.fill(); E(50, 37, 30, 4); }
+    if (acc === 'nonla') { // nón lá: hình nón rộng vành, quai màu nhấn
+      g.fillStyle = '#ecd59a'; g.beginPath(); g.moveTo(50, 6); g.lineTo(90, 36); g.quadraticCurveTo(50, 44, 10, 36); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(150,110,50,.55)'; g.lineWidth = 1.2; for (const k of [0.35, 0.6, 0.82]) { g.beginPath(); g.moveTo(50 - 40 * k, 6 + 30 * k); g.quadraticCurveTo(50, 6 + 36 * k, 50 + 40 * k, 6 + 30 * k); g.stroke(); }
+      g.strokeStyle = accent; g.lineWidth = 2; g.beginPath(); g.moveTo(25, 40); g.quadraticCurveTo(50, 102, 75, 40); g.stroke(); g.fillStyle = accent;
+    }
     if (acc === 'bow') { g.beginPath(); g.moveTo(50, 24); g.lineTo(38, 17); g.lineTo(38, 31); g.closePath(); g.moveTo(50, 24); g.lineTo(62, 17); g.lineTo(62, 31); g.closePath(); g.fill(); }
     if (acc === 'headphones') { g.strokeStyle = '#2b2b33'; g.lineWidth = 3; g.beginPath(); g.arc(50, 50, 27, Math.PI * 1.05, Math.PI * 1.95); g.stroke(); E(24, 54, 5, 8); E(76, 54, 5, 8); }
     if (acc === 'crown') { g.fillStyle = '#f5c518'; g.beginPath(); g.moveTo(36, 26); g.lineTo(40, 12); g.lineTo(46, 22); g.lineTo(50, 9); g.lineTo(54, 22); g.lineTo(60, 12); g.lineTo(64, 26); g.closePath(); g.fill(); }
@@ -1077,6 +1082,11 @@
       el('option', { value: 'light', text: 'Nhẹ – máy yếu, chạy pin: độ nét vừa đủ, tắt bóng đổ, 30 khung hình/giây' }),
       el('option', { value: 'high', text: 'Đẹp – máy mạnh (card rời): nét tối đa, bóng đổ mượt, không tự hạ' }));
     gfx.value = c.gfx || (c.lobbyLight === true ? 'light' : 'auto');
+    const tet = el('select', { id: 'selTet' },
+      el('option', { value: 'auto', text: 'Tự động – bật từ khoảng 12 tuần trước Tết tới rằm tháng Giêng' }),
+      el('option', { value: 'on', text: 'Luôn bật' }),
+      el('option', { value: 'off', text: 'Tắt' }));
+    tet.value = ['on', 'off'].includes(c.tetDecor) ? c.tetDecor : 'auto';
     const CLIS = [['claude', 'Claude Code'], ['codex', 'Codex'], ['antigravity', 'Antigravity (agy)'], ['gemini', 'Gemini CLI']];
     const cli = {};
     for (const [k] of CLIS) { const v = c.cli[k] || { cmd: k === 'antigravity' ? 'agy' : k, extraArgs: '' }; cli[k] = { cmd: el('input', { value: v.cmd }), extra: el('input', { value: v.extraArgs || '', placeholder: '(không bắt buộc)' }) }; }
@@ -1096,6 +1106,7 @@
       el('div', { class: 'field row' }, sound, el('label', { for: 'chkSound', text: 'Âm thanh dễ thương khi bấm, tương tác, vuốt mèo' })),
       el('div', { class: 'field row' }, lobbyOn, el('label', { for: 'chkLobby', text: 'Vào Sảnh online khi mở app (đồng nghiệp thấy bạn đang dùng AI, nhắn tin được)' })),
       field('Chất lượng đồ hoạ Sảnh 3D', gfx, 'Máy đang dùng app khác thì Sảnh tự giảm nhịp vẽ, thu nhỏ cửa sổ thì dừng vẽ.'),
+      field('🧧 Trang trí Tết (Văn phòng + Sảnh)', tet, 'Mai, đào, cây quất, đèn lồng, câu đối, băng rôn Chúc Mừng Năm Mới. Văn phòng đổi ngay; Sảnh đổi khi mở lại app.'),
       el('div', { class: 'field row' }, pcOn, el('label', { for: 'chkPc', text: 'Cho AI trong tab Chat điều khiển chuột & bàn phím (luôn hỏi bạn cho phép trước)' })),
       el('div', { class: 'field row' }, pcMin, el('label', { for: 'chkPcMin', text: 'Thu nhỏ Văn Phòng AI khi AI đang điều khiển máy' })),
       upd ? el('div', { class: 'section-title', text: 'Cập nhật' }) : null, upd ? upd.node : null,
@@ -1114,13 +1125,14 @@
       if ((c.lobbyEnabled !== false) !== lobbyOn.checked) window.vp.lobby.connect(lobbyOn.checked);
       c.lobbyEnabled = lobbyOn.checked;
       c.gfx = gfx.value; c.lobbyLight = c.gfx === 'light';
+      const tetChanged = (c.tetDecor || 'auto') !== tet.value; c.tetDecor = tet.value;
       if (window.VPLobby && window.VPLobby.setQuality) window.VPLobby.setQuality(c.gfx);
       for (const [k] of CLIS) c.cli[k] = { cmd: cli[k].cmd.value.trim() || (k === 'antigravity' ? 'agy' : k), extraArgs: cli[k].extra.value.trim() };
       c.ollamaUrl = ollama.value.trim() || 'http://127.0.0.1:11434';
       c.chatEngine = engine.value;
       c.computerControl = pcOn.checked; c.computerMinimize = pcMin.checked;
       if (upd) upd.apply(c);
-      if (await saveCfg()) { closeModal(); toast('Đã lưu cài đặt'); loadTray(); }
+      if (await saveCfg()) { closeModal(); toast('Đã lưu cài đặt'); loadTray(); if (tetChanged) createOffice(store.get('vp.view', '3d')); }
     });
     openModal('Cài đặt', body, [el('div', { class: 'left' }, credit()), ok]);
   }
@@ -1251,6 +1263,7 @@
       onPersonClick: openInteract,
       onStat: (id, k) => { if (k === 'coffee') { bump(id, 38, 5); pushStats(); sfx('sparkle'); } },
       onCat: () => sfx('meow'),
+      tet: S.cfg.tetDecor, // 🧧 trang trí Tết: auto (12 tuần trước Tết → rằm tháng Giêng) | on | off
     };
     let used = mode;
     if (mode === '3d' && window.Office3D) {

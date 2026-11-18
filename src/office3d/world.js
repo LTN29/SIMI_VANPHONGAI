@@ -1,5 +1,6 @@
 // Dựng căn phòng 3D: sàn, tường, cửa sổ, bảng việc, đồ đạc, bàn làm việc.
 import * as THREE from 'three';
+import { buildTetOffice } from './tet.js';
 
 export const ROOM = { minX: -7, maxX: 7, minZ: -5, maxZ: 5, wallH: 3.1 };
 export const SLOTS = [
@@ -128,8 +129,8 @@ function posterTex() {
   }).tex;
 }
 
-export function buildRoom(scene, renderer) {
-  const out = { animated: [] };
+export function buildRoom(scene, renderer, opts = {}) {
+  const out = { animated: [], obstacles: [] };
   // sàn
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.maxX - ROOM.minX, ROOM.maxZ - ROOM.minZ),
     std('#ffffff', 0.75, { map: woodFloor() }));
@@ -379,6 +380,8 @@ export function buildRoom(scene, renderer) {
     dg.attributes.position.needsUpdate = true;
     sky.offset.x = (t * 0.004) % 1;
   });
+  // 🧧 trang trí Tết (chậu đào cạnh cửa, mai, quất, đèn lồng, băng rôn tường trái)
+  if (opts.tet) buildTetOffice(scene, out, { ...ROOM, door: DOOR }, [...OBSTACLES, ...SLOTS.map((p) => [p.x - DESK.w / 2 - 0.2, p.z - 1.3, p.x + DESK.w / 2 + 0.2, p.z + 0.6])], out.obstacles);
   return out;
 }
 

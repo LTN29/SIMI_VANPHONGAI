@@ -5,6 +5,7 @@ import { NavGrid } from './nav.js';
 import { Cat } from './cat.js';
 import { Person } from './person.js';
 import { Crowd } from './crowd.js';
+import { tetOn } from './tet.js';
 import { BAR, buildBar, POOL_FELT, FORTUNE, IDEAS, BAR_X, CINEMA_X } from './bar.js';
 import { mergeStatic } from './merge.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
@@ -108,7 +109,7 @@ class Lobby3D {
     this.scene = new THREE.Scene();
     this.crowd = new Crowd(this.scene, { cap: 300, blobGeo: BLOB_GEO, blobMat: BLOB_MAT }); this.v1 = new THREE.Vector3();
     addLights(this.scene, 2048, { x: (ROOM.minX + ROOM.maxX) / 2, z: (ROOM.minZ + ROOM.maxZ) / 2 }, { x: (ROOM.maxX - ROOM.minX) / 2 + 3, z: (ROOM.maxZ - ROOM.minZ) / 2 + 4 });
-    this.world = buildBar(this.scene);
+    this.world = buildBar(this.scene, { tet: tetOn(opts.tet) });
     this.pool = (this.world.poolTables || []).map((T) => ({ ...T, state: null, anim: null }));
     this.games = new Map(); // memberId -> { table, idx }
     this.seats = new Map(this.world.seats.map((st) => [st.id, st]));

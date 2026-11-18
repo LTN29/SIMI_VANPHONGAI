@@ -4,6 +4,7 @@ import { NavGrid } from './nav.js';
 import { Cat } from './cat.js';
 import { Person } from './person.js';
 import { dodgePlates } from './dodge.js';
+import { tetOn } from './tet.js';
 import { ROOM, SLOTS, DESK, SEAT_DZ, DOOR, POI, OBSTACLES, buildRoom, buildDesk, drawScreen } from './world.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -60,7 +61,7 @@ class Office3D {
     sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; sun.shadow.radius = 4;
     scene.add(sun, sun.target);
     const fill = new THREE.DirectionalLight('#cfe0ff', 0.45); fill.position.set(8, 6, -2); scene.add(fill);
-    this.world = buildRoom(scene, renderer);
+    this.world = buildRoom(scene, renderer, { tet: tetOn(opts && opts.tet) });
 
     // camera trực giao kiểu sa bàn
     this.cam = new THREE.OrthographicCamera(-10, 10, 6, -6, 0.1, 100);
@@ -75,7 +76,7 @@ class Office3D {
     this.nav.blockRect(ROOM.minX, ROOM.minZ, ROOM.minX + 0.25, ROOM.maxZ, 0.15);
     this.nav.blockRect(ROOM.maxX - 0.2, ROOM.minZ, ROOM.maxX, ROOM.maxZ, 0.15);
     this.nav.blockRect(ROOM.minX, ROOM.maxZ - 0.2, ROOM.maxX, ROOM.maxZ, 0.15);
-    for (const o of OBSTACLES) this.nav.blockRect(...o);
+    for (const o of [...OBSTACLES, ...(this.world.obstacles || [])]) this.nav.blockRect(...o);
     for (const s of SLOTS) {
       this.nav.blockRect(s.x - DESK.w / 2, s.z - DESK.d / 2, s.x + DESK.w / 2, s.z + DESK.d / 2);
       this.nav.blockRect(s.x - 0.28, s.z + SEAT_DZ - 0.28, s.x + 0.28, s.z + SEAT_DZ + 0.28, 0.18);

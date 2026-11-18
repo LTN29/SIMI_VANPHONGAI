@@ -5,7 +5,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 
 export const SKINS = ['#f1c9a5', '#e2ae84', '#f6d7bd', '#c98e62', '#ebbf98', '#d9a074'];
 export const HAIR_STYLES = { short: 'Ngắn', long: 'Dài', bun: 'Búi', spiky: 'Dựng', bob: 'Bob', curly: 'Xoăn', ponytail: 'Đuôi ngựa', buzz: 'Húi cua', bald: 'Trọc' };
-export const ACCESSORIES = { none: 'Không', glasses: 'Kính', cap: 'Mũ lưỡi trai', headphones: 'Tai nghe', bow: 'Nơ', tie: 'Cà vạt', crown: 'Vương miện' };
+export const ACCESSORIES = { none: 'Không', glasses: 'Kính', cap: 'Mũ lưỡi trai', nonla: 'Nón lá', headphones: 'Tai nghe', bow: 'Nơ', tie: 'Cà vạt', crown: 'Vương miện' };
 const DEFAULT_STYLES = ['short', 'long', 'spiky', 'bun', 'bob', 'short'];
 
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -20,6 +20,20 @@ function std(color, rough = 0.75) {
   let m = matCache.get(k);
   if (!m) { m = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0 }); matCache.set(k, m); }
   return m;
+}
+// lá nón: màu lá cọ phơi khô + các vòng nan tre mảnh (vẽ 1 lần, mọi người đội chung)
+let _nonla = null;
+function nonlaMat() {
+  if (_nonla) return _nonla;
+  const c = document.createElement('canvas'); c.width = 32; c.height = 256;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 256); grd.addColorStop(0, '#f3e2ae'); grd.addColorStop(1, '#e2c983');
+  g.fillStyle = grd; g.fillRect(0, 0, 32, 256);
+  g.fillStyle = 'rgba(150,110,50,.45)';
+  for (let k = 1; k < 16; k++) g.fillRect(0, Math.round(k * 256 / 16), 32, 2);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  _nonla = new THREE.MeshStandardMaterial({ map: t, roughness: 0.85, side: THREE.DoubleSide });
+  return _nonla;
 }
 const CHEEK = () => matCache.get('cheek') || matCache.set('cheek', new THREE.MeshStandardMaterial({ color: '#ff8f8f', transparent: true, opacity: 0.35, roughness: 1 })).get('cheek');
 
@@ -154,9 +168,9 @@ export class Person {
       const back = add(head, G('long', () => new THREE.CapsuleGeometry(0.2, 0.28, 6, 12)), M.hair, 0, 0.05, -0.12);
       back.scale.set(1.15, 1, 0.55);
       for (const side of [-1, 1]) add(head, G('lock', () => new THREE.CapsuleGeometry(0.06, 0.24, 4, 8)), M.hair, side * 0.22, 0.07, 0.02);
-    } else if (style === 'bun') {
+    } else if (style === 'bun' && a.accessory !== 'nonla') { // đội nón lá thì búi tóc nằm trong nón
       add(head, G('bun', () => new THREE.SphereGeometry(0.11, 14, 10)), M.hair, 0, 0.45, -0.13);
-    } else if (style === 'spiky') {
+    } else if (style === 'spiky' && a.accessory !== 'nonla') {
       const spikeGeo = G('spike', () => new THREE.ConeGeometry(0.07, 0.17, 6));
       [[-0.12, 0.44, 0.02, 0.4], [0, 0.48, 0, 0], [0.12, 0.44, 0.02, -0.4], [-0.06, 0.45, -0.12, 0.2], [0.07, 0.45, -0.12, -0.2]].forEach(([x, y, z, rz]) => {
         const s = add(head, spikeGeo, M.hair, x, y, z); s.rotation.z = rz; s.rotation.x = -0.25;
@@ -174,6 +188,14 @@ export class Person {
       crown.rotation.x = -0.18;
       const brim = add(head, G('brim', () => new THREE.CylinderGeometry(0.17, 0.17, 0.025, 20, 1, false, -Math.PI / 2, Math.PI)), accM, 0, 0.3, 0.2);
       brim.rotation.x = 0.12;
+    } else if (acc === 'nonla') {
+      // nón lá: chóp nón lá cọ (vân vòng tròn), vành tròn, quai lụa màu nhấn vòng dưới cằm
+      const hat = add(head, G('nonla', () => new THREE.ConeGeometry(0.47, 0.33, 32, 1, true)), nonlaMat(), 0, 0.545, -0.01);
+      hat.rotation.x = -0.12;
+      const rim = add(head, G('nonlaRim', () => new THREE.TorusGeometry(0.47, 0.009, 5, 40)), std('#c9a45c', 0.7), 0, 0.38, 0.01);
+      rim.rotation.x = Math.PI / 2 - 0.12;
+      const strap = add(head, G('nonlaStrap', () => new THREE.TorusGeometry(0.235, 0.011, 5, 24, Math.PI)), accM, 0, 0.27, 0.05);
+      strap.rotation.set(-0.55, 0, Math.PI); strap.castShadow = false;
     } else if (acc === 'headphones') {
       const band = add(head, G('band', () => new THREE.TorusGeometry(0.28, 0.022, 8, 24, Math.PI)), std('#2b2b33', 0.4), 0, 0.2, 0);
       band.rotation.z = 0;
